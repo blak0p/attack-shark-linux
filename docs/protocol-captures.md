@@ -23,7 +23,7 @@ The ACK echoes the confirmed report id in byte `[4]`.
 [report payload]            starts with the report id byte
 ```
 
-## Report 0x04 — full configuration (52 B)
+## Report 0x04 — full configuration (52 B, authoritative)
 
 Sent at startup and re-sent after **every** change (DPI, active stage, RGB,
 polling). Always the complete payload with a fresh checksum.
@@ -33,7 +33,7 @@ Layout (offsets from byte 0 = report id):
 | Offset | Size | Meaning |
 |---|---|---|
 | 0 | 1 | `0x04` report id |
-| 1 | 1 | `0x38` length (56) |
+| 1 | 1 | `0x38` protocol field (56); it is **not** the USB transfer length |
 | 2 | 1 | `0x01` fixed |
 | 3 | 1 | **angle control** (0=off, 1=on), duplicated in [6] |
 | 4 | 1 | **ripple control** (0=off, 1=on) |
@@ -46,6 +46,20 @@ Layout (offsets from byte 0 = report id):
 | 25..48 | 24 | per-stage BGR colors, 3 B each (8 stages) — stays fixed when switching stage |
 | 49 | 1 | `0x01` fixed |
 | 50-51 | 2 | checksum `sum([3..49])`, big-endian |
+
+### Authoritative feature-report contract
+
+The complete `0x04` feature report is **exactly 52 bytes**: offsets `[0:52]`.
+The USBPcap control setup records `wLength=52` and `payload_len=52` for
+`dpi.pcapng` frame 1870 and all inspected DPI-bar writes (frames 2148–10100 in
+`barra_dpi.pcapng`). `0x38` at byte `[1]` is a device protocol field whose value
+is 56; it does **not** authorize a 56-byte HID write. There is no trailing
+padding at offsets `[52:56]`. The checksum is the big-endian 16-bit sum of
+bytes `[3:50]`, stored at `[50:52]`. Future encoders and live writes MUST send
+only this 52-byte contract and wait for `03 10 50 00 04` on interrupt `0x83`.
+
+The machine-readable fixture `captures/0x04-config/report04-contract.json`
+records this contract and the two capture sources.
 
 ### Evidence: startup payload
 
