@@ -155,9 +155,9 @@ ack:   03 10 50 00 04   (tras SET_REPORT de config)
 
 | Archivo | Rol |
 |---|---|
-| `/home/alejandro/x6probe/probe.py` | lectura read-only del dongle (batería/status) |
-| `/home/alejandro/x6probe/factory_reset.py` | envío del payload de fábrica (validado) |
-| `/home/alejandro/x6ghidra/` | proyecto Ghidra: report_builder.txt (FUN_004143a0), init_config.txt (FUN_00415280), reset_handler.txt (FUN_00410460), hid_wrapper.txt (FUN_00413940) |
+| `x6probe/probe.py` | lectura read-only del dongle (batería/status) |
+| `x6probe/factory_reset.py` | envío del payload de fábrica (validado) |
+| `x6ghidra/` | proyecto Ghidra: report_builder.txt (FUN_004143a0), init_config.txt (FUN_00415280), reset_handler.txt (FUN_00410460), hid_wrapper.txt (FUN_00413940) |
 | `official-app/` | app Windows del X6 a adaptar (fuente de los textos y layout de la UI) |
 
 Pendiente de decodificar (fases siguientes): report `0x05` (sleep/key response),
