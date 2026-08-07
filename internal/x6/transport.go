@@ -27,3 +27,11 @@ type PassiveInputTransport interface {
 	ValidateDescriptor(context.Context, Candidate, InputDescriptor) (InputSource, error)
 	ReadInterruptIN(context.Context, InputSource, func([]byte) bool) error
 }
+
+type CommandTransport interface {
+	SendAndAwait(context.Context, []byte, func([]byte) bool) error
+}
+
+type AppliedDPIStore interface {
+	SaveApplied(DPIConfig) error
+}
