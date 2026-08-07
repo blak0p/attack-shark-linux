@@ -1,0 +1,6 @@
+# Official Windows application reference material. Never stage or upload it.
+/ATTACK SHARK X6 SOFT.exe
+/official-app/
+/.codegraph/
+# Local AI runtime state
+.atl/
