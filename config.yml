@@ -1,0 +1,16 @@
+# Wails v3 build configuration. Frontend source is intentionally deferred to Phase 3.
+version: '3'
+
+info:
+  productName: "Attack Shark Linux"
+  productIdentifier: "io.github.alejandro.attacksharklinux"
+  description: "Attack Shark X6 Linux desktop application"
+  version: "0.0.0"
+
+# Pinned frontend baseline for the future React/TypeScript template:
+# react: 18.2.0
+# react-dom: 18.2.0
+# typescript: 5.2.2
+# vite: 8.0.5
+# Lifecycle contract: application.New registers application.NewService;
+# ServiceStartup may abort startup and ServiceShutdown runs during shutdown.

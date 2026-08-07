@@ -1,0 +1,11 @@
+{
+  "reportID": 4,
+  "featureReportLength": 52,
+  "lengthByte": 56,
+  "padding": "none",
+  "checksum": "sum(bytes[3:50]) big-endian at [50:52]",
+  "evidence": [
+    "dpi.pcapng frame 1870: wLength=52, payload_len=52",
+    "barra_dpi.pcapng frames 2148 through 10100: wLength=52, payload_len=52"
+  ]
+}

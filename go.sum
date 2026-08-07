@@ -1,5 +1,7 @@
 github.com/sstallion/go-hid v0.15.0 h1:WERW/VW3Us6N73V2qa7HjdqWQvwHd0CoRDOP/N707/w=
 github.com/sstallion/go-hid v0.15.0/go.mod h1:fPKp4rqx0xuoTV94gwKojsPG++KNKhxuU88goGuGM7I=
 github.com/sstallion/go-tools v1.0.1/go.mod h1:y3Rklut4T6cPLmNkaU0obckQpnVSSvAZlB2N87qgUtg=
+github.com/wailsapp/wails/v3 v3.0.0-beta.5 h1:uae3RYybCzpQFvwp18AgR2AM897sUA/PJuKxyvAWvH8=
+github.com/wailsapp/wails/v3 v3.0.0-beta.5/go.mod h1:BzATbK71VFikMMMCo434wAi0QcaI03P+xeaWgDvQvjw=
 golang.org/x/sys v0.8.0 h1:EBmGv8NaZBZTWvrbjNoL6HVt+IVy3QDQpJs7VRIw3tU=
 golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
