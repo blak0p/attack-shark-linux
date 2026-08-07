@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 const (
@@ -16,6 +17,10 @@ type ErrorKind string
 const (
 	NoUsableDevice ErrorKind = "no usable X6 device"
 	ReadFailure    ErrorKind = "input read failed"
+	InvalidDPI     ErrorKind = "invalid DPI configuration"
+	WriteFailure   ErrorKind = "configuration write failed"
+	AckFailure     ErrorKind = "configuration acknowledgement failed"
+	PersistFailure ErrorKind = "applied-state persistence failed"
 )
 
 type ServiceError struct {
@@ -35,9 +40,51 @@ type Status struct {
 	BatteryPercent   int
 	BatteryAvailable bool
 }
-type Service struct{ transport PassiveInputTransport }
+type Service struct {
+	transport PassiveInputTransport
+	command   CommandTransport
+	commandMu sync.Mutex
+}
 
-func NewService(transport PassiveInputTransport) Service { return Service{transport: transport} }
+func NewService(transport PassiveInputTransport) Service  { return Service{transport: transport} }
+func NewCommandService(command CommandTransport) *Service { return &Service{command: command} }
+
+func (s *Service) ApplyDPI(ctx context.Context, config DPIConfig) error {
+	return s.applyDPI(ctx, config, nil)
+}
+
+func (s *Service) ApplyAndPersist(ctx context.Context, config DPIConfig, store AppliedDPIStore) error {
+	return s.applyDPI(ctx, config, store)
+}
+
+func (s *Service) applyDPI(ctx context.Context, config DPIConfig, store AppliedDPIStore) error {
+	report, err := EncodeDPIReport(config)
+	if err != nil {
+		return err
+	}
+	if s.command == nil {
+		return &ServiceError{WriteFailure, errors.New("command transport is unavailable")}
+	}
+	s.commandMu.Lock()
+	defer s.commandMu.Unlock()
+	matched := false
+	err = s.command.SendAndAwait(ctx, report, func(input []byte) bool {
+		matched = matchesDPIACK(input)
+		return !matched
+	})
+	if err != nil {
+		return &ServiceError{AckFailure, err}
+	}
+	if !matched {
+		return &ServiceError{AckFailure, errors.New("matching DPI acknowledgement was not received")}
+	}
+	if store != nil {
+		if err := store.SaveApplied(config); err != nil {
+			return &ServiceError{PersistFailure, err}
+		}
+	}
+	return nil
+}
 
 func (s Service) Status(ctx context.Context) (Status, error) {
 	candidates, err := s.transport.Enumerate(ctx, Match{VendorID: x6VendorID, ProductID: x6ProductID})
