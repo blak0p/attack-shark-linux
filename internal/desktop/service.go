@@ -33,6 +33,7 @@ type Snapshot struct {
 	Battery    *int
 	Applied    DPIConfig
 	Pending    DPIConfig
+	Factory    DPIConfig
 	Revision   uint64
 	Error      Error
 }
@@ -45,6 +46,7 @@ type DPIWriter interface {
 type AppliedStore interface {
 	x6.AppliedDPIStore
 	LoadApplied() (x6.DPIConfig, error)
+	LoadFactory() (x6.DPIConfig, error)
 }
 type Service struct {
 	status           StatusReader
@@ -53,6 +55,7 @@ type Service struct {
 	mu               sync.Mutex
 	applyMu          sync.Mutex
 	applied, pending x6.DPIConfig
+	factory          x6.DPIConfig
 	revision         uint64
 }
 
@@ -61,7 +64,11 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		applied = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, applied: applied, pending: applied}
+	factory, err := store.LoadFactory()
+	if err != nil {
+		factory = x6.DefaultDPIConfig()
+	}
+	return &Service{status: status, writer: writer, store: store, applied: applied, pending: applied, factory: factory}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -114,7 +121,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 	return s.snapshot(Error{})
 }
 func (s *Service) snapshot(err Error) Snapshot {
-	return Snapshot{Applied: ToDTO(s.applied), Pending: ToDTO(s.pending), Revision: s.revision, Error: err}
+	return Snapshot{Applied: ToDTO(s.applied), Pending: ToDTO(s.pending), Factory: ToDTO(s.factory), Revision: s.revision, Error: err}
 }
 func ToDTO(config x6.DPIConfig) DPIConfig {
 	return DPIConfig{config.AngleControl, config.RippleControl, config.StageMask, config.LiftDistance, config.DPI, config.ActiveStage, config.Colors}

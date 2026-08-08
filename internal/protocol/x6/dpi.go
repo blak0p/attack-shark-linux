@@ -14,7 +14,11 @@ type DPIConfig struct {
 }
 
 func DefaultDPIConfig() DPIConfig {
-	return DPIConfig{StageMask: 0x3f, LiftDistance: 1, DPI: [8]int{800, 1200, 1600, 3200, 5600, 400, 50, 25650}, ActiveStage: 4, Colors: [8][3]byte{{0xff, 0, 0}, {0, 0xff, 0}, {0, 0, 0xff}, {0xff, 0xff, 0}, {0, 0xff, 0xff}, {0xff, 0, 0xff}, {0xff, 0x40, 0}, {0xff, 0xff, 0xff}}}
+	// Factory template dictated by the user (docs/config-dictada.md): six stages
+	// ending at the sensor max. Stages 7-8 hold the minimum encodable value but
+	// are masked off by StageMask 0x3f. Colors match the factory dwords
+	// 0xff/0xff00/0xff0000/0xffff/0xffff00/0xff00ff/0x40ff/0xffffff.
+	return DPIConfig{StageMask: 0x3f, LiftDistance: 1, DPI: [8]int{800, 1200, 1600, 3200, 5600, 26000, 50, 50}, ActiveStage: 4, Colors: [8][3]byte{{0xff, 0, 0}, {0, 0xff, 0}, {0, 0, 0xff}, {0xff, 0xff, 0}, {0, 0xff, 0xff}, {0xff, 0, 0xff}, {0xff, 0x40, 0}, {0xff, 0xff, 0xff}}}
 }
 
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {

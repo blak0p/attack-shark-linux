@@ -90,6 +90,7 @@ export class Snapshot {
     "Battery": number | null;
     "Applied": DPIConfig;
     "Pending": DPIConfig;
+    "Factory": DPIConfig;
     "Revision": number;
     "Error": Error;
 
@@ -107,6 +108,9 @@ export class Snapshot {
         if (!("Pending" in $$source)) {
             this["Pending"] = (new DPIConfig());
         }
+        if (!("Factory" in $$source)) {
+            this["Factory"] = (new DPIConfig());
+        }
         if (!("Revision" in $$source)) {
             this["Revision"] = 0;
         }
@@ -123,7 +127,8 @@ export class Snapshot {
     static createFrom($$source: any = {}): Snapshot {
         const $$createField2_0 = $$createType0;
         const $$createField3_0 = $$createType0;
-        const $$createField5_0 = $$createType1;
+        const $$createField6_0 = $$createType0;
+        const $$createField7_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Applied" in $$parsedSource) {
             $$parsedSource["Applied"] = $$createField2_0($$parsedSource["Applied"]);
@@ -131,8 +136,11 @@ export class Snapshot {
         if ("Pending" in $$parsedSource) {
             $$parsedSource["Pending"] = $$createField3_0($$parsedSource["Pending"]);
         }
+        if ("Factory" in $$parsedSource) {
+            $$parsedSource["Factory"] = $$createField6_0($$parsedSource["Factory"]);
+        }
         if ("Error" in $$parsedSource) {
-            $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
+            $$parsedSource["Error"] = $$createField7_0($$parsedSource["Error"]);
         }
         return new Snapshot($$parsedSource as Partial<Snapshot>);
     }

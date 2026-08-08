@@ -27,11 +27,27 @@ func (f *writerFake) ApplyAndPersist(context.Context, x6.DPIConfig, x6.AppliedDP
 
 type appliedStoreFake struct {
 	applied x6.DPIConfig
+	factory x6.DPIConfig
 	err     error
 }
 
 func (f appliedStoreFake) LoadApplied() (x6.DPIConfig, error) { return f.applied, f.err }
-func (appliedStoreFake) SaveApplied(x6.DPIConfig) error       { return nil }
+func (f appliedStoreFake) LoadFactory() (x6.DPIConfig, error) {
+	if f.factory == (x6.DPIConfig{}) {
+		return x6.DefaultDPIConfig(), f.err
+	}
+	return f.factory, nil
+}
+func (appliedStoreFake) SaveApplied(x6.DPIConfig) error { return nil }
+
+func TestSnapshotExposesFactoryDefaultsForReset(t *testing.T) {
+	factory := x6.DefaultDPIConfig()
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{})
+	got := service.GetSnapshot()
+	if got.Factory != ToDTO(factory) {
+		t.Fatalf("GetSnapshot().Factory = %#v; want %#v", got.Factory, ToDTO(factory))
+	}
+}
 
 func TestServiceStagesWithoutWritingAndAppliesOnlyOnAcknowledgedSuccess(t *testing.T) {
 	applied := x6.DefaultDPIConfig()
