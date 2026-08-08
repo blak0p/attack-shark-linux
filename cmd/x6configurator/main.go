@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
@@ -16,6 +17,12 @@ import (
 //go:embed frontend/dist
 var assets embed.FS
 
+// wailsEventSink bridges the desktop service to the Wails event manager so the
+// frontend can subscribe to live status updates.
+type wailsEventSink struct{ app *application.App }
+
+func (s wailsEventSink) Emit(name string, payload any) { s.app.Event.Emit(name, payload) }
+
 func main() {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
@@ -24,10 +31,12 @@ func main() {
 
 	backend := hidlinux.NewGousbBackend()
 	adapter := hidlinux.NewGousbAdapter(backend)
-	service := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), adapter)
+	service, passive := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), adapter)
+	listenCtx, stopListening := context.WithCancel(context.Background())
 	app := application.New(application.Options{
 		Name: "Attack Shark X6 Configurator",
 		OnShutdown: func() {
+			stopListening()
 			if err := backend.Close(); err != nil {
 				log.Printf("close USB context: %v", err)
 			}
@@ -39,6 +48,9 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 	})
+
+	service.AttachListener(passive, wailsEventSink{app: app})
+	service.StartListener(listenCtx)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Attack Shark X6 Configurator",
@@ -54,14 +66,19 @@ func main() {
 }
 
 func newDesktopService(dataDir string) *desktop.Service {
-	return composeDesktopService(dataDir, hidlinux.NewStatusAdapter(nil, nil, nil))
+	service, _ := composeDesktopService(dataDir, nil)
+	return service
 }
 
-func composeDesktopService(dataDir string, adapter *hidlinux.Adapter) *desktop.Service {
+// composeDesktopService wires the always-on status listener through HidrawBackend
+// (kernel-backed /dev/hidraw, zero USB claims, no mouse-lock) and leaves the
+// explicit DPI Apply on the gousb adapter, which owns the only remaining claim.
+func composeDesktopService(dataDir string, command *hidlinux.Adapter) (*desktop.Service, *x6.Service) {
 	store := configstore.New(
 		filepath.Join(dataDir, "applied-dpi.json"),
 		filepath.Join(dataDir, "factory-defaults.json"),
 	)
-	status, writer := x6.NewDesktopServices(adapter)
-	return desktop.Compose(status, writer, store)
+	status := x6.NewService(hidlinux.NewHidrawBackend())
+	writer := x6.NewCommandService(command)
+	return desktop.Compose(status, writer, store), status
 }

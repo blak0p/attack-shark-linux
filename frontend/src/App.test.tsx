@@ -29,6 +29,7 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
   ApplyDPI: vi.fn().mockResolvedValue(initial),
+  OnStatusEvent: vi.fn().mockReturnValue(() => {}),
   ...overrides,
 });
 
@@ -167,6 +168,43 @@ describe("App", () => {
 
     expect(await screen.findByRole("slider", { name: "Stage 1 DPI" })).toHaveValue("1600");
     expect(screen.getByRole("button", { name: /Save to Device/ })).toBeEnabled();
+  });
+
+  it("subscribes to status events on mount and applies heartbeats and stage presses", async () => {
+    const listeners: Array<(event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }) => void> = [];
+    const service = serviceFor(snapshot({ Battery: undefined }), {
+      OnStatusEvent: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => { }; }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device available")).toBeInTheDocument();
+    expect(screen.getByText("Battery unavailable")).toBeInTheDocument();
+
+    listeners[0]({ Connection: "dongle", Battery: 90 });
+    expect(await screen.findByText("Battery 90%")).toBeInTheDocument();
+
+    listeners[0]({ ActiveStage: 2 });
+    expect(await screen.findByRole("button", { name: "Stage 2, active" })).toHaveAttribute("aria-pressed", "true");
+
+    listeners[0]({ Connection: "", Battery: null });
+    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+  });
+
+  it("keeps its subscription active across status events without re-mounting", async () => {
+    const listeners: Array<(event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }) => void> = [];
+    const service = serviceFor(snapshot(), {
+      OnStatusEvent: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => { }; }),
+    });
+    const { unmount } = render(<App service={service} />);
+
+    await screen.findByText("Device available");
+    expect(service.OnStatusEvent).toHaveBeenCalledTimes(1);
+
+    listeners[0]({ Battery: 55 });
+    expect(await screen.findByText("Battery 55%")).toBeInTheDocument();
+
+    unmount();
+    expect(listeners.length).toBe(1);
   });
 
   it("exposes only implemented controls and no deferred configuration", async () => {

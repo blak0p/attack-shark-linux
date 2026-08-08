@@ -60,3 +60,29 @@ func DecodeBatteryStatus(report []byte) (int, bool) {
 	}
 	return int(report[4]) * 10, true
 }
+
+// StatusReport is the dongle-pushed status event decoded from an interrupt
+// 0x83 report. Exactly one field is reported per event: a heartbeat carries the
+// battery, and a physical DPI button press carries the new active stage.
+type StatusReport struct {
+	Battery          int
+	BatteryAvailable bool
+	ActiveStage      byte
+	StageAvailable   bool
+}
+
+// DecodeStatusReport decodes a dongle status report (report ID 0x03). It
+// returns false for anything else, including the 0x50 configuration ACK.
+func DecodeStatusReport(report []byte) (StatusReport, bool) {
+	if len(report) != 5 || report[0] != 0x03 || report[1] != 0x10 {
+		return StatusReport{}, false
+	}
+	switch report[2] {
+	case 0x40:
+		return StatusReport{Battery: int(report[4]) * 10, BatteryAvailable: true}, true
+	case 0x10:
+		return StatusReport{ActiveStage: report[3], StageAvailable: true}, true
+	default:
+		return StatusReport{}, false
+	}
+}

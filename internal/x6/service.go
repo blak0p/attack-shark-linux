@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
 	"github.com/alejandro/attack-shark-linux/internal/transport"
@@ -38,20 +39,31 @@ type Status struct {
 	BatteryPercent   int
 	BatteryAvailable bool
 }
+
+// StatusEvent is one dongle-pushed status report delivered by Listen. Exactly
+// one field is meaningful per event: a heartbeat carries Battery, and a
+// physical DPI button press carries ActiveStage.
+type StatusEvent struct {
+	Connection       Connection
+	BatteryPercent   int
+	BatteryAvailable bool
+	ActiveStage      byte
+	StageAvailable   bool
+}
 type Service struct {
 	transport PassiveInputTransport
 	command   CommandTransport
 	commandMu sync.Mutex
 }
 
-func NewService(transport PassiveInputTransport) Service  { return Service{transport: transport} }
+func NewService(transport PassiveInputTransport) *Service { return &Service{transport: transport} }
 func NewCommandService(command CommandTransport) *Service { return &Service{command: command} }
 
 // NewDesktopServices keeps passive status and explicit command operations on one adapter.
 func NewDesktopServices(adapter interface {
 	PassiveInputTransport
 	CommandTransport
-}) (Service, *Service) {
+}) (*Service, *Service) {
 	return NewService(adapter), NewCommandService(adapter)
 }
 
@@ -86,7 +98,7 @@ func (s *Service) applyDPI(ctx context.Context, config DPIConfig, store AppliedD
 	}
 	return nil
 }
-func (s Service) Status(ctx context.Context) (Status, error) {
+func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.transport == nil {
 		return Status{}, &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
 	}
@@ -122,4 +134,81 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 		return Status{}, &ServiceError{ReadFailure, readErr}
 	}
 	return Status{}, &ServiceError{NoUsableDevice, errors.New("no validated passive input path")}
+}
+
+// listenRetryDelay bounds the retry cadence when no device answers. The dongle
+// pushes its heartbeat every ~2.1 s, so 500 ms is short enough to react the
+// moment a device appears without spinning on an absent dongle.
+const listenRetryDelay = 500 * time.Millisecond
+
+// Listen runs until ctx is cancelled. It keeps an interrupt 0x83 read armed on
+// the validated device and forwards every dongle-pushed status report through
+// onStatus: heartbeats (battery) and physical DPI button events (active stage).
+// The callback never stops the read, so a bounded timeout mid-idle is treated
+// as "keep listening" and only a missing/unusable device backs off before
+// re-enumerating.
+func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error {
+	if s.transport == nil {
+		return &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		candidates, err := s.transport.Enumerate(ctx, transport.X6Match())
+		if err != nil {
+			if !waitOrDone(ctx, listenRetryDelay) {
+				return nil
+			}
+			continue
+		}
+		listened := false
+		for _, connection := range []Connection{Dongle, Wired} {
+			for _, candidate := range candidates {
+				if candidate.Connection != connection {
+					continue
+				}
+				source, err := s.transport.ValidateDescriptor(ctx, candidate, InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83})
+				if err != nil {
+					continue
+				}
+				listened = true
+				err = s.transport.ReadInterruptIN(ctx, source, func(report []byte) bool {
+					decoded, ok := protocol.DecodeStatusReport(report)
+					if ok {
+						onStatus(StatusEvent{
+							Connection:       connection,
+							BatteryPercent:   decoded.Battery,
+							BatteryAvailable: decoded.BatteryAvailable,
+							ActiveStage:      decoded.ActiveStage,
+							StageAvailable:   decoded.StageAvailable,
+						})
+					}
+					return true
+				})
+				if err != nil {
+					if !waitOrDone(ctx, listenRetryDelay) {
+						return nil
+					}
+					break
+				}
+			}
+		}
+		if !listened && !waitOrDone(ctx, listenRetryDelay) {
+			return nil
+		}
+	}
+}
+
+// waitOrDone sleeps for the given delay unless ctx is cancelled first. It
+// returns false when ctx was cancelled, which signals the caller to stop.
+func waitOrDone(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }

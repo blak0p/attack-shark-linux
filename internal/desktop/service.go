@@ -48,14 +48,39 @@ type AppliedStore interface {
 	LoadApplied() (x6.DPIConfig, error)
 	LoadFactory() (x6.DPIConfig, error)
 }
+
+// StatusListener runs the always-on status listener until its context is
+// cancelled, forwarding every dongle-pushed report through onStatus.
+type StatusListener interface {
+	Listen(context.Context, func(x6.StatusEvent)) error
+}
+
+// EventSink pushes live status updates to the frontend. The desktop service
+// never imports Wails: the application wiring supplies the real emitter.
+type EventSink interface {
+	Emit(event string, payload any)
+}
+
+// StatusEvent is the payload forwarded through EventSink. Fields are nil unless
+// the dongle report carried them.
+type StatusEvent struct {
+	Connection  string
+	Battery     *int
+	ActiveStage *int
+}
+
 type Service struct {
 	status           StatusReader
 	writer           DPIWriter
 	store            AppliedStore
+	listener         StatusListener
+	events           EventSink
 	mu               sync.Mutex
 	applyMu          sync.Mutex
 	applied, pending x6.DPIConfig
 	factory          x6.DPIConfig
+	connection       x6.Connection
+	battery          *int
 	revision         uint64
 }
 
@@ -73,6 +98,51 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
 }
+
+// AttachListener wires the always-on status listener and the frontend event
+// sink. It does not start listening; call StartListener with a context.
+func (s *Service) AttachListener(listener StatusListener, events EventSink) *Service {
+	s.listener = listener
+	s.events = events
+	return s
+}
+
+// StartListener runs the status listener until ctx is cancelled, forwarding
+// every dongle-pushed status report into the service state and the frontend.
+// It is a no-op when no listener has been attached.
+func (s *Service) StartListener(ctx context.Context) {
+	if s.listener == nil {
+		return
+	}
+	go func() {
+		_ = s.listener.Listen(ctx, s.handleStatusEvent)
+	}()
+}
+
+// handleStatusEvent folds one dongle-pushed report into the shared state and
+// emits the delta to the frontend. The listener callback is serialized by
+// Listen, so only the state lock is needed here.
+func (s *Service) handleStatusEvent(event x6.StatusEvent) {
+	s.mu.Lock()
+	s.connection = event.Connection
+	var battery, stage *int
+	if event.BatteryAvailable {
+		value := event.BatteryPercent
+		s.battery = &value
+		battery = &value
+	}
+	if event.StageAvailable {
+		value := int(event.ActiveStage)
+		s.applied.ActiveStage = event.ActiveStage
+		s.pending.ActiveStage = event.ActiveStage
+		s.revision++
+		stage = &value
+	}
+	s.mu.Unlock()
+	if s.events != nil {
+		s.events.Emit("x6:status", StatusEvent{Connection: string(event.Connection), Battery: battery, ActiveStage: stage})
+	}
+}
 func (s *Service) GetSnapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -85,13 +155,12 @@ func (s *Service) RefreshStatus(ctx context.Context) Snapshot {
 	if err != nil {
 		return s.snapshot(Error{Code: errorCode(err, true)})
 	}
-	snapshot := s.snapshot(Error{})
-	snapshot.Connection = string(status.Connection)
+	s.connection = status.Connection
 	if status.BatteryAvailable {
 		battery := status.BatteryPercent
-		snapshot.Battery = &battery
+		s.battery = &battery
 	}
-	return snapshot
+	return s.snapshot(Error{})
 }
 func (s *Service) StageDPI(config DPIConfig) Snapshot {
 	s.mu.Lock()
@@ -121,7 +190,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 	return s.snapshot(Error{})
 }
 func (s *Service) snapshot(err Error) Snapshot {
-	return Snapshot{Applied: ToDTO(s.applied), Pending: ToDTO(s.pending), Factory: ToDTO(s.factory), Revision: s.revision, Error: err}
+	return Snapshot{Connection: string(s.connection), Battery: s.battery, Applied: ToDTO(s.applied), Pending: ToDTO(s.pending), Factory: ToDTO(s.factory), Revision: s.revision, Error: err}
 }
 func ToDTO(config x6.DPIConfig) DPIConfig {
 	return DPIConfig{config.AngleControl, config.RippleControl, config.StageMask, config.LiftDistance, config.DPI, config.ActiveStage, config.Colors}

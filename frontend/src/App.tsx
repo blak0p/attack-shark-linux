@@ -2,7 +2,8 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
 export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string } };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; StageDPI(config: DPIConfig): Promise<Snapshot>; ApplyDPI(): Promise<Snapshot> };
+export type StatusEvent = { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
+export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; StageDPI(config: DPIConfig): Promise<Snapshot>; ApplyDPI(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void };
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -16,6 +17,12 @@ export function App({ service }: { service: DesktopService }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [notice, setNotice] = useState("");
   useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
+  useEffect(() => {
+    const unsubscribe = service.OnStatusEvent((event) => {
+      setSnapshot((current) => (current ? applyStatusEvent(current, event) : current));
+    });
+    return unsubscribe;
+  }, [service]);
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
   const connected = snapshot.Connection !== "";
@@ -121,4 +128,18 @@ export function App({ service }: { service: DesktopService }) {
       </main>
     </div>
   );
+}
+
+// applyStatusEvent merges one dongle-pushed status delta into the snapshot.
+// Battery heartbeats and DPI stage button presses arrive as separate events,
+// so only the fields the report carried are written over the current state.
+function applyStatusEvent(current: Snapshot, event: StatusEvent): Snapshot {
+  const next: Snapshot = { ...current, Applied: { ...current.Applied }, Pending: { ...current.Pending } };
+  if (event.Connection !== undefined) next.Connection = event.Connection;
+  if (event.Battery != null) next.Battery = event.Battery;
+  if (event.ActiveStage != null) {
+    next.Applied.ActiveStage = event.ActiveStage;
+    next.Pending.ActiveStage = event.ActiveStage;
+  }
+  return next;
 }
