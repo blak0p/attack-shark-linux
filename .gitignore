@@ -4,3 +4,8 @@
 /.codegraph/
 # Local AI runtime state
 .atl/
+# Generated frontend bundle embedded by the Wails composition root.
+/cmd/x6configurator/frontend/dist/*
+!/cmd/x6configurator/frontend/dist/.gitkeep
+/bin/
+/frontend/node_modules/

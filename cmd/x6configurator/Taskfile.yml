@@ -1,0 +1,14 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the Wails desktop application without re-entering Wails.
+    deps: [build:frontend]
+    cmds:
+      - go build -o ../../bin/attack-shark-linux .
+
+  build:frontend:
+    desc: Build the embedded frontend assets.
+    dir: ../../frontend
+    cmds:
+      - npm run build

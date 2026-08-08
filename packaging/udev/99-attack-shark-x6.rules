@@ -1,0 +1,5 @@
+# Attack Shark X6 USB dongle access policy (VID:PID 1d57:fa60).
+# TAG+="uaccess" grants the active local-seat user access; MODE="0660" keeps
+# the device non-world-writable. Do not run the app as root or change this to 0666.
+# Install in /etc/udev/rules.d/, reload udev rules, trigger, then replug the dongle.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa60", TAG+="uaccess", MODE="0660"
