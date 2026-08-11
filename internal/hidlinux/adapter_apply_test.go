@@ -60,6 +60,72 @@ func TestAdapterSendAndAwaitRevalidatesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestAdapterSendAndAwaitDiscoversEmptyCacheBeforeWriting(t *testing.T) {
+	claim := &applyClaim{reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}}}
+	usb := &applyUSB{claim: claim}
+	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate()}}
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+
+	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func(report []byte) bool {
+		return !protocol.MatchesDPIACK(report)
+	})
+	if err != nil {
+		t.Fatalf("SendAndAwait() error = %v", err)
+	}
+	if discovery.calls != 1 {
+		t.Fatalf("discovery calls = %d, want 1", discovery.calls)
+	}
+	if usb.opens != 1 || claim.controlTransfers != 1 {
+		t.Fatalf("USB opens/control transfers = %d/%d, want 1/1", usb.opens, claim.controlTransfers)
+	}
+}
+
+func TestAdapterSendAndAwaitReturnsDiscoveryFailureBeforeTransfer(t *testing.T) {
+	wantErr := errors.New("discovery failed")
+	claim := &applyClaim{}
+	usb := &applyUSB{claim: claim}
+	discovery := &fakeDiscovery{err: wantErr}
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+
+	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
+	if !IsErrorKind(err, IO) || !errors.Is(err, wantErr) {
+		t.Fatalf("SendAndAwait() error = %v, want I/O wrapping %v", err, wantErr)
+	}
+	if usb.opens != 0 || claim.controlTransfers != 0 {
+		t.Fatalf("USB opens/control transfers = %d/%d, want 0/0", usb.opens, claim.controlTransfers)
+	}
+}
+
+func TestAdapterSendAndAwaitPreservesDiagnosticOperation(t *testing.T) {
+	claim := &applyClaim{readErr: context.DeadlineExceeded}
+	adapter := applyAdapter(claim)
+
+	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return true })
+	if got, want := DiagnosticOperation(err), "ack_failure"; got != want {
+		t.Fatalf("DiagnosticOperation() = %q, want %q", got, want)
+	}
+	if !IsErrorKind(err, Timeout) {
+		t.Fatalf("SendAndAwait() error = %v, want timeout classification", err)
+	}
+}
+
+func TestAdapterSendAndAwaitRejectsMultipleDiscoveredCandidatesBeforeTransfer(t *testing.T) {
+	second := validCandidate()
+	second.PortPath = "1-3"
+	claim := &applyClaim{}
+	usb := &applyUSB{claim: claim}
+	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate(), second}}
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+
+	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
+	if !IsErrorKind(err, Mismatch) {
+		t.Fatalf("SendAndAwait() error = %v, want typed mismatch", err)
+	}
+	if usb.opens != 0 || claim.controlTransfers != 0 {
+		t.Fatalf("USB opens/control transfers = %d/%d, want 0/0", usb.opens, claim.controlTransfers)
+	}
+}
+
 func TestAdapterSendAndAwaitMapsWaitErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -112,9 +178,13 @@ func TestAdapterSendAndAwaitDoesNotOverlapStatusRead(t *testing.T) {
 	}
 }
 
-type applyUSB struct{ claim *applyClaim }
+type applyUSB struct {
+	claim *applyClaim
+	opens int
+}
 
 func (f *applyUSB) Open(context.Context, Candidate) (Device, error) {
+	f.opens++
 	return &fakeDevice{configuration: &fakeConfiguration{claim: f.claim, cleanup: f.claim.cleanup}, cleanup: f.claim.cleanup}, nil
 }
 
@@ -126,11 +196,13 @@ type applyClaim struct {
 	writeEntered, writeRelease chan struct{}
 	mu                         sync.Mutex
 	reads                      int
+	controlTransfers           int
 	requestType, request       uint8
 	value, index               uint16
 }
 
 func (f *applyClaim) ControlTransfer(_ context.Context, requestType, request uint8, value, index uint16, report []byte) (int, error) {
+	f.controlTransfers++
 	f.requestType, f.request, f.value, f.index = requestType, request, value, index
 	f.written = append([]byte(nil), report...)
 	if f.writeEntered != nil {
@@ -167,6 +239,17 @@ func applyAdapter(claim *applyClaim) *Adapter {
 	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: x6ReportDescriptor})
 	adapter.sources[candidateKey(candidate)] = candidate
 	return adapter
+}
+
+type fakeDiscovery struct {
+	candidates []Candidate
+	err        error
+	calls      int
+}
+
+func (f *fakeDiscovery) Enumerate(context.Context) ([]Candidate, error) {
+	f.calls++
+	return f.candidates, f.err
 }
 
 func transportSource(candidate Candidate) transport.InputSource {

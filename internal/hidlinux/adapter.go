@@ -53,6 +53,22 @@ type Error struct {
 	Err  error
 }
 
+type diagnosticError struct {
+	operation string
+	err       error
+}
+
+func (e *diagnosticError) Error() string { return e.err.Error() }
+func (e *diagnosticError) Unwrap() error { return e.err }
+
+func DiagnosticOperation(err error) string {
+	var diagnostic *diagnosticError
+	if errors.As(err, &diagnostic) {
+		return diagnostic.operation
+	}
+	return ""
+}
+
 func (e *Error) Error() string { return fmt.Sprintf("X6 HID %s: %v", e.Kind, e.Err) }
 func (e *Error) Unwrap() error { return e.Err }
 func (e *Error) Is(target error) bool {
@@ -192,6 +208,11 @@ func (a *Adapter) WithValidatedCandidate(ctx context.Context, candidate Candidat
 func (a *Adapter) Enumerate(ctx context.Context, match transport.Match) ([]transport.Candidate, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.enumerateLocked(ctx, match)
+}
+
+// enumerateLocked refreshes the candidate cache while the adapter mutex is held.
+func (a *Adapter) enumerateLocked(ctx context.Context, match transport.Match) ([]transport.Candidate, error) {
 	if a.discovery == nil {
 		return nil, &Error{Kind: NotFound, Err: errors.New("USB discovery is unavailable")}
 	}
@@ -260,21 +281,29 @@ func (a *Adapter) SendAndAwait(ctx context.Context, payload []byte, continueRead
 	if len(payload) != dpiReportLength {
 		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI SET_REPORT length = %d, want %d", len(payload), dpiReportLength)}
 	}
+	if len(a.sources) == 0 {
+		if _, err := a.enumerateLocked(ctx, transport.X6Match()); err != nil {
+			return &diagnosticError{operation: "discovery", err: err}
+		}
+	}
 	candidate, err := a.commandCandidate()
 	if err != nil {
-		return err
+		return &diagnosticError{operation: "discovery", err: err}
 	}
 	bounded, cancel := context.WithTimeout(ctx, statusReadDeadline)
 	defer cancel()
 	return a.withValidatedCandidate(bounded, candidate, func(claim Claim) error {
 		count, err := claim.ControlTransfer(bounded, setReportRequestType, setReportRequest, dpiReportValue, hidInterface, payload)
 		if err != nil {
-			return err
+			return &diagnosticError{operation: "transfer", err: err}
 		}
 		if count != len(payload) {
-			return fmt.Errorf("DPI SET_REPORT wrote %d bytes, want %d", count, len(payload))
+			return &diagnosticError{operation: "transfer", err: fmt.Errorf("DPI SET_REPORT wrote %d bytes, want %d", count, len(payload))}
 		}
-		return claim.ReadInterruptIN(bounded, statusEndpoint, continueReading)
+		if err := claim.ReadInterruptIN(bounded, statusEndpoint, continueReading); err != nil {
+			return &diagnosticError{operation: "ack_failure", err: err}
+		}
+		return nil
 	})
 }
 
@@ -293,21 +322,21 @@ func (a *Adapter) commandCandidate() (Candidate, error) {
 
 func (a *Adapter) withValidatedCandidate(ctx context.Context, candidate Candidate, use func(Claim) error) error {
 	if err := a.validateCandidate(ctx, candidate); err != nil {
-		return err
+		return &diagnosticError{operation: "discovery", err: err}
 	}
 	device, err := a.usb.Open(ctx, candidate)
 	if err != nil {
-		return classify(err)
+		return &diagnosticError{operation: "usb_claim_open", err: classify(err)}
 	}
 	defer device.Close()
 	configuration, err := device.OpenConfiguration(ctx)
 	if err != nil {
-		return classify(err)
+		return &diagnosticError{operation: "usb_claim_open", err: classify(err)}
 	}
 	defer configuration.Close()
 	claim, err := configuration.Claim(ctx, 2, 0)
 	if err != nil {
-		return classify(err)
+		return &diagnosticError{operation: "usb_claim_open", err: classify(err)}
 	}
 	defer claim.Close()
 	return classify(use(claim))

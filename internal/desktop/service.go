@@ -3,9 +3,11 @@ package desktop
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"sync"
 
+	"github.com/alejandro/attack-shark-linux/internal/hidlinux"
 	"github.com/alejandro/attack-shark-linux/internal/x6"
 )
 
@@ -180,6 +182,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 	pending := s.pending
 	s.mu.Unlock()
 	if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
+		slog.Error("apply DPI failed", "error", err, "classification", applyErrorClassification(err))
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		return s.snapshot(Error{Code: errorCode(err, false)})
@@ -212,4 +215,17 @@ func errorCode(err error, status bool) ErrorCode {
 		return DeviceUnavailable
 	}
 	return ApplyFailed
+}
+
+func applyErrorClassification(err error) string {
+	if hidlinux.IsErrorKind(err, hidlinux.Timeout) || errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if operation := hidlinux.DiagnosticOperation(err); operation != "" {
+		return operation
+	}
+	if x6.IsErrorKind(err, x6.AckFailure) {
+		return "ack_failure"
+	}
+	return "unknown"
 }

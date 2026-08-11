@@ -78,12 +78,21 @@ func hidrawFeatureReportRequest(length int) int {
 // from the matching /dev/hidraw node. sysRoot and devRoot are injectable so
 // tests run against fixture trees instead of the live system.
 type HidrawBackend struct {
-	mu          sync.Mutex
-	sources     map[string]Candidate
-	sysRoot     string
-	devRoot     string
-	readTimeout time.Duration
-	opener      hidrawNodeOpener
+	mu             sync.Mutex
+	sources        map[string]Candidate
+	sysRoot        string
+	devRoot        string
+	readTimeout    time.Duration
+	opener         hidrawNodeOpener
+	ioOnce         sync.Once
+	ioMu           sync.Mutex
+	ioBusy         bool
+	commandPending bool
+	ioWake         chan struct{}
+	activeNode     hidrawNode
+	activePath     string
+	listener       func([]byte) bool
+	listenerActive bool
 }
 
 func NewHidrawBackend() *HidrawBackend {
@@ -178,20 +187,251 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 	if err != nil {
 		return classify(err)
 	}
-	defer node.Close()
+	b.mu.Lock()
+	b.activeNode = node
+	b.activePath = source.Path
+	b.listener = use
+	b.listenerActive = true
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		sameNode := b.activeNode == node
+		if sameNode {
+			b.listener = nil
+			b.listenerActive = false
+		}
+		b.mu.Unlock()
+		if !sameNode || !b.isCommandPending() {
+			b.mu.Lock()
+			closeNode := b.activeNode == node && !b.listenerActive
+			if closeNode {
+				b.activeNode = nil
+				b.activePath = ""
+			}
+			b.mu.Unlock()
+			if closeNode {
+				_ = node.Close()
+			}
+		} else {
+			// Apply owns the shared node and will close it after this listener exits.
+			return
+		}
+		if !sameNode {
+			_ = node.Close()
+		}
+	}()
 
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
 	defer cancel()
 	buffer := make([]byte, 64)
 	for {
+		release, acquireErr := b.acquireIO(bounded, false)
+		if acquireErr != nil {
+			return acquireErr
+		}
 		count, readErr := b.readNode(bounded, node, buffer)
 		if readErr != nil {
+			release()
 			return readErr
 		}
+		if count == 0 {
+			release()
+			continue
+		}
 		if !use(buffer[:count]) {
+			release()
+			return nil
+		}
+		release()
+	}
+}
+
+// SendAndAwait implements transport.CommandTransport entirely through the
+// validated vendor hidraw node. Command ownership is granted before feature
+// write and ACK read; the listener cannot start another read until ownership is
+// released. Reports consumed while Apply owns the node are synchronously sent
+// to the listener callback, so status events are not silently discarded.
+func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, continueReading func([]byte) bool) error {
+	if len(payload) != dpiReportLength {
+		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI feature report length = %d, want %d", len(payload), dpiReportLength)}
+	}
+	if err := ctx.Err(); err != nil {
+		return classify(err)
+	}
+	if _, err := b.Enumerate(ctx, transport.X6Match()); err != nil {
+		return &diagnosticError{operation: "discovery", err: err}
+	}
+	candidate, err := b.commandCandidate()
+	if err != nil {
+		return &diagnosticError{operation: "discovery", err: err}
+	}
+	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: candidateKey(candidate)}, transport.InputDescriptor{
+		InterfaceNumber: hidInterface,
+		UsagePage:       1,
+		Usage:           0x80,
+		EndpointAddress: statusEndpoint,
+	}); err != nil {
+		return &diagnosticError{operation: "discovery", err: err}
+	}
+	path, err := b.hidrawPath(candidate)
+	if err != nil {
+		return &diagnosticError{operation: "discovery", err: err}
+	}
+
+	release, err := b.beginCommand(ctx)
+	if err != nil {
+		return &diagnosticError{operation: "ack_failure", err: err}
+	}
+	defer release()
+
+	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
+	defer cancel()
+	node := b.commandNode(candidateKey(candidate))
+	if node == nil {
+		node, err = b.opener.OpenNode(path)
+		if err != nil {
+			return &diagnosticError{operation: "transfer", err: classify(err)}
+		}
+		defer node.Close()
+	}
+
+	count, err := node.SendFeatureReport(payload)
+	if err != nil {
+		return &diagnosticError{operation: "transfer", err: classify(err)}
+	}
+	if count != len(payload) {
+		return &diagnosticError{operation: "transfer", err: fmt.Errorf("DPI feature report wrote %d bytes, want %d", count, len(payload))}
+	}
+
+	buffer := make([]byte, 64)
+	for {
+		count, err := b.readNode(bounded, node, buffer)
+		if err != nil {
+			return &diagnosticError{operation: "ack_failure", err: err}
+		}
+		report := append([]byte(nil), buffer[:count]...)
+		b.dispatchListenerReport(candidateKey(candidate), report)
+		if !continueReading(report) {
 			return nil
 		}
 	}
+}
+
+func (b *HidrawBackend) commandCandidate() (Candidate, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.sources) == 0 {
+		return Candidate{}, &Error{Kind: NotFound, Err: errors.New("no validated X6 device is available for DPI Apply")}
+	}
+	if len(b.sources) != 1 {
+		return Candidate{}, &Error{Kind: Mismatch, Err: errors.New("multiple validated X6 devices are available for DPI Apply")}
+	}
+	for _, candidate := range b.sources {
+		return candidate, nil
+	}
+	panic("unreachable")
+}
+
+func (b *HidrawBackend) commandNode(path string) hidrawNode {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.activePath == path && b.activeNode != nil {
+		return b.activeNode
+	}
+	return nil
+}
+
+func (b *HidrawBackend) dispatchListenerReport(path string, report []byte) {
+	b.mu.Lock()
+	listener := b.listener
+	activePath := b.activePath
+	b.mu.Unlock()
+	if listener != nil && activePath == path {
+		listener(report)
+	}
+}
+
+func (b *HidrawBackend) initIO() {
+	b.ioOnce.Do(func() { b.ioWake = make(chan struct{}) })
+}
+
+// acquireIO grants one serialized hidraw I/O turn. Command priority is set by
+// beginCommand before waiting, preventing the listener from consuming the ACK
+// between the feature write and the command's read.
+func (b *HidrawBackend) acquireIO(ctx context.Context, command bool) (func(), error) {
+	b.initIO()
+	for {
+		b.ioMu.Lock()
+		if !b.ioBusy && (command || !b.commandPending) {
+			b.ioBusy = true
+			b.ioMu.Unlock()
+			return func() { b.releaseIO() }, nil
+		}
+		wake := b.ioWake
+		b.ioMu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return nil, classify(ctx.Err())
+		case <-wake:
+		}
+	}
+}
+
+func (b *HidrawBackend) releaseIO() {
+	b.initIO()
+	b.ioMu.Lock()
+	b.ioBusy = false
+	close(b.ioWake)
+	b.ioWake = make(chan struct{})
+	b.ioMu.Unlock()
+}
+
+func (b *HidrawBackend) beginCommand(ctx context.Context) (func(), error) {
+	b.initIO()
+	b.ioMu.Lock()
+	b.commandPending = true
+	close(b.ioWake)
+	b.ioWake = make(chan struct{})
+	b.ioMu.Unlock()
+
+	release, err := b.acquireIO(ctx, true)
+	if err != nil {
+		b.finishCommand()
+		return nil, err
+	}
+	return func() {
+		release()
+		b.finishCommand()
+	}, nil
+}
+
+func (b *HidrawBackend) finishCommand() {
+	b.initIO()
+	b.ioMu.Lock()
+	b.commandPending = false
+	close(b.ioWake)
+	b.ioWake = make(chan struct{})
+	b.ioMu.Unlock()
+
+	b.mu.Lock()
+	var closeNode hidrawNode
+	if !b.listenerActive && b.activeNode != nil {
+		closeNode = b.activeNode
+		b.activeNode = nil
+		b.activePath = ""
+	}
+	b.mu.Unlock()
+	if closeNode != nil {
+		_ = closeNode.Close()
+	}
+}
+
+func (b *HidrawBackend) isCommandPending() bool {
+	b.initIO()
+	b.ioMu.Lock()
+	defer b.ioMu.Unlock()
+	return b.commandPending
 }
 
 type nodeRead struct {

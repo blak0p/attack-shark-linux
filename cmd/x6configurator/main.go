@@ -29,17 +29,13 @@ func main() {
 		log.Fatalf("locate user configuration directory: %v", err)
 	}
 
-	backend := hidlinux.NewGousbBackend()
-	adapter := hidlinux.NewGousbAdapter(backend)
-	service, passive := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), adapter)
+	backend := hidlinux.NewHidrawBackend()
+	service, passive := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), backend)
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	app := application.New(application.Options{
 		Name: "Attack Shark X6 Configurator",
 		OnShutdown: func() {
 			stopListening()
-			if err := backend.Close(); err != nil {
-				log.Printf("close USB context: %v", err)
-			}
 		},
 		Services: []application.Service{
 			application.NewService(service),
@@ -70,15 +66,18 @@ func newDesktopService(dataDir string) *desktop.Service {
 	return service
 }
 
-// composeDesktopService wires the always-on status listener through HidrawBackend
-// (kernel-backed /dev/hidraw, zero USB claims, no mouse-lock) and leaves the
-// explicit DPI Apply on the gousb adapter, which owns the only remaining claim.
-func composeDesktopService(dataDir string, command *hidlinux.Adapter) (*desktop.Service, *x6.Service) {
+// composeDesktopService shares one HidrawBackend between status and Apply.
+// Both operations use the validated vendor hidraw node; no USB interface is
+// claimed, detached, reset, rebound, or otherwise taken from the kernel.
+func composeDesktopService(dataDir string, backend *hidlinux.HidrawBackend) (*desktop.Service, *x6.Service) {
 	store := configstore.New(
 		filepath.Join(dataDir, "applied-dpi.json"),
 		filepath.Join(dataDir, "factory-defaults.json"),
 	)
-	status := x6.NewService(hidlinux.NewHidrawBackend())
-	writer := x6.NewCommandService(command)
+	if backend == nil {
+		backend = hidlinux.NewHidrawBackend()
+	}
+	status := x6.NewService(backend)
+	writer := x6.NewCommandService(backend)
 	return desktop.Compose(status, writer, store), status
 }

@@ -63,7 +63,7 @@ func TestAdapterMapsDiscoveryAndOperationErrors(t *testing.T) {
 		{name: "timeout", err: context.DeadlineExceeded, kind: Timeout},
 		{name: "cancelled", err: context.Canceled, kind: Cancelled},
 		{name: "disconnect", err: ErrDeviceDisconnected, kind: Disconnected},
-		{name: "io", err: errors.New("libusb failed"), kind: IO},
+		{name: "io", err: errors.New("transport failed"), kind: IO},
 	}
 
 	for _, tt := range tests {
