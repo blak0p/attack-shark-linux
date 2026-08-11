@@ -23,6 +23,13 @@ func TestGenericContractsRepresentPassiveAndCommandTransport(t *testing.T) {
 	}
 }
 
+func TestCandidateCarriesStableSerialAlongsideTransientPath(t *testing.T) {
+	candidate := Candidate{Path: "/dev/hidraw0", VendorID: 0x1D57, ProductID: 0xFA60, Serial: "X6-001"}
+	if candidate.Serial != "X6-001" {
+		t.Fatalf("Candidate.Serial = %q, want stable device serial", candidate.Serial)
+	}
+}
+
 type passiveTransportStub struct{}
 
 func (passiveTransportStub) Enumerate(context.Context, Match) ([]Candidate, error) { return nil, nil }

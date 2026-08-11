@@ -13,7 +13,7 @@ const (
 )
 
 type Candidate struct {
-	Path                                  string
+	Path, Serial                          string
 	VendorID, ProductID, UsagePage, Usage uint16
 	InterfaceNumber                       int
 	Connection                            Connection
