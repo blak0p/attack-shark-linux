@@ -107,6 +107,7 @@ func classify(err error) error {
 type Candidate struct {
 	VendorID   uint16
 	ProductID  uint16
+	Serial     string
 	Bus        uint8
 	PortPath   string
 	Interfaces []InterfaceDescriptor

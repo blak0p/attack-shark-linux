@@ -19,6 +19,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/alejandro/attack-shark-linux/internal/mouse"
 	"github.com/alejandro/attack-shark-linux/internal/transport"
 )
 
@@ -80,6 +81,7 @@ func hidrawFeatureReportRequest(length int) int {
 type HidrawBackend struct {
 	mu             sync.Mutex
 	sources        map[string]Candidate
+	sourceIndexes  map[string]int
 	sysRoot        string
 	devRoot        string
 	readTimeout    time.Duration
@@ -117,31 +119,81 @@ func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([
 
 	b.mu.Lock()
 	b.sources = make(map[string]Candidate)
+	b.sourceIndexes = make(map[string]int)
 	b.mu.Unlock()
 
 	result := make([]transport.Candidate, 0, len(dirs))
+	candidateIndex := 0
 	for _, dir := range dirs {
 		name := filepath.Base(dir)
 		if !strings.Contains(name, "-") || strings.Contains(name, ":") {
 			continue
 		}
 		candidate, ok := candidateFromSysfs(b.sysRoot, name)
-		if !ok || candidate.VendorID != match.VendorID || candidate.ProductID != match.ProductID {
+		if !ok {
+			continue
+		}
+		index := candidateIndex
+		candidateIndex++
+		profileMatch := candidate.VendorID == match.VendorID && candidate.ProductID == match.ProductID
+		interfaceNumber, endpoint := inventoryInterfaceFacts(candidate)
+		if !profileMatch {
+			inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=false profile_validation=not_applicable eligibility=false warning=vid_pid_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "")
 			continue
 		}
 		key := candidateKey(candidate)
 		if key == "" {
+			inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=%s profile_match=true profile_validation=not_checked eligibility=false warning=invalid_physical_path selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "", "unknown")
 			continue
 		}
 		b.mu.Lock()
 		b.sources[key] = candidate
+		b.sourceIndexes[key] = index
 		b.mu.Unlock()
-		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: transport.Dongle})
+		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial, Connection: transport.Dongle})
+		inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=%s profile_match=true profile_validation=not_checked eligibility=pending warning=none selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "", b.inventoryHidrawBasename(candidate))
 	}
 	if len(result) == 0 {
 		return nil, &Error{Kind: NotFound, Err: errors.New("validated X6 VID:PID was not found")}
 	}
 	return result, nil
+}
+
+// ProfileValid checks the profile's HID facts from sysfs without opening a
+// hidraw node. Inventory can therefore expose incompatible receivers safely.
+func (b *HidrawBackend) ProfileValid(ctx context.Context, source transport.Candidate, facts mouse.HIDFacts) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	b.mu.Lock()
+	candidate, ok := b.sources[source.Path]
+	index := b.sourceIndexes[source.Path]
+	b.mu.Unlock()
+	interfaceNumber, endpoint := inventoryInterfaceFacts(candidate)
+	hidrawBasename := "unknown"
+	if ok {
+		hidrawBasename = b.inventoryHidrawBasename(candidate)
+	}
+	if !ok || facts.StatusInput.InterfaceNumber != hidInterface || facts.StatusInput.UsagePage != 1 || facts.StatusInput.Usage != 0x80 || facts.StatusInput.EndpointAddress != statusEndpoint {
+		inventoryDiagnosticf("event=profile_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=%t profile_validation=rejected eligibility=false warning=profile_interface_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, facts.StatusInput.UsagePage, facts.StatusInput.Usage, candidate.Serial != "", hidrawBasename, ok && matchesX6Identity(candidate))
+		return false
+	}
+	if !matchesX6Identity(candidate) || !hasPhysicalPath(candidate) || !hasValidatedInterface(candidate.Interfaces) {
+		inventoryDiagnosticf("event=profile_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=false profile_validation=rejected eligibility=false warning=profile_interface_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, facts.StatusInput.UsagePage, facts.StatusInput.Usage, candidate.Serial != "", hidrawBasename)
+		return false
+	}
+	descriptor, err := b.reportDescriptor(candidate)
+	valid := err == nil && hasX6TopLevelUsage(descriptor)
+	warning := "none"
+	if !valid {
+		warning = "hid_usage_mismatch"
+	}
+	usagePage, usageID := facts.StatusInput.UsagePage, facts.StatusInput.Usage
+	if valid {
+		usagePage, usageID = 1, 0x80
+	}
+	inventoryDiagnosticf("event=profile_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=true profile_validation=%t eligibility=%t warning=%s selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, usagePage, usageID, candidate.Serial != "", hidrawBasename, valid, valid, warning)
+	return valid
 }
 
 // ValidateDescriptor checks every identity field against sysfs before any hidraw access.
@@ -151,14 +203,20 @@ func (b *HidrawBackend) ValidateDescriptor(ctx context.Context, source transport
 	}
 	b.mu.Lock()
 	candidate, ok := b.sources[source.Path]
+	index := b.sourceIndexes[source.Path]
 	b.mu.Unlock()
 	if !ok {
+		inventoryDiagnosticf("event=descriptor_validation candidate_index=%d vid_pid=unknown interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=false hidraw_basename=unknown profile_match=false profile_validation=rejected eligibility=false warning=unknown_candidate selected_binding_present=false", index, wanted.InterfaceNumber, wanted.EndpointAddress, wanted.UsagePage, wanted.Usage)
 		return transport.InputSource{}, &Error{Kind: NotFound, Err: errors.New("discovered device is no longer present")}
 	}
+	interfaceNumber, endpoint := inventoryInterfaceFacts(candidate)
+	hidrawBasename := b.inventoryHidrawBasename(candidate)
 	if wanted.InterfaceNumber != hidInterface || wanted.UsagePage != 1 || wanted.Usage != 0x80 || wanted.EndpointAddress != statusEndpoint {
+		inventoryDiagnosticf("event=descriptor_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=true profile_validation=rejected eligibility=false warning=descriptor_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, wanted.UsagePage, wanted.Usage, candidate.Serial != "", hidrawBasename)
 		return transport.InputSource{}, &Error{Kind: Mismatch, Err: errors.New("unsupported status descriptor request")}
 	}
 	if !matchesX6Identity(candidate) || !hasPhysicalPath(candidate) || !hasValidatedInterface(candidate.Interfaces) {
+		inventoryDiagnosticf("event=descriptor_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=false profile_validation=rejected eligibility=false warning=profile_interface_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, wanted.UsagePage, wanted.Usage, candidate.Serial != "", hidrawBasename)
 		return transport.InputSource{}, &Error{Kind: Mismatch, Err: errors.New("candidate does not match the validated X6 path")}
 	}
 	descriptor, err := b.reportDescriptor(candidate)
@@ -166,8 +224,10 @@ func (b *HidrawBackend) ValidateDescriptor(ctx context.Context, source transport
 		return transport.InputSource{}, classify(err)
 	}
 	if !hasX6TopLevelUsage(descriptor) {
+		inventoryDiagnosticf("event=descriptor_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=true profile_validation=rejected eligibility=false warning=hid_usage_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, wanted.UsagePage, wanted.Usage, candidate.Serial != "", hidrawBasename)
 		return transport.InputSource{}, &Error{Kind: Mismatch, Err: errors.New("HID report descriptor does not expose usage 1/0x80")}
 	}
+	inventoryDiagnosticf("event=descriptor_validation candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=0x%04x/0x%02x serial_present=%t hidraw_basename=%s profile_match=true profile_validation=valid eligibility=true warning=none selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, wanted.UsagePage, wanted.Usage, candidate.Serial != "", hidrawBasename)
 	return transport.InputSource{Path: source.Path}, nil
 }
 
@@ -523,7 +583,37 @@ func candidateFromSysfs(sysRoot, dir string) (Candidate, bool) {
 	if !ok {
 		return Candidate{}, false
 	}
-	return Candidate{VendorID: vendor, ProductID: product, Bus: bus, PortPath: dir, Interfaces: interfaceDescriptorsFromSysfs(base, dir)}, true
+	serial, _ := os.ReadFile(filepath.Join(base, "serial"))
+	return Candidate{VendorID: vendor, ProductID: product, Bus: bus, PortPath: dir, Serial: strings.TrimSpace(string(serial)), Interfaces: interfaceDescriptorsFromSysfs(base, dir)}, true
+}
+
+func inventoryInterfaceFacts(candidate Candidate) (int, uint8) {
+	for _, descriptor := range candidate.Interfaces {
+		for _, endpoint := range descriptor.Endpoints {
+			if endpoint == statusEndpoint {
+				return descriptor.Number, endpoint
+			}
+		}
+	}
+	if len(candidate.Interfaces) > 0 {
+		return candidate.Interfaces[0].Number, firstEndpoint(candidate.Interfaces[0].Endpoints)
+	}
+	return -1, 0
+}
+
+func firstEndpoint(endpoints []uint8) uint8 {
+	if len(endpoints) == 0 {
+		return 0
+	}
+	return endpoints[0]
+}
+
+func (b *HidrawBackend) inventoryHidrawBasename(candidate Candidate) string {
+	path, err := b.hidrawPath(candidate)
+	if err != nil {
+		return "unknown"
+	}
+	return filepath.Base(path)
 }
 
 func interfaceDescriptorsFromSysfs(base, dir string) []InterfaceDescriptor {

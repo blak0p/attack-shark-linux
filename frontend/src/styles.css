@@ -44,6 +44,8 @@ button, input { font: inherit; }
 .status strong { font-size: 12px; }
 .status.online strong { color: #4ade80; }
 .status.offline strong, .status [role="alert"] { color: #f87171; }
+.inventory-device { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.configuration-state { color: #fbbf24; font-size: 12px; }
 
 .save-btn {
   background: linear-gradient(135deg, #064e3b, #065f46);
@@ -160,5 +162,6 @@ button, input { font: inherit; }
   transition: all 0.2s;
 }
 .reset-btn:hover { background: #1e293b; color: #e2e8f0; border-color: #475569; }
+.reset-btn:disabled, .stage-dot:disabled, .stage-slider:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .notice { min-height: 1.5rem; margin-top: 14px; font-size: 12px; color: #94a3b8; }

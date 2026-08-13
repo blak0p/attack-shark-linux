@@ -3,14 +3,17 @@
 package hidlinux
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/alejandro/attack-shark-linux/internal/mouse"
 	"github.com/alejandro/attack-shark-linux/internal/transport"
 )
 
@@ -34,6 +37,7 @@ func fixtureRoot(t *testing.T) string {
 	dev := filepath.Join(root, "sys/bus/usb/devices/1-4")
 	writeFixtureFile(t, filepath.Join(dev, "idVendor"), "1d57\n")
 	writeFixtureFile(t, filepath.Join(dev, "idProduct"), "fa60\n")
+	writeFixtureFile(t, filepath.Join(dev, "serial"), "fixture-x6-serial\n")
 	for number, endpoint := range map[string]string{"0": "0x81", "1": "0x82", "2": "0x83", "3": "0x84"} {
 		iface := filepath.Join(dev, "1-4:1."+number)
 		writeFixtureFile(t, filepath.Join(iface, "bInterfaceNumber"), number+"\n")
@@ -124,8 +128,82 @@ func TestHidrawEnumerateFindsX6DeviceFromSysfs(t *testing.T) {
 		t.Fatalf("Enumerate() = %#v; want exactly one candidate", candidates)
 	}
 	got := candidates[0]
-	if got.VendorID != 0x1D57 || got.ProductID != 0xFA60 || got.Connection != transport.Dongle || got.Path != "1:1-4" {
+	if got.VendorID != 0x1D57 || got.ProductID != 0xFA60 || got.Serial != "fixture-x6-serial" || got.Connection != transport.Dongle || got.Path != "1:1-4" {
 		t.Fatalf("Enumerate() candidate = %#v; want X6 identity on path 1:1-4", got)
+	}
+}
+
+func TestHidrawProfileValidRejectsInterfaceMismatchWithoutHidrawOpen(t *testing.T) {
+	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
+	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/1-4:1.2/bInterfaceNumber"), "1\n")
+
+	candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+	if err != nil || len(candidates) != 1 || candidates[0].Serial != "fixture-x6-serial" {
+		t.Fatalf("Enumerate() = %#v, %v; want visible stable-serial candidate", candidates, err)
+	}
+	facts := mouse.HIDFacts{StatusInput: transport.InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83}}
+	if backend.ProfileValid(context.Background(), candidates[0], facts) {
+		t.Fatal("ProfileValid() accepted an interface-mismatched candidate")
+	}
+}
+
+func TestHidrawInventoryDiagnosticsIdentifyValidAndRejectedInterfaces(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		mutate     func(string)
+		validation string
+		interfaceN string
+		eligible   string
+		serial     string
+	}{
+		{
+			name:       "valid vendor interface",
+			validation: "profile_validation=true",
+			interfaceN: "interface_number=2",
+			eligible:   "eligibility=true",
+			serial:     "serial_present=true",
+		},
+		{
+			name: "interface one rejection",
+			mutate: func(root string) {
+				writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/1-4:1.2/bInterfaceNumber"), "1\n")
+			},
+			validation: "profile_validation=rejected",
+			interfaceN: "interface_number=1",
+			eligible:   "eligibility=false",
+			serial:     "serial_present=true",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
+			if tt.mutate != nil {
+				tt.mutate(root)
+			}
+			var logs bytes.Buffer
+			oldWriter := inventoryDiagnosticWriter
+			inventoryDiagnosticWriter = &logs
+			defer func() { inventoryDiagnosticWriter = oldWriter }()
+
+			candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := mouse.HIDFacts{StatusInput: transport.InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83}}
+			if got := backend.ProfileValid(context.Background(), candidates[0], facts); got != (tt.mutate == nil) {
+				t.Fatalf("ProfileValid() = %t; want %t", got, tt.mutate == nil)
+			}
+			output := logs.String()
+			for _, want := range []string{"event=enumeration", "event=profile_validation", "vid_pid=1d57:fa60", "endpoint=0x83", tt.validation, tt.interfaceN, tt.eligible, tt.serial, "hidraw_basename=hidraw3"} {
+				if !strings.Contains(output, want) {
+					t.Fatalf("diagnostic output missing %q:\n%s", want, output)
+				}
+			}
+			for _, forbidden := range []string{"fixture-x6-serial", root, "/dev/", "report"} {
+				if strings.Contains(output, forbidden) {
+					t.Fatalf("diagnostic output contains forbidden %q:\n%s", forbidden, output)
+				}
+			}
+		})
 	}
 }
 

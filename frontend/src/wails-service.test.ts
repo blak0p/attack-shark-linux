@@ -5,6 +5,8 @@ const bindings = vi.hoisted(() => ({
   RefreshStatus: vi.fn(),
   StageDPI: vi.fn(),
   ApplyDPI: vi.fn(),
+  RefreshInventory: vi.fn(),
+  SelectDevice: vi.fn(),
 }));
 
 const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
@@ -26,15 +28,27 @@ describe("desktopService", () => {
     expect(bindings.StageDPI).toHaveBeenCalledWith(config);
   });
 
-  it("subscribes to the x6:status event through the Wails runtime", () => {
+  it("subscribes to device-scoped status events and returns the Wails unsubscribe function", () => {
     const callback = vi.fn();
     const unsubscribe = desktopService.OnStatusEvent(callback);
 
-    expect(runtime.Events.On).toHaveBeenCalledWith("x6:status", expect.any(Function));
+    expect(runtime.Events.On).toHaveBeenCalledWith("mouse:status", expect.any(Function));
     const handler = runtime.Events.On.mock.calls[0][1];
     handler({ data: { Connection: "dongle", Battery: 90 } });
     expect(callback).toHaveBeenCalledWith({ Connection: "dongle", Battery: 90 });
 
     expect(unsubscribe).toBe(runtime.Events.On.mock.results[0].value);
+  });
+
+  it("delegates generated inventory bindings and subscribes to device-scoped status events", () => {
+    const callback = vi.fn();
+
+    expect((desktopService as unknown as { RefreshInventory: unknown }).RefreshInventory).toBe(bindings.RefreshInventory);
+    expect((desktopService as unknown as { SelectDevice: unknown }).SelectDevice).toBe(bindings.SelectDevice);
+    (desktopService as unknown as { SelectDevice(id: { VendorID: number; ProductID: number; Serial: string }): void }).SelectDevice({ VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo" });
+    expect(bindings.SelectDevice).toHaveBeenCalledWith({ VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo" });
+
+    desktopService.OnStatusEvent(callback);
+    expect(runtime.Events.On).toHaveBeenLastCalledWith("mouse:status", expect.any(Function));
   });
 });

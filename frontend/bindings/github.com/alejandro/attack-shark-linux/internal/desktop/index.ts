@@ -7,8 +7,18 @@ export {
 };
 
 export {
+    Binding,
     DPIConfig,
+    Device,
+    DeviceID,
     Error,
     ErrorCode,
+    Inventory,
+    Service,
     Snapshot
+} from "./models.js";
+
+export type {
+    EventSink,
+    StatusListener
 } from "./models.js";

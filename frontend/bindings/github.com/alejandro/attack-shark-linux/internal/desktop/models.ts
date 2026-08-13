@@ -5,6 +5,13 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as mouse$0 from "../mouse/models.js";
+
+export const Binding = mouse$0.Binding;
+export type Binding = mouse$0.Binding;
+
 export class DPIConfig {
     "AngleControl": boolean;
     "RippleControl": boolean;
@@ -50,6 +57,12 @@ export class DPIConfig {
     }
 }
 
+export const Device = mouse$0.Device;
+export type Device = mouse$0.Device;
+
+export const DeviceID = mouse$0.DeviceID;
+export type DeviceID = mouse$0.DeviceID;
+
 export class Error {
     "Code": ErrorCode;
 
@@ -83,7 +96,75 @@ export enum ErrorCode {
     InvalidConfiguration = "invalid_configuration",
     ApplyFailed = "apply_failed",
     PersistenceFailed = "persistence_failed",
+    SelectionRequired = "selection_required",
+    StaleBinding = "stale_binding",
+    AmbiguousIdentity = "ambiguous_identity",
+    MigrationFailed = "migration_failed",
 };
+
+/**
+ * EventSink pushes live status updates to the frontend. The desktop service
+ * never imports Wails: the application wiring supplies the real emitter.
+ */
+export type EventSink = any;
+
+export class Inventory {
+    "Devices": Device[];
+    "Selected": Binding | null;
+    "Error": Error;
+
+    /** Creates a new Inventory instance. */
+    constructor($$source: Partial<Inventory> = {}) {
+        if (!("Devices" in $$source)) {
+            this["Devices"] = [];
+        }
+        if (!("Selected" in $$source)) {
+            this["Selected"] = null;
+        }
+        if (!("Error" in $$source)) {
+            this["Error"] = (new Error());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Inventory instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Inventory {
+        const $$createField0_0 = $$createType1;
+        const $$createField1_0 = $$createType3;
+        const $$createField2_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Devices" in $$parsedSource) {
+            $$parsedSource["Devices"] = $$createField0_0($$parsedSource["Devices"]);
+        }
+        if ("Selected" in $$parsedSource) {
+            $$parsedSource["Selected"] = $$createField1_0($$parsedSource["Selected"]);
+        }
+        if ("Error" in $$parsedSource) {
+            $$parsedSource["Error"] = $$createField2_0($$parsedSource["Error"]);
+        }
+        return new Inventory($$parsedSource as Partial<Inventory>);
+    }
+}
+
+export class Service {
+
+    /** Creates a new Service instance. */
+    constructor($$source: Partial<Service> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Service instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Service {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Service($$parsedSource as Partial<Service>);
+    }
+}
 
 export class Snapshot {
     "Connection": string;
@@ -125,10 +206,10 @@ export class Snapshot {
      * Creates a new Snapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): Snapshot {
-        const $$createField2_0 = $$createType0;
-        const $$createField3_0 = $$createType0;
-        const $$createField6_0 = $$createType0;
-        const $$createField7_0 = $$createType1;
+        const $$createField2_0 = $$createType5;
+        const $$createField3_0 = $$createType5;
+        const $$createField4_0 = $$createType5;
+        const $$createField6_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Applied" in $$parsedSource) {
             $$parsedSource["Applied"] = $$createField2_0($$parsedSource["Applied"]);
@@ -137,15 +218,25 @@ export class Snapshot {
             $$parsedSource["Pending"] = $$createField3_0($$parsedSource["Pending"]);
         }
         if ("Factory" in $$parsedSource) {
-            $$parsedSource["Factory"] = $$createField6_0($$parsedSource["Factory"]);
+            $$parsedSource["Factory"] = $$createField4_0($$parsedSource["Factory"]);
         }
         if ("Error" in $$parsedSource) {
-            $$parsedSource["Error"] = $$createField7_0($$parsedSource["Error"]);
+            $$parsedSource["Error"] = $$createField6_0($$parsedSource["Error"]);
         }
         return new Snapshot($$parsedSource as Partial<Snapshot>);
     }
 }
 
+/**
+ * StatusListener runs the always-on status listener until its context is
+ * cancelled, forwarding every dongle-pushed report through onStatus.
+ */
+export type StatusListener = any;
+
 // Private type creation functions
-const $$createType0 = DPIConfig.createFrom;
-const $$createType1 = Error.createFrom;
+const $$createType0 = mouse$0.Device.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = mouse$0.Binding.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = Error.createFrom;
+const $$createType5 = DPIConfig.createFrom;

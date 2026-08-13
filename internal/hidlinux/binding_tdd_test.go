@@ -5,6 +5,7 @@ package hidlinux
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -51,5 +52,30 @@ func TestHidrawSendAndAwaitBindingRejectsStaleIdentityOrPathBeforeNodeOpen(t *te
 	}
 	if got := opener.opens(); got != 0 {
 		t.Fatalf("hidraw opens = %d, want 0 for stale bindings", got)
+	}
+}
+
+func TestHidrawSendAndAwaitSessionOnlyBindingRequiresSeriallessExactPath(t *testing.T) {
+	root := fixtureRoot(t)
+	if err := os.Remove(filepath.Join(root, "sys/bus/usb/devices/1-4/serial")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("remove serial fixture: %v", err)
+	}
+	node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
+	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
+	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+	payload := make([]byte, protocol.DPIReportLength)
+	payload[0] = 0x04
+	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "session-id"}, ProfileID: "x6", Path: "1:1-4", SessionOnly: true}
+
+	if err := backend.SendAndAwaitBound(context.Background(), binding, payload, func(report []byte) bool { return !protocol.MatchesDPIACK(report) }); err != nil {
+		t.Fatalf("SendAndAwaitBound() error = %v", err)
+	}
+	if got := opener.opens(); got != 1 {
+		t.Fatalf("hidraw opens = %d, want exact serial-less node opened once", got)
+	}
+
+	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "unexpected\n")
+	if err := backend.SendAndAwaitBound(context.Background(), binding, payload, func([]byte) bool { return false }); !errors.Is(err, mouse.ErrStaleBinding) {
+		t.Fatalf("SendAndAwaitBound() error = %v, want ErrStaleBinding after serial appears", err)
 	}
 }

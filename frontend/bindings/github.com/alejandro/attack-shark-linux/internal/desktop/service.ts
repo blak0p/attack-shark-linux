@@ -7,11 +7,52 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as mouse$0 from "../mouse/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(2499238003).then(($result: any) => {
         return $$createType0($result);
+    });
+}
+
+/**
+ * AttachDevicePersistence wires keyed selected-device applied-state storage.
+ */
+export function AttachDevicePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(1880501470, load, save).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
+ * AttachInventory wires the targeted device service used for explicit desktop selection.
+ */
+export function AttachInventory(inventory: mouse$0.TargetedService | null): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(1807781335, inventory).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
+ * AttachListener wires the always-on status listener and the frontend event
+ * sink. It does not start listening; call StartListener with a context.
+ */
+export function AttachListener(listener: $models.StatusListener, events: $models.EventSink): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(1212653785, listener, events).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
+ * AttachMigrator wires backup-first legacy migration to a selected device.
+ */
+export function AttachMigrator(migrate: any): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(594930334, migrate).then(($result: any) => {
+        return $$createType2($result);
     });
 }
 
@@ -21,9 +62,27 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
     });
 }
 
+/**
+ * RefreshInventory exposes all discovered devices and the explicit selection.
+ */
+export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
+    return $Call.ByID(1988986909).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(4154748181).then(($result: any) => {
         return $$createType0($result);
+    });
+}
+
+/**
+ * SelectDevice establishes an explicit binding for a previously inventoried device.
+ */
+export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
+    return $Call.ByID(3742231770, id).then(($result: any) => {
+        return $$createType3($result);
     });
 }
 
@@ -33,5 +92,17 @@ export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models
     });
 }
 
+/**
+ * StartListener runs the status listener until ctx is cancelled, forwarding
+ * every dongle-pushed status report into the service state and the frontend.
+ * It is a no-op when no listener has been attached.
+ */
+export function StartListener(): $CancellablePromise<void> {
+    return $Call.ByID(3414376916);
+}
+
 // Private type creation functions
 const $$createType0 = $models.Snapshot.createFrom;
+const $$createType1 = $models.Service.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);
+const $$createType3 = $models.Inventory.createFrom;

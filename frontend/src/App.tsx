@@ -1,9 +1,14 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { Binding as GeneratedBinding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
 
+export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
 export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string } };
-export type StatusEvent = { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; StageDPI(config: DPIConfig): Promise<Snapshot>; ApplyDPI(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void };
+export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
+export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
+export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
+export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
+export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; ApplyDPI(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void };
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -12,26 +17,40 @@ const DPI_MAX = 26000;
 const DPI_STEP = 50;
 
 const position = (value: number) => Math.round(Math.max(0, Math.min(1, (value - DPI_MIN) / (DPI_MAX - DPI_MIN))) * 1000) / 10;
+const identityLabel = (device: Device) => `VID ${device.ID.VendorID.toString(16).padStart(4, "0").toUpperCase()} · PID ${device.ID.ProductID.toString(16).padStart(4, "0").toUpperCase()} · Serial ${device.ID.Serial || "unavailable"}`;
+const feedbackFor = (code: string) => code === "stale_binding"
+  ? "Device connection changed. Refresh the device list and select the mouse again before saving."
+  : code.replaceAll("_", " ");
 
 export function App({ service }: { service: DesktopService }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [inventory, setInventory] = useState<Inventory>();
+  const selected = useRef<Binding | null>(null);
   const [notice, setNotice] = useState("");
   useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
+  useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
+  useEffect(() => { selected.current = inventory?.Selected; }, [inventory]);
   useEffect(() => {
     const unsubscribe = service.OnStatusEvent((event) => {
-      setSnapshot((current) => (current ? applyStatusEvent(current, event) : current));
+      setSnapshot((current) => (current && receivesEvent(selected.current, event) ? applyStatusEvent(current, event) : current));
     });
     return unsubscribe;
   }, [service]);
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
-  const connected = snapshot.Connection !== "";
+  const ready = inventory?.Selected != null;
+  const connected = ready;
+  const errorCode = inventory?.Error.Code || snapshot.Error.Code;
   const pending = snapshot.Pending;
   const stages = pending.DPI.map((dpi, index) => ({ index, dpi })).filter(({ index }) => ((pending.StageMask ?? 0) >> index) & 1);
   const activeIndex = pending.ActiveStage >= 1 && pending.ActiveStage <= pending.DPI.length ? pending.ActiveStage - 1 : -1;
   const activeDPI = activeIndex >= 0 ? pending.DPI[activeIndex] : null;
   const activeColor = activeIndex >= 0 && pending.Colors ? pending.Colors[activeIndex] : null;
   const colorFor = (index: number) => (pending.Colors && pending.Colors[index] ? `rgb(${pending.Colors[index].join(", ")})` : null);
+  const selectDevice = (serial: string) => {
+    const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
+    if (device) void service.SelectDevice(device.ID).then(setInventory);
+  };
 
   const stage = (index: number, value: number) => {
     const next = { ...pending, DPI: pending.DPI.map((dpi, i) => (i === index ? value : dpi)) };
@@ -56,12 +75,33 @@ export function App({ service }: { service: DesktopService }) {
             <p className="eyebrow">Attack Shark X6</p>
             <h1>Device control</h1>
           </div>
+	          {inventory && inventory.Devices.filter((device) => device.Eligible).length > 1 && (
+            <label>
+              <span>Mouse device</span>
+              <select aria-label="Mouse device" value={inventory.Selected?.ID.Serial ?? ""} onChange={(event) => selectDevice(event.target.value)}>
+                <option value="" disabled>Select a mouse</option>
+                {inventory.Devices.filter((device) => device.Eligible).map((device) => (
+                  <option key={device.ID.Serial} value={device.ID.Serial}>{device.ID.Serial}</option>
+                ))}
+              </select>
+            </label>
+	          )}
+          {inventory && <div aria-label="Device inventory">
+            {inventory.Devices.map((device) => <div className="inventory-device" key={`${device.Path}:${device.ID.Serial}`}>
+              <span>{identityLabel(device)}</span>
+              {!device.Eligible && <>
+                <span>{`Connection: ${device.Connection || "unavailable"}`}</span>
+                <span>{device.Warning || "not eligible"}</span>
+              </>}
+            </div>)}
+          </div>}
           <div aria-live="polite" className={`status ${connected ? "online" : "offline"}`}>
             <strong>{connected ? "Device available" : "Device unavailable"}</strong>
             <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
-            {snapshot.Error.Code && <span role="alert">{snapshot.Error.Code.replaceAll("_", " ")}</span>}
+            {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
           </div>
-          <button className="save-btn" disabled={!connected} onClick={apply}>
+          {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
+          <button className="save-btn" disabled={!ready} onClick={apply}>
             <span>Save to Device</span>
             <small>(Commit to Firmware)</small>
           </button>
@@ -87,6 +127,7 @@ export function App({ service }: { service: DesktopService }) {
                   className={`stage-dot${index === activeIndex ? " active" : ""}`}
                   aria-pressed={index === activeIndex}
                   aria-label={`Stage ${index + 1}${index === activeIndex ? ", active" : ""}`}
+                  disabled={!ready}
                   onClick={() => selectStage(index)}
                   style={{ "--dot-color": colorFor(index) ?? "#3b82f6" } as CSSProperties}
                 >
@@ -112,6 +153,7 @@ export function App({ service }: { service: DesktopService }) {
                           max={DPI_MAX}
                           step={DPI_STEP}
                           value={dpi}
+                          disabled={!ready}
                           onChange={(event) => stage(index, Number(event.target.value))}
                           style={{ "--fill": `${position(dpi)}%`, "--stage-color": colorFor(index) ?? "#3b82f6" } as CSSProperties}
                         />
@@ -121,7 +163,7 @@ export function App({ service }: { service: DesktopService }) {
             </div>
           </div>
 
-          <button className="reset-btn" onClick={reset}>Reset to factory</button>
+          <button className="reset-btn" disabled={!ready} onClick={reset}>Reset to factory</button>
         </section>
 
         <p aria-live="polite" className="notice">{notice}</p>
@@ -142,4 +184,8 @@ function applyStatusEvent(current: Snapshot, event: StatusEvent): Snapshot {
     next.Pending.ActiveStage = event.ActiveStage;
   }
   return next;
+}
+
+function receivesEvent(selected: Binding | null | undefined, event: StatusEvent): boolean {
+  return !selected || !event.ID || (selected.ID.VendorID === event.ID.VendorID && selected.ID.ProductID === event.ID.ProductID && selected.ID.Serial === event.ID.Serial && selected.Path === event.Path && selected.InventoryRevision === event.InventoryRevision);
 }

@@ -10,13 +10,30 @@ import (
 )
 
 type listenerFake struct {
+	mu       sync.RWMutex
 	onStatus func(x6.StatusEvent)
+	ready    chan struct{}
+	once     sync.Once
 }
 
 func (f *listenerFake) Listen(ctx context.Context, onStatus func(x6.StatusEvent)) error {
+	f.mu.Lock()
 	f.onStatus = onStatus
+	f.mu.Unlock()
+	f.once.Do(func() { close(f.ready) })
 	<-ctx.Done()
 	return nil
+}
+
+func newListenerFake() *listenerFake { return &listenerFake{ready: make(chan struct{})} }
+
+func (f *listenerFake) emit(event x6.StatusEvent) {
+	f.mu.RLock()
+	callback := f.onStatus
+	f.mu.RUnlock()
+	if callback != nil {
+		callback(event)
+	}
 }
 
 type eventSinkFake struct {
@@ -42,7 +59,7 @@ func (f *eventSinkFake) snapshot() (bool, []StatusEvent) {
 
 func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
-	listener := &listenerFake{}
+	listener := newListenerFake()
 	sink := &eventSinkFake{}
 	service.AttachListener(listener, sink)
 
@@ -50,21 +67,19 @@ func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 	defer cancel()
 	service.StartListener(ctx)
 
-	deadline := time.Now().Add(time.Second)
-	for listener.onStatus == nil {
-		if time.Now().After(deadline) {
-			t.Fatal("StartListener() never ran the listener")
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-listener.ready:
+	case <-time.After(time.Second):
+		t.Fatal("StartListener() never ran the listener")
 	}
 
-	listener.onStatus(x6.StatusEvent{Connection: x6.Dongle, BatteryPercent: 72, BatteryAvailable: true})
+	listener.emit(x6.StatusEvent{Connection: x6.Dongle, BatteryPercent: 72, BatteryAvailable: true})
 	snapshot := service.GetSnapshot()
 	if snapshot.Connection != "dongle" || snapshot.Battery == nil || *snapshot.Battery != 72 {
 		t.Fatalf("after heartbeat snapshot = %#v; want dongle battery 72", snapshot)
 	}
 
-	listener.onStatus(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 4, StageAvailable: true})
+	listener.emit(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 4, StageAvailable: true})
 	snapshot = service.GetSnapshot()
 	if snapshot.Pending.ActiveStage != 4 || snapshot.Applied.ActiveStage != 4 || snapshot.Revision != 1 {
 		t.Fatalf("after stage event snapshot = %#v; want active stage 4 with bumped revision", snapshot)

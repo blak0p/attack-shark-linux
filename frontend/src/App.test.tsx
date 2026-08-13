@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, type DesktopService, type Snapshot } from "./App";
+import type { Binding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
 
@@ -24,9 +25,13 @@ const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
   ...overrides,
 });
 
+const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
+
 const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => ({
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
+  RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
+  SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
   StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
   ApplyDPI: vi.fn().mockResolvedValue(initial),
   OnStatusEvent: vi.fn().mockReturnValue(() => {}),
@@ -41,8 +46,11 @@ describe("App", () => {
     expect(screen.getByText("Battery 84%")).toBeInTheDocument();
   });
 
-	it("shows unavailable status without inventing a battery value", async () => {
-		render(<App service={serviceFor(snapshot({ Connection: "", Battery: undefined, Error: { Code: "device_unavailable" } }))} />);
+  it("shows unavailable status without inventing a battery value", async () => {
+    const service = serviceFor(snapshot({ Connection: "", Battery: undefined, Error: { Code: "device_unavailable" } }), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "device_unavailable" } }),
+    });
+    render(<App service={service} />);
 
     expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
     expect(screen.getByText("Battery unavailable")).toBeInTheDocument();
@@ -187,7 +195,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Stage 2, active" })).toHaveAttribute("aria-pressed", "true");
 
     listeners[0]({ Connection: "", Battery: null });
-    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Device available")).toBeInTheDocument();
   });
 
   it("keeps its subscription active across status events without re-mounting", async () => {
@@ -205,6 +213,120 @@ describe("App", () => {
 
     unmount();
     expect(listeners.length).toBe(1);
+  });
+
+  it("hides the selector for one selected device and shows it when explicit selection is required", async () => {
+    const alpha = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Path: "/dev/hidraw0", Profile: "attack-shark-x6", Eligible: true };
+    const bravo = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo" }, Path: "/dev/hidraw1", Profile: "attack-shark-x6", Eligible: true };
+    const oneDevice = {
+      ...serviceFor(snapshot()),
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [alpha], Selected: alpha, Error: { Code: "" } }),
+      SelectDevice: vi.fn(),
+    } as unknown as DesktopService;
+    const { rerender } = render(<App service={oneDevice} />);
+
+    expect(await screen.findByText("Device available")).toBeInTheDocument();
+    expect((oneDevice as unknown as { RefreshInventory: ReturnType<typeof vi.fn> }).RefreshInventory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("combobox", { name: "Mouse device" })).not.toBeInTheDocument();
+
+    const manyDevices = {
+      ...serviceFor(snapshot()),
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [alpha, bravo], Selected: null, Error: { Code: "selection_required" } }),
+      SelectDevice: vi.fn().mockResolvedValue({ Devices: [alpha, bravo], Selected: bravo, Error: { Code: "" } }),
+    } as unknown as DesktopService;
+    rerender(<App service={manyDevices} />);
+
+    const selector = await screen.findByRole("combobox", { name: "Mouse device" });
+    expect(screen.getByRole("alert")).toHaveTextContent("selection required");
+    fireEvent.change(selector, { target: { value: "bravo" } });
+    await waitFor(() => expect((manyDevices as unknown as { SelectDevice: ReturnType<typeof vi.fn> }).SelectDevice).toHaveBeenCalledWith(bravo.ID));
+  });
+
+  it("treats a selected session-only device as ready without showing ambiguity", async () => {
+    const sessionOnly = {
+      ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "session-1234" },
+      Path: "/dev/hidraw3",
+      Profile: "attack-shark-x6",
+      Eligible: true,
+      Warning: "session-only (no serial)",
+      Connection: "dongle",
+    };
+    const selectedBinding: Binding = {
+      ID: sessionOnly.ID,
+      ProfileID: sessionOnly.Profile,
+      Path: sessionOnly.Path,
+      InventoryRevision: 1,
+      SessionOnly: true,
+    };
+    const service = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [sessionOnly], Selected: selectedBinding, Error: { Code: "" } }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device available")).toBeInTheDocument();
+    expect(screen.queryByText(/ambiguous identity/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
+  });
+
+  it("shows full eligible identity and actionable stale-binding recovery feedback", async () => {
+    const alpha = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Path: "/dev/hidraw0", Profile: "attack-shark-x6", Eligible: true };
+    const unavailable = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "" }, Path: "/dev/hidraw2", Profile: "attack-shark-x6", Eligible: false, Warning: "ambiguous identity", Connection: "dongle" };
+    const service = serviceFor(snapshot({ Error: { Code: "stale_binding" } }), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [alpha, unavailable], Selected: alpha, Error: { Code: "stale_binding" } }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("VID 1D57 · PID FA60 · Serial alpha")).toBeInTheDocument();
+    expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
+    expect(screen.getByText("ambiguous identity")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Device connection changed. Refresh the device list and select the mouse again before saving.");
+  });
+
+  it("shows an ineligible receiver without enabling configuration controls", async () => {
+    const unavailable = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "" }, Path: "/dev/hidraw2", Profile: "attack-shark-x6", Eligible: false, Warning: "ambiguous identity", Connection: "dongle" };
+    const service = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [unavailable], Selected: null, Error: { Code: "ambiguous_identity" } }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Receiver detected, configuration unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("VID 1D57 · PID FA60 · Serial unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
+    expect(screen.getAllByText("ambiguous identity")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole("slider").every((slider) => (slider as HTMLInputElement).disabled)).toBe(true);
+    expect(service.StageDPI).not.toHaveBeenCalled();
+    expect(service.ApplyDPI).not.toHaveBeenCalled();
+  });
+
+  it("applies status events only when their identity matches the selected device", async () => {
+    const listeners: Array<(event: { ID: { VendorID: number; ProductID: number; Serial: string }; Path: string; InventoryRevision: number; Battery?: number }) => void> = [];
+    const alpha = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Path: "/dev/hidraw0", InventoryRevision: 1 };
+    const service = serviceFor(snapshot(), {
+      OnStatusEvent: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
+    const selectedService = {
+      ...service,
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [alpha], Selected: alpha, Error: { Code: "" } }),
+      SelectDevice: vi.fn(),
+    } as unknown as DesktopService;
+    render(<App service={selectedService} />);
+
+    expect(await screen.findByText("Battery 84%")).toBeInTheDocument();
+    await act(async () => {
+      listeners[0]({ ID: { ...alpha.ID, Serial: "bravo" }, Path: "/dev/hidraw1", InventoryRevision: 1, Battery: 10 });
+    });
+    expect(screen.getByText("Battery 84%")).toBeInTheDocument();
+
+    await act(async () => {
+      listeners[0]({ ...alpha, Battery: 90 });
+    });
+    expect(await screen.findByText("Battery 90%")).toBeInTheDocument();
   });
 
   it("exposes only implemented controls and no deferred configuration", async () => {

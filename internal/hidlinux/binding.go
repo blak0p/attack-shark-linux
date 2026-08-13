@@ -27,7 +27,11 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 	b.mu.Lock()
 	candidate, ok := b.sources[binding.Path]
 	b.mu.Unlock()
-	if !ok || candidateKey(candidate) != binding.Path || candidate.VendorID != binding.ID.VendorID || candidate.ProductID != binding.ID.ProductID || b.serial(candidate) != binding.ID.Serial {
+	serialMatches := b.serial(candidate) == binding.ID.Serial
+	if binding.SessionOnly {
+		serialMatches = b.serial(candidate) == ""
+	}
+	if !ok || candidateKey(candidate) != binding.Path || candidate.VendorID != binding.ID.VendorID || candidate.ProductID != binding.ID.ProductID || !serialMatches {
 		return mouse.ErrStaleBinding
 	}
 	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err != nil {
