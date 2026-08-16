@@ -1,5 +1,5 @@
 import { Events } from "@wailsio/runtime";
-import * as bindings from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/service";
+import * as bindings from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
 import type { DesktopService } from "./App";
 
 export const desktopService: DesktopService = {

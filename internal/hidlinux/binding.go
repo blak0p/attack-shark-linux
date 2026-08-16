@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 // SendAndAwaitBound revalidates one captured binding and uses only its matching

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testing.T) {

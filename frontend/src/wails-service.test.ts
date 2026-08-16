@@ -11,7 +11,7 @@ const bindings = vi.hoisted(() => ({
 
 const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
 
-vi.mock("../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/service", () => bindings);
+vi.mock("../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
 vi.mock("@wailsio/runtime", () => runtime);
 
 import { desktopService } from "./wails-service";

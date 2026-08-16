@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 const syncDebounceDelay = time.Second

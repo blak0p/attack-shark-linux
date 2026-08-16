@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type Snapshot } from "./App";
-import type { Binding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
+import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
 

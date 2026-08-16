@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Binding as GeneratedBinding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
+import type { Binding as GeneratedBinding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };

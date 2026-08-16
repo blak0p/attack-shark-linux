@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestAdapterSendAndAwaitWritesEncodedDPIAndFiltersACK(t *testing.T) {

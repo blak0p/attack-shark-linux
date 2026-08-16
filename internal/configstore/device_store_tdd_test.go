@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
 
 func TestDeviceStoreRoundTripPreservesUnknownAndRejectsPaths(t *testing.T) {

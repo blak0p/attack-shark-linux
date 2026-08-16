@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 const schemaVersion = 1

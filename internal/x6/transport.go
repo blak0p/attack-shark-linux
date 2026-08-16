@@ -1,6 +1,6 @@
 package x6
 
-import "github.com/alejandro/attack-shark-linux/internal/transport"
+import "github.com/blak0p/attack-shark-linux/internal/transport"
 
 type Match = transport.Match
 type Candidate = transport.Candidate

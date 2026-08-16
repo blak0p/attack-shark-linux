@@ -3,9 +3,9 @@ package x6
 import (
 	"fmt"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 const x6ProfileID = "attack-shark-x6"

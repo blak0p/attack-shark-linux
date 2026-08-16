@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func writeFixtureFile(t *testing.T, path, contents string) {

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 func TestProfilePreservesX6ValidationAndCodecParity(t *testing.T) {
