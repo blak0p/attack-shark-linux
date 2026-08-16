@@ -37,8 +37,8 @@ export function App({ service }: { service: DesktopService }) {
     });
     return unsubscribe;
   }, [service]);
-	useEffect(() => service.OnConfiguration((event) => {
-		if (receivesEvent(selected.current, event.Binding)) setSnapshot(event.Snapshot);
+	  useEffect(() => service.OnConfiguration((event) => {
+	  if (receivesEvent(selected.current, event.Binding)) setSnapshot(event.Snapshot);
 	}), [service]);
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
@@ -49,8 +49,8 @@ export function App({ service }: { service: DesktopService }) {
   const stages = pending.DPI.map((dpi, index) => ({ index, dpi })).filter(({ index }) => ((pending.StageMask ?? 0) >> index) & 1);
   const activeIndex = snapshot.ObservedStage != null ? snapshot.ObservedStage - 1 : pending.ActiveStage - 1;
   const activeDPI = snapshot.ObservedStage != null ? snapshot.ObservedDPI ?? null : pending.DPI[activeIndex] ?? null;
-  const activeColor = activeIndex >= 0 && pending.Colors ? pending.Colors[activeIndex] : null;
-  const colorFor = (index: number) => (pending.Colors && pending.Colors[index] ? `rgb(${pending.Colors[index].join(", ")})` : null);
+  const activeColor = activeIndex >= 0 && snapshot.Applied.Colors ? snapshot.Applied.Colors[activeIndex] : null;
+  const colorFor = (index: number) => (snapshot.Applied.Colors && snapshot.Applied.Colors[index] ? `rgb(${snapshot.Applied.Colors[index].join(", ")})` : null);
   const selectDevice = (serial: string) => {
     const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
     if (device) void service.SelectDevice(device.ID).then(setInventory);
@@ -105,7 +105,7 @@ export function App({ service }: { service: DesktopService }) {
             {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
           </div>
           {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
-          {snapshot.Firmware && <span role="status">{snapshot.Firmware === "success" ? "Firmware applied" : "Firmware synchronization failed"}</span>}
+          {snapshot.Firmware && <span role="status" aria-label={snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}>{snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}</span>}
           {snapshot.Persistence && <span role="status">{snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}</span>}
           {snapshot.RetryAvailable && <button type="button" onClick={retryPersistence}>Retry local persistence</button>}
         </div>

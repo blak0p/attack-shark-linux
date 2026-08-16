@@ -114,6 +114,45 @@ func TestAutomaticSaveAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *tes
 	}
 }
 
+func TestExplicitApplyCancelsPendingAutomaticSave(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	command := &fakeHidrawCommand{}
+	scheduler := &fakeSyncScheduler{}
+	var persistenceMu sync.Mutex
+	persistCalls := 0
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).
+		AttachDevicePersistence(
+			func(Binding) (x6.DPIConfig, error) { return x6.DPIConfig{}, os.ErrNotExist },
+			func(Binding, x6.DPIConfig) error {
+				persistenceMu.Lock()
+				defer persistenceMu.Unlock()
+				persistCalls++
+				return nil
+			},
+		).
+		attachAutomaticSave(scheduler)
+	service.RefreshInventory(context.Background())
+
+	next := service.GetSnapshot().Pending
+	next.DPI[0] = 1600
+	service.StageDPI(next)
+	if got := service.ApplyDPI(context.Background()); got.Error.Code != "" || got.Applied.DPI[0] != 1600 {
+		t.Fatalf("ApplyDPI() = %#v; want successful explicit apply", got)
+	}
+	scheduler.Advance(syncDebounceDelay)
+
+	persistenceMu.Lock()
+	defer persistenceMu.Unlock()
+	if calls := command.callCount(); calls != 1 {
+		t.Fatalf("command calls after timer advance = %d, want one explicit write", calls)
+	}
+	if persistCalls != 1 {
+		t.Fatalf("persistence calls after timer advance = %d, want one explicit save", persistCalls)
+	}
+}
+
 func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
 	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}

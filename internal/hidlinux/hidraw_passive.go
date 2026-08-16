@@ -94,7 +94,6 @@ type HidrawBackend struct {
 	activeNode     hidrawNode
 	activePath     string
 	listener       func([]byte) bool
-	listenerActive bool
 }
 
 func NewHidrawBackend() *HidrawBackend {
@@ -251,34 +250,17 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 	b.activeNode = node
 	b.activePath = source.Path
 	b.listener = use
-	b.listenerActive = true
 	b.mu.Unlock()
 	defer func() {
 		b.mu.Lock()
 		sameNode := b.activeNode == node
 		if sameNode {
+			b.activeNode = nil
+			b.activePath = ""
 			b.listener = nil
-			b.listenerActive = false
 		}
 		b.mu.Unlock()
-		if !sameNode || !b.isCommandPending() {
-			b.mu.Lock()
-			closeNode := b.activeNode == node && !b.listenerActive
-			if closeNode {
-				b.activeNode = nil
-				b.activePath = ""
-			}
-			b.mu.Unlock()
-			if closeNode {
-				_ = node.Close()
-			}
-		} else {
-			// Apply owns the shared node and will close it after this listener exits.
-			return
-		}
-		if !sameNode {
-			_ = node.Close()
-		}
+		_ = node.Close()
 	}()
 
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
@@ -346,14 +328,13 @@ func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, contin
 
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
 	defer cancel()
-	node := b.commandNode(candidateKey(candidate))
-	if node == nil {
-		node, err = b.opener.OpenNode(path)
-		if err != nil {
-			return &diagnosticError{operation: "transfer", err: classify(err)}
-		}
-		defer node.Close()
+	// Commands own a separate node from the always-on listener. The listener
+	// may close its node while its bounded read shuts down.
+	node, err := b.opener.OpenNode(path)
+	if err != nil {
+		return &diagnosticError{operation: "transfer", err: classify(err)}
 	}
+	defer node.Close()
 
 	count, err := node.SendFeatureReport(payload)
 	if err != nil {
@@ -390,15 +371,6 @@ func (b *HidrawBackend) commandCandidate() (Candidate, error) {
 		return candidate, nil
 	}
 	panic("unreachable")
-}
-
-func (b *HidrawBackend) commandNode(path string) hidrawNode {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.activePath == path && b.activeNode != nil {
-		return b.activeNode
-	}
-	return nil
 }
 
 func (b *HidrawBackend) dispatchListenerReport(path string, report []byte) {
@@ -473,25 +445,6 @@ func (b *HidrawBackend) finishCommand() {
 	close(b.ioWake)
 	b.ioWake = make(chan struct{})
 	b.ioMu.Unlock()
-
-	b.mu.Lock()
-	var closeNode hidrawNode
-	if !b.listenerActive && b.activeNode != nil {
-		closeNode = b.activeNode
-		b.activeNode = nil
-		b.activePath = ""
-	}
-	b.mu.Unlock()
-	if closeNode != nil {
-		_ = closeNode.Close()
-	}
-}
-
-func (b *HidrawBackend) isCommandPending() bool {
-	b.initIO()
-	b.ioMu.Lock()
-	defer b.ioMu.Unlock()
-	return b.commandPending
 }
 
 type nodeRead struct {
@@ -499,8 +452,11 @@ type nodeRead struct {
 	err   error
 }
 
+const readWorkerShutdownTimeout = 100 * time.Millisecond
+
 // readNode reads one report, bounded by the context. A blocking hidraw read is
-// released on timeout by closing the node from the timeout path.
+// released on timeout by closing the node, and the read worker is joined before
+// returning so it cannot outlive the node owner.
 func (b *HidrawBackend) readNode(ctx context.Context, node hidrawNode, buffer []byte) (int, error) {
 	result := make(chan nodeRead, 1)
 	go func() {
@@ -515,6 +471,13 @@ func (b *HidrawBackend) readNode(ctx context.Context, node hidrawNode, buffer []
 		return read.count, nil
 	case <-ctx.Done():
 		_ = node.Close()
+		shutdown := time.NewTimer(readWorkerShutdownTimeout)
+		defer shutdown.Stop()
+		select {
+		case <-result:
+		case <-shutdown.C:
+			return 0, &Error{Kind: Timeout, Err: fmt.Errorf("hidraw read worker did not stop after close: %w", ctx.Err())}
+		}
 		return 0, &Error{Kind: Timeout, Err: ctx.Err()}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alejandro/attack-shark-linux/internal/configstore"
@@ -40,15 +41,24 @@ func (f profileValidBackendFake) ProfileValid(_ context.Context, _ transport.Can
 }
 
 type targetedCommandFake struct {
+	mu       sync.Mutex
 	calls    int
 	bindings []mouse.Binding
 }
 
 func (f *targetedCommandFake) SendAndAwaitBound(_ context.Context, binding mouse.Binding, _ []byte, continueReading func([]byte) bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	f.bindings = append(f.bindings, binding)
 	continueReading([]byte{0x04, 0x04})
 	return nil
+}
+
+func (f *targetedCommandFake) observations() (int, []mouse.Binding) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, append([]mouse.Binding(nil), f.bindings...)
 }
 
 func TestEmbeddedFrontendServesBuiltRuntimeEntry(t *testing.T) {
@@ -287,8 +297,9 @@ func TestDesktopCompositionPersistsSelectedApplyAndRestoresDistinctDeviceValues(
 			t.Fatalf("ApplyDPI() = %#v", got)
 		}
 	}
-	if command.calls != 2 || command.bindings[0].Path != "/dev/hidraw0" || command.bindings[1].Path != "/dev/hidraw1" {
-		t.Fatalf("targeted commands = %#v; want alpha then bravo exact paths", command)
+	calls, bindings := command.observations()
+	if calls != 2 || bindings[0].Path != "/dev/hidraw0" || bindings[1].Path != "/dev/hidraw1" {
+		t.Fatalf("targeted commands = calls:%d bindings:%#v; want alpha then bravo exact paths", calls, bindings)
 	}
 	reloaded := composeDesktopServiceWithTargeted(dataDir, nil, nil, registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, command)
 	reloaded.RefreshInventory(context.Background())

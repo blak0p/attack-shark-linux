@@ -504,6 +504,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 					return s.applyFailure(&x6.ServiceError{Kind: x6.PersistFailure, Err: err})
 				}
 			}
+			s.cancelSync(binding)
 		}
 	} else if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
 		return s.applyFailure(err)

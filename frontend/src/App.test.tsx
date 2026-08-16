@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, type DesktopService, type Snapshot } from "./App";
+import { App, type ConfigurationEvent, type DesktopService, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
@@ -167,6 +167,49 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry local persistence" }));
     await waitFor(() => expect(service.RetryPersistence).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Persistence saved")).toBeInTheDocument();
+  });
+
+  it("renders pending firmware as queued feedback during automatic synchronization", async () => {
+    render(<App service={serviceFor(snapshot({ Firmware: "pending" }))} />);
+
+    expect(await screen.findByRole("status", { name: "Firmware synchronization queued" })).toBeInTheDocument();
+    expect(screen.queryByText("Firmware synchronization failed")).not.toBeInTheDocument();
+  });
+
+  it("refreshes acknowledged colors without replacing editable pending controls", async () => {
+    const listeners: Array<(event: ConfigurationEvent) => void> = [];
+    const acknowledgedColors = [[12, 34, 56], [23, 45, 67], [34, 56, 78], [45, 67, 89], [56, 78, 90], [67, 89, 101], [78, 90, 112], [89, 101, 123]];
+    const acknowledged = { ...configuration(), Colors: acknowledgedColors };
+    const pending = configuration(1600);
+    const service = serviceFor(snapshot(), {
+      OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
+    render(<App service={service} />);
+
+    await screen.findByText("Device available");
+    await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: snapshot({ Applied: acknowledged, Pending: pending, Revision: 1 }) }));
+
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).value).toBe("1600");
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(12, 34, 56)");
+    expect((screen.getByRole("button", { name: "Stage 1" }) as HTMLElement).style.getPropertyValue("--dot-color")).toBe("rgb(12, 34, 56)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(45, 67, 89)");
+  });
+
+  it("ignores acknowledged color events from a mismatched binding", async () => {
+    const listeners: Array<(event: ConfigurationEvent) => void> = [];
+    const service = serviceFor(snapshot(), {
+      OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
+    render(<App service={service} />);
+
+    await screen.findByText("Device available");
+    await act(async () => listeners[0]({
+      Binding: { ...selectedDevice, ID: { ...selectedDevice.ID, Serial: "bravo" }, Path: "/dev/hidraw1" },
+      Snapshot: snapshot({ Applied: { ...configuration(), Colors: [[12, 34, 56], ...configuration().Colors!.slice(1)] } }),
+    }));
+
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(255, 0, 0)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(0, 255, 255)");
   });
 
   it("restores the last applied DPI state when the desktop service restarts", async () => {
