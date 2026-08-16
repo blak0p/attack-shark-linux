@@ -247,6 +247,27 @@ func (s *TargetedService) Apply(ctx context.Context) error {
 	return nil
 }
 
+// ApplyBound validates and writes only the immutable binding captured by a caller.
+func (s *TargetedService) ApplyBound(ctx context.Context, binding Binding, value any) error {
+	selected, state, profile, err := s.selectedState()
+	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) {
+		return ErrStaleBinding
+	}
+	if err := profile.Codec().Validate(value); err != nil {
+		return err
+	}
+	report, err := profile.Codec().Encode(value)
+	if err != nil || s.command == nil {
+		if err != nil {
+			return err
+		}
+		return ErrStaleBinding
+	}
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	return s.command.SendAndAwaitBound(ctx, binding, report, func(report []byte) bool { return !profile.Codec().MatchesACK(report) })
+}
+
 func (s *TargetedService) HandleEvent(event Event) bool {
 	s.mu.Lock()
 	device, ok := s.devices[event.ID]

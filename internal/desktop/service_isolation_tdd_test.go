@@ -18,7 +18,7 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 	}
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(
 		mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, nil),
-	)
+	).attachAutomaticSave(&fakeSyncScheduler{})
 	inventory := service.RefreshInventory(context.Background())
 	if len(inventory.Devices) != 2 {
 		t.Fatalf("RefreshInventory() = %#v; want two devices", inventory)
@@ -58,8 +58,8 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 	selected := service.SelectDevice(alphaID)
 	service.handleAttributedStatusEvent(StatusEvent{ID: alphaID, Path: alpha.Path, InventoryRevision: selected.Selected.InventoryRevision, Connection: "wired", Battery: intPtr(10), ActiveStage: intPtr(3)})
 	got := service.GetSnapshot()
-	if got.Connection != "wired" || got.Battery == nil || *got.Battery != 10 || got.Pending.ActiveStage != 3 || got.Pending.DPI[0] != 1200 || got.Revision != alphaSnapshot.Revision+1 {
-		t.Fatalf("alpha after matching event = %#v; want only alpha listener state updated", got)
+	if got.Connection != "wired" || got.Battery == nil || *got.Battery != 10 || got.ObservedStage == nil || *got.ObservedStage != 3 || got.ObservedDPI == nil || *got.ObservedDPI != 1600 || got.Pending != got.Applied || got.Revision != alphaSnapshot.Revision {
+		t.Fatalf("alpha after matching event = %#v; want only alpha stage observation and preempted intent", got)
 	}
 }
 
@@ -90,7 +90,7 @@ func TestAttributedListenerUpdatesAreRaceSafeForSelectedDevice(t *testing.T) {
 		_ = service.GetSnapshot()
 	}
 	<-done
-	if got := service.GetSnapshot(); got.Connection != "dongle" || got.Revision != 64 {
-		t.Fatalf("GetSnapshot() = %#v; want all selected-device listener updates", got)
+	if got := service.GetSnapshot(); got.Connection != "dongle" || got.Revision != 0 || got.ObservedStage == nil || *got.ObservedStage != 7 {
+		t.Fatalf("GetSnapshot() = %#v; want valid selected-device stage observations only", got)
 	}
 }

@@ -77,6 +77,12 @@ export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
     });
 }
 
+export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
+    return $Call.ByID(3626311145).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 /**
  * SelectDevice establishes an explicit binding for a previously inventoried device.
  */

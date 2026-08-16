@@ -3,12 +3,13 @@ import type { Binding as GeneratedBinding } from "../bindings/github.com/alejand
 
 export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
-export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string } };
+export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string }; Firmware?: string; Persistence?: string; RetryAvailable?: boolean; ObservedStage?: number | null; ObservedDPI?: number | null };
 export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
 export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
 export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
 export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; ApplyDPI(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void };
+export type ConfigurationEvent = { Binding: Binding; Snapshot: Snapshot };
+export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void };
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -36,6 +37,9 @@ export function App({ service }: { service: DesktopService }) {
     });
     return unsubscribe;
   }, [service]);
+	useEffect(() => service.OnConfiguration((event) => {
+		if (receivesEvent(selected.current, event.Binding)) setSnapshot(event.Snapshot);
+	}), [service]);
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
   const ready = inventory?.Selected != null;
@@ -43,8 +47,8 @@ export function App({ service }: { service: DesktopService }) {
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
   const pending = snapshot.Pending;
   const stages = pending.DPI.map((dpi, index) => ({ index, dpi })).filter(({ index }) => ((pending.StageMask ?? 0) >> index) & 1);
-  const activeIndex = pending.ActiveStage >= 1 && pending.ActiveStage <= pending.DPI.length ? pending.ActiveStage - 1 : -1;
-  const activeDPI = activeIndex >= 0 ? pending.DPI[activeIndex] : null;
+  const activeIndex = snapshot.ObservedStage != null ? snapshot.ObservedStage - 1 : pending.ActiveStage - 1;
+  const activeDPI = snapshot.ObservedStage != null ? snapshot.ObservedDPI ?? null : pending.DPI[activeIndex] ?? null;
   const activeColor = activeIndex >= 0 && pending.Colors ? pending.Colors[activeIndex] : null;
   const colorFor = (index: number) => (pending.Colors && pending.Colors[index] ? `rgb(${pending.Colors[index].join(", ")})` : null);
   const selectDevice = (serial: string) => {
@@ -54,14 +58,14 @@ export function App({ service }: { service: DesktopService }) {
 
   const stage = (index: number, value: number) => {
     const next = { ...pending, DPI: pending.DPI.map((dpi, i) => (i === index ? value : dpi)) };
-    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Changes are staged locally. Select Save to Device to send them."); });
+    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
   };
   const selectStage = (index: number) => {
     const next = { ...pending, ActiveStage: index + 1 };
-    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Changes are staged locally. Select Save to Device to send them."); });
+    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
   };
-  const reset = () => void service.StageDPI(snapshot.Factory).then((snap) => { setSnapshot(snap); setNotice("Factory defaults staged. Select Save to Device to send them."); });
-  const apply = () => void service.ApplyDPI().then((next) => { setSnapshot(next); setNotice(next.Error.Code ? "Save failed. Your staged values are still available." : "DPI configuration applied and saved."); });
+  const reset = () => void service.StageDPI(snapshot.Factory).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
+  const retryPersistence = () => void service.RetryPersistence().then(setSnapshot);
 
   return (
     <div className="app">
@@ -101,10 +105,9 @@ export function App({ service }: { service: DesktopService }) {
             {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
           </div>
           {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
-          <button className="save-btn" disabled={!ready} onClick={apply}>
-            <span>Save to Device</span>
-            <small>(Commit to Firmware)</small>
-          </button>
+          {snapshot.Firmware && <span role="status">{snapshot.Firmware === "success" ? "Firmware applied" : "Firmware synchronization failed"}</span>}
+          {snapshot.Persistence && <span role="status">{snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}</span>}
+          {snapshot.RetryAvailable && <button type="button" onClick={retryPersistence}>Retry local persistence</button>}
         </div>
 
         <section className="panel" aria-labelledby="dpi-title">
@@ -112,7 +115,7 @@ export function App({ service }: { service: DesktopService }) {
             <div>
               <h2 className="panel-title" id="dpi-title">DPI & Performance</h2>
               <div className="panel-subtitle">
-                {activeDPI != null ? <>Active DPI: {activeDPI}{activeColor && <span className="color-swatch" style={{ background: `rgb(${activeColor.join(", ")})` }} />}</> : "No active DPI stage"}
+                {activeIndex >= 0 ? activeDPI != null ? <>Active DPI: {activeDPI}{activeColor && <span className="color-swatch" style={{ background: `rgb(${activeColor.join(", ")})` }} />}</> : "Active DPI: unknown" : "No active DPI stage"}
               </div>
             </div>
             <span className="dots">⋮</span>
@@ -180,8 +183,8 @@ function applyStatusEvent(current: Snapshot, event: StatusEvent): Snapshot {
   if (event.Connection !== undefined) next.Connection = event.Connection;
   if (event.Battery != null) next.Battery = event.Battery;
   if (event.ActiveStage != null) {
-    next.Applied.ActiveStage = event.ActiveStage;
-    next.Pending.ActiveStage = event.ActiveStage;
+    next.ObservedStage = event.ActiveStage;
+    next.ObservedDPI = ((next.Applied.StageMask >> (event.ActiveStage - 1)) & 1) ? next.Applied.DPI[event.ActiveStage - 1] : null;
   }
   return next;
 }

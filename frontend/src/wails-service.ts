@@ -8,6 +8,7 @@ export const desktopService: DesktopService = {
   RefreshInventory: bindings.RefreshInventory,
   SelectDevice: bindings.SelectDevice,
   StageDPI: bindings.StageDPI as DesktopService["StageDPI"],
-  ApplyDPI: bindings.ApplyDPI,
+  RetryPersistence: bindings.RetryPersistence,
   OnStatusEvent: (callback) => Events.On("mouse:status", (event) => callback(event.data)),
+	OnConfiguration: (callback) => Events.On("mouse:configuration", (event) => callback(event.data)),
 };

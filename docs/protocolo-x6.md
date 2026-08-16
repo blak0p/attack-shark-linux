@@ -139,7 +139,7 @@ Interrupt IN `0x83`, report input `0x03` (5 B):
 | 0 | `0x03` report ID (status) |
 | 1 | `0x10` evento/sub-status |
 | 2 | `0x40` heartbeat · `0x10` botón DPI · `0x50` ACK |
-| 3 | stage DPI / perfil |
+| 3 | stage activo en el evento `0x10`; no contiene DPI crudo |
 | 4 | `byte × 10 = % batería` |
 
 Evidencia en vivo (X6):
@@ -148,6 +148,11 @@ Evidencia en vivo (X6):
 idle:  03 10 40 01 0a   (heartbeat, batería 100 %)
 ack:   03 10 50 00 04   (tras SET_REPORT de config)
 ```
+
+El evento `03 10 10 <stage> 00` sólo es autoritativo para seleccionar el stage
+físico. La UI Linux resuelve su DPI exclusivamente desde el mapeo stage→DPI
+confirmado para ese mismo dispositivo; si falta ese mapeo, muestra DPI
+desconocido. No se deduce ni se declara un DPI enviado por el mouse.
 
 ---
 
