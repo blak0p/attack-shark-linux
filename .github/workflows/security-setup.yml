@@ -19,35 +19,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          declare -a LABELS=(
-            "status:pending-approval:#d9534f:Awaiting maintainer approval"
-            "status:approved:#0e8a16:Approved for implementation"
-            "bug:#d73a4a:Something isn't working"
-            "enhancement:#a2eeef:New feature or request"
-            "good first issue:#7057ff:Good for newcomers"
-            "help wanted:#008672:Extra attention is needed"
-            "security:#b60205:Security related"
-            "planned:#1d76db:Planned work"
-            "never-stale:#ffffff:Exempt from the stale bot"
-          )
-          for ENTRY in "${LABELS[@]}"; do
-            IFS=':' read -r NAME COLOR DESC <<< "$ENTRY"
-            gh label create "$NAME" --color "$COLOR" --description "$DESC" --force || true
-          done
+          gh label create "status:pending-approval" --color "d9534f" --description "Awaiting maintainer approval" --force || true
+          gh label create "status:approved" --color "0e8a16" --description "Approved for implementation" --force || true
+          gh label create "bug" --color "d73a4a" --description "Something isn't working" --force || true
+          gh label create "enhancement" --color "a2eeef" --description "New feature or request" --force || true
+          gh label create "good first issue" --color "7057ff" --description "Good for newcomers" --force || true
+          gh label create "help wanted" --color "008672" --description "Extra attention is needed" --force || true
+          gh label create "security" --color "b60205" --description "Security related" --force || true
+          gh label create "planned" --color "1d76db" --description "Planned work" --force || true
+          gh label create "never-stale" --color "ffffff" --description "Exempt from the stale bot" --force || true
 
       - name: Configure branch protection
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cat > /tmp/br-protection.json << 'EOF'
+          {
+            "required_status_checks": {
+              "strict": true,
+              "contexts": ["go", "frontend"]
+            },
+            "enforce_admins": true,
+            "required_pull_request_reviews": {
+              "required_approving_review_count": 1,
+              "dismiss_stale_reviews": true,
+              "require_code_owner_reviews": true
+            },
+            "restrictions": null,
+            "allow_force_pushes": false,
+            "allow_deletions": false,
+            "required_conversation_resolution": true
+          }
+          EOF
           gh api --method PUT /repos/blak0p/attack-shark-linux/branches/main/protection \
             -H "Accept: application/vnd.github+json" \
-            -f required_status_checks='{"strict":true,"contexts":["go","frontend"]}' \
-            -f enforce_admins=true \
-            -f required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true,"require_code_owner_reviews":true}' \
-            -f restrictions=null \
-            -f allow_force_pushes=false \
-            -f allow_deletions=false \
-            -f required_conversation_resolution=true
+            --input /tmp/br-protection.json
 
       - name: Configure repository
         env:
