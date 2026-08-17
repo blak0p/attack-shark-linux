@@ -135,6 +135,42 @@ func TestHidrawEnumerateFindsX6DeviceFromSysfs(t *testing.T) {
 	}
 }
 
+func TestHidrawEnumerateTracksTopologyAndConnectionEpoch(t *testing.T) {
+	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
+	first, err := backend.Enumerate(context.Background(), transport.X6Match())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable, err := backend.Enumerate(context.Background(), transport.X6Match())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first[0].Topology.String() != "1-4" || first[0].EpochID == 0 || stable[0].EpochID != first[0].EpochID {
+		t.Fatalf("stable enumeration = %#v after %#v; want canonical topology and unchanged epoch", stable[0], first[0])
+	}
+	if err := os.RemoveAll(filepath.Join(root, "sys/bus/usb/devices/1-4")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); !IsErrorKind(err, NotFound) {
+		t.Fatalf("disappearance Enumerate() error = %v, want NotFound", err)
+	}
+	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/idVendor"), "1d57\n")
+	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/idProduct"), "fa60\n")
+	for number, endpoint := range map[string]string{"2": "0x83"} {
+		iface := filepath.Join(root, "sys/bus/usb/devices/1-4/1-4:1."+number)
+		writeFixtureFile(t, filepath.Join(iface, "bInterfaceNumber"), number+"\n")
+		writeFixtureFile(t, filepath.Join(iface, "bInterfaceClass"), "03\n")
+		writeFixtureFile(t, filepath.Join(iface, "ep_"+endpoint[2:], "bEndpointAddress"), endpoint+"\n")
+	}
+	reconnected, err := backend.Enumerate(context.Background(), transport.X6Match())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconnected[0].EpochID == first[0].EpochID || reconnected[0].Occurrence == first[0].Occurrence {
+		t.Fatalf("reconnected enumeration = %#v, want a new epoch after disappearance", reconnected[0])
+	}
+}
+
 func TestHidrawProfileValidRejectsInterfaceMismatchWithoutHidrawOpen(t *testing.T) {
 	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/1-4:1.2/bInterfaceNumber"), "1\n")

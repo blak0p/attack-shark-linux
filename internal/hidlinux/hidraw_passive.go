@@ -82,6 +82,7 @@ type HidrawBackend struct {
 	mu             sync.Mutex
 	sources        map[string]Candidate
 	sourceIndexes  map[string]int
+	epochs         transport.EpochTracker
 	sysRoot        string
 	devRoot        string
 	readTimeout    time.Duration
@@ -140,8 +141,9 @@ func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([
 			inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=false profile_validation=not_applicable eligibility=false warning=vid_pid_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "")
 			continue
 		}
+		topology, topologyErr := transport.ParseTopology(uint16(candidate.Bus), candidate.PortPath)
 		key := candidateKey(candidate)
-		if key == "" {
+		if key == "" || topologyErr != nil {
 			inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=%s profile_match=true profile_validation=not_checked eligibility=false warning=invalid_physical_path selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "", "unknown")
 			continue
 		}
@@ -149,9 +151,12 @@ func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([
 		b.sources[key] = candidate
 		b.sourceIndexes[key] = index
 		b.mu.Unlock()
-		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial, Connection: transport.Dongle})
+		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial, Connection: transport.Dongle, Topology: topology})
 		inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=%s profile_match=true profile_validation=not_checked eligibility=pending warning=none selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "", b.inventoryHidrawBasename(candidate))
 	}
+	b.mu.Lock()
+	result = b.epochs.Refresh(result)
+	b.mu.Unlock()
 	if len(result) == 0 {
 		return nil, &Error{Kind: NotFound, Err: errors.New("validated X6 VID:PID was not found")}
 	}
