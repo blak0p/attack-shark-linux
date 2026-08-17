@@ -14,7 +14,7 @@ type DPIConfig struct {
 }
 
 func DefaultDPIConfig() DPIConfig {
-	// Factory template dictated by the user (docs/config-dictada.md): six stages
+	// Factory template dictated by the user (docs/config-baseline.md): six stages
 	// ending at the sensor max. Stages 7-8 hold the minimum encodable value but
 	// are masked off by StageMask 0x3f. Colors match the factory dwords
 	// 0xff/0xff00/0xff0000/0xffff/0xffff00/0xff00ff/0x40ff/0xffffff.

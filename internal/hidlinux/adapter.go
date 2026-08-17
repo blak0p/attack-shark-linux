@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 const (

@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/hidlinux"
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type ErrorCode string
@@ -44,13 +45,18 @@ type Inventory struct {
 	Error    Error
 }
 type Snapshot struct {
-	Connection string
-	Battery    *int
-	Applied    DPIConfig
-	Pending    DPIConfig
-	Factory    DPIConfig
-	Revision   uint64
-	Error      Error
+	Connection     string
+	Battery        *int
+	Applied        DPIConfig
+	Pending        DPIConfig
+	Factory        DPIConfig
+	Revision       uint64
+	Error          Error
+	Firmware       string
+	Persistence    string
+	RetryAvailable bool
+	ObservedStage  *int
+	ObservedDPI    *int
 }
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
@@ -92,14 +98,23 @@ type StatusEvent struct {
 	ActiveStage       *int
 }
 
+// ConfigurationEvent carries an immutable binding with its latest sync snapshot.
+type ConfigurationEvent struct {
+	Binding  Binding
+	Snapshot Snapshot
+}
+
 type deviceState struct {
-	mu                        sync.Mutex
-	applyMu                   sync.Mutex
-	applied, pending, factory x6.DPIConfig
-	connection                x6.Connection
-	battery                   *int
-	revision                  uint64
-	err                       Error
+	mu                         sync.Mutex
+	applyMu                    sync.Mutex
+	applied, pending, factory  x6.DPIConfig
+	connection                 x6.Connection
+	battery                    *int
+	revision                   uint64
+	err                        Error
+	firmware, persistence      string
+	retry                      *x6.DPIConfig
+	observedStage, observedDPI *int
 }
 
 type Service struct {
@@ -115,6 +130,7 @@ type Service struct {
 	mu                sync.Mutex
 	legacy            *deviceState
 	states            map[DeviceID]*deviceState
+	sync              *SyncCoordinator
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -148,6 +164,22 @@ func (s *Service) AttachInventory(inventory *mouse.TargetedService) *Service {
 	defer s.mu.Unlock()
 	s.inventory = inventory
 	s.inventoryDevices = nil
+	s.sync = NewSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyBound)
+	return s
+}
+
+type realSyncScheduler struct{}
+
+func (realSyncScheduler) After(delay time.Duration, f func()) SyncCancel {
+	timer := time.AfterFunc(delay, f)
+	return func() { timer.Stop() }
+}
+
+// attachAutomaticSave replaces the production timer for deterministic tests.
+func (s *Service) attachAutomaticSave(scheduler SyncScheduler) *Service {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sync = NewSyncCoordinator(scheduler, s.bindingCurrent, s.applyBound)
 	return s
 }
 
@@ -193,6 +225,9 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 	if inventory == nil {
 		return Inventory{Error: Error{Code: DeviceUnavailable}}
 	}
+	if selected, ok := inventory.Selection(); ok {
+		s.cancelSync(selected)
+	}
 	devices, err := inventory.Refresh(ctx)
 	if err != nil {
 		return Inventory{Error: Error{Code: DeviceUnavailable}}
@@ -229,6 +264,13 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 			s.states[device.ID] = state
 		}
 	}
+	if result.Selected != nil {
+		if state := s.states[result.Selected.ID]; state != nil {
+			state.mu.Lock()
+			state.observedStage, state.observedDPI = nil, nil
+			state.mu.Unlock()
+		}
+	}
 	s.mu.Unlock()
 	return result
 }
@@ -240,6 +282,11 @@ func (s *Service) SelectDevice(id DeviceID) Inventory {
 	devices := append([]Device(nil), s.inventoryDevices...)
 	migrate := s.migrate
 	s.mu.Unlock()
+	if inventory != nil {
+		if previous, ok := inventory.Selection(); ok {
+			s.cancelSync(previous)
+		}
+	}
 	if inventory == nil || inventory.Select(id) != nil {
 		return Inventory{Devices: devices, Error: Error{Code: SelectionRequired}}
 	}
@@ -316,7 +363,13 @@ func (s *Service) handleAttributedStatusEvent(event StatusEvent) {
 	if state == nil {
 		return
 	}
+	if validStage(event.ActiveStage) {
+		s.cancelSync(selected)
+	}
 	s.foldStatusEvent(state, event, "mouse:status")
+	if validStage(event.ActiveStage) {
+		s.emitConfiguration(selected, state)
+	}
 	_ = sink
 }
 
@@ -326,7 +379,7 @@ func statusDelta(event x6.StatusEvent) (*int, *int) {
 		value := event.BatteryPercent
 		battery = &value
 	}
-	if event.StageAvailable {
+	if event.StageAvailable && event.ActiveStage >= 1 && event.ActiveStage <= 8 {
 		value := int(event.ActiveStage)
 		stage = &value
 	}
@@ -340,10 +393,11 @@ func (s *Service) foldStatusEvent(state *deviceState, event StatusEvent, eventNa
 		value := *event.Battery
 		state.battery = &value
 	}
-	if event.ActiveStage != nil {
-		state.applied.ActiveStage = byte(*event.ActiveStage)
-		state.pending.ActiveStage = byte(*event.ActiveStage)
-		state.revision++
+	if validStage(event.ActiveStage) {
+		state.pending = state.applied
+		stage := *event.ActiveStage
+		state.observedStage = &stage
+		state.observedDPI = mappedDPI(state.applied, stage)
 	}
 	state.mu.Unlock()
 	s.mu.Lock()
@@ -385,7 +439,44 @@ func (s *Service) StageDPI(config DPIConfig) Snapshot {
 	state.pending = next
 	state.revision++
 	state.err = Error{}
+	state.firmware, state.persistence, state.retry = "pending", "", nil
+	if binding, ok := s.selectedBinding(); ok {
+		s.mu.Lock()
+		sync := s.sync
+		s.mu.Unlock()
+		if sync != nil {
+			_ = sync.ScheduleAt(binding, state.revision, next)
+		}
+	}
 	return snapshotLocked(state)
+}
+
+func (s *Service) RetryPersistence() Snapshot {
+	binding, ok := s.selectedBinding()
+	if !ok || binding.SessionOnly {
+		return s.GetSnapshot()
+	}
+	state := s.currentState()
+	state.mu.Lock()
+	retry := state.retry
+	state.mu.Unlock()
+	if retry == nil {
+		return s.GetSnapshot()
+	}
+	s.mu.Lock()
+	persistence := s.devicePersistence
+	s.mu.Unlock()
+	if persistence == nil || persistence.Save(binding, *retry) != nil {
+		state.mu.Lock()
+		state.persistence = "failed"
+		state.err = Error{Code: PersistenceFailed}
+		state.mu.Unlock()
+		return s.GetSnapshot()
+	}
+	state.mu.Lock()
+	state.persistence, state.retry, state.err = "success", nil, Error{}
+	state.mu.Unlock()
+	return s.GetSnapshot()
 }
 func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 	state := s.currentState()
@@ -413,6 +504,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 					return s.applyFailure(&x6.ServiceError{Kind: x6.PersistFailure, Err: err})
 				}
 			}
+			s.cancelSync(binding)
 		}
 	} else if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
 		return s.applyFailure(err)
@@ -460,6 +552,82 @@ func (s *Service) currentState() *deviceState {
 	return state
 }
 
+func (s *Service) selectedBinding() (Binding, bool) {
+	s.mu.Lock()
+	inventory := s.inventory
+	s.mu.Unlock()
+	if inventory == nil {
+		return Binding{}, false
+	}
+	return inventory.Selection()
+}
+
+func (s *Service) bindingCurrent(binding Binding) bool {
+	selected, ok := s.selectedBinding()
+	return ok && selected == binding
+}
+
+func (s *Service) cancelSync(binding Binding) {
+	s.mu.Lock()
+	sync := s.sync
+	s.mu.Unlock()
+	if sync != nil {
+		sync.Cancel(binding)
+	}
+}
+
+func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
+	if !s.bindingCurrent(binding) {
+		return mouse.ErrStaleBinding
+	}
+	state := s.currentState()
+	defer s.emitConfiguration(binding, state)
+	state.mu.Lock()
+	if state.revision != revision {
+		state.mu.Unlock()
+		return mouse.ErrRevisionChanged
+	}
+	state.mu.Unlock()
+	s.mu.Lock()
+	inventory, persistence := s.inventory, s.devicePersistence
+	s.mu.Unlock()
+	if err := inventory.ApplyBound(context.Background(), binding, config); err != nil {
+		state.mu.Lock()
+		state.firmware, state.err = "failed", Error{Code: errorCode(err, false)}
+		state.mu.Unlock()
+		return err
+	}
+	state.mu.Lock()
+	if state.revision != revision {
+		state.mu.Unlock()
+		return mouse.ErrRevisionChanged
+	}
+	state.applied, state.firmware, state.err = config, "success", Error{}
+	state.mu.Unlock()
+	if binding.SessionOnly || persistence == nil {
+		return nil
+	}
+	if err := persistence.Save(binding, config); err != nil {
+		state.mu.Lock()
+		state.persistence, state.retry, state.err = "failed", &config, Error{Code: PersistenceFailed}
+		state.mu.Unlock()
+		return nil
+	}
+	state.mu.Lock()
+	state.persistence = "success"
+	state.mu.Unlock()
+	return nil
+}
+
+func (s *Service) emitConfiguration(binding Binding, state *deviceState) {
+	s.mu.Lock()
+	sink := s.events
+	s.mu.Unlock()
+	if sink != nil {
+		sink.Emit("mouse:configuration", ConfigurationEvent{Binding: binding, Snapshot: snapshotOf(state)})
+	}
+}
+
 func (s *Service) newStateFromLegacy() *deviceState {
 	s.legacy.mu.Lock()
 	defer s.legacy.mu.Unlock()
@@ -473,8 +641,18 @@ func snapshotOf(state *deviceState) Snapshot {
 }
 
 func snapshotLocked(state *deviceState) Snapshot {
-	return Snapshot{Connection: string(state.connection), Battery: state.battery, Applied: ToDTO(state.applied), Pending: ToDTO(state.pending), Factory: ToDTO(state.factory), Revision: state.revision, Error: state.err}
+	return Snapshot{Connection: string(state.connection), Battery: state.battery, Applied: ToDTO(state.applied), Pending: ToDTO(state.pending), Factory: ToDTO(state.factory), Revision: state.revision, Error: state.err, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, ObservedStage: state.observedStage, ObservedDPI: state.observedDPI}
 }
+
+func mappedDPI(config x6.DPIConfig, stage int) *int {
+	if stage < 1 || stage > len(config.DPI) || config.StageMask&(1<<uint(stage-1)) == 0 {
+		return nil
+	}
+	dpi := config.DPI[stage-1]
+	return &dpi
+}
+
+func validStage(stage *int) bool { return stage != nil && *stage >= 1 && *stage <= 8 }
 func ToDTO(config x6.DPIConfig) DPIConfig {
 	return DPIConfig{config.AngleControl, config.RippleControl, config.StageMask, config.LiftDistance, config.DPI, config.ActiveStage, config.Colors}
 }

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestHidrawSendAndAwaitTable(t *testing.T) {
@@ -107,13 +107,13 @@ func TestHidrawSendAndAwaitTable(t *testing.T) {
 
 func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 	root := fixtureRoot(t)
-	node := newCommandHidrawNode([][]byte{
+	listenerNode := newCommandHidrawNode([][]byte{
 		{0x03, 0x10, 0x40, 0x00, 8},
-		{0x03, 0x10, 0x50, 0x00, 0x04},
 	})
-	node.firstReadStarted = make(chan struct{})
-	node.firstReadRelease = make(chan struct{})
-	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
+	listenerNode.firstReadStarted = make(chan struct{})
+	listenerNode.firstReadRelease = make(chan struct{})
+	commandNode := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
+	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), nodes: []hidrawNode{listenerNode, commandNode}}
 	backend := &HidrawBackend{
 		sysRoot:     filepath.Join(root, "sys"),
 		devRoot:     filepath.Join(root, "dev"),
@@ -134,7 +134,7 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 			return true
 		})
 	}()
-	<-node.firstReadStarted
+	<-listenerNode.firstReadStarted
 
 	applyDone := make(chan error, 1)
 	go func() {
@@ -146,11 +146,11 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 	}()
 
 	select {
-	case <-node.writeStarted:
+	case <-commandNode.writeStarted:
 		t.Fatal("Apply wrote while listener owned the read turn")
 	case <-time.After(20 * time.Millisecond):
 	}
-	close(node.firstReadRelease)
+	close(listenerNode.firstReadRelease)
 	if err := <-applyDone; err != nil {
 		t.Fatalf("SendAndAwait() error = %v", err)
 	}
@@ -165,14 +165,18 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 	default:
 		t.Fatal("listener did not receive the non-ACK status report")
 	}
-	if got := node.maxInFlightValue(); got != 1 {
-		t.Fatalf("maximum concurrent node I/O = %d, want 1", got)
+	if got := listenerNode.maxInFlightValue(); got != 1 {
+		t.Fatalf("maximum listener node I/O = %d, want 1", got)
+	}
+	if got := commandNode.maxInFlightValue(); got != 1 {
+		t.Fatalf("maximum command node I/O = %d, want 1", got)
 	}
 }
 
 type countingHidrawOpener struct {
 	path  string
 	node  hidrawNode
+	nodes []hidrawNode
 	mu    sync.Mutex
 	count int
 }
@@ -183,6 +187,12 @@ func (o *countingHidrawOpener) OpenNode(path string) (hidrawNode, error) {
 	}
 	o.mu.Lock()
 	o.count++
+	if len(o.nodes) > 0 {
+		node := o.nodes[0]
+		o.nodes = o.nodes[1:]
+		o.mu.Unlock()
+		return node, nil
+	}
 	o.mu.Unlock()
 	return o.node, nil
 }
@@ -270,6 +280,11 @@ func (n *commandHidrawNode) SendFeatureReport(report []byte) (int, error) {
 	default:
 		close(n.writeStarted)
 	}
+	select {
+	case <-n.closed:
+		return 0, errors.New("hidraw node is closed")
+	default:
+	}
 	if n.writeErr != nil {
 		return 0, n.writeErr
 	}
@@ -287,4 +302,13 @@ func (n *commandHidrawNode) maxInFlightValue() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.maxInFlight
+}
+
+func (n *commandHidrawNode) isClosed() bool {
+	select {
+	case <-n.closed:
+		return true
+	default:
+		return false
+	}
 }

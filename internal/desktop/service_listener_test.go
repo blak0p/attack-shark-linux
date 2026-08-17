@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type listenerFake struct {
@@ -81,8 +83,8 @@ func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 
 	listener.emit(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 4, StageAvailable: true})
 	snapshot = service.GetSnapshot()
-	if snapshot.Pending.ActiveStage != 4 || snapshot.Applied.ActiveStage != 4 || snapshot.Revision != 1 {
-		t.Fatalf("after stage event snapshot = %#v; want active stage 4 with bumped revision", snapshot)
+	if snapshot.ObservedStage == nil || *snapshot.ObservedStage != 4 || snapshot.ObservedDPI == nil || *snapshot.ObservedDPI != 3200 || snapshot.Revision != 0 {
+		t.Fatalf("after stage event snapshot = %#v; want stage-only observation mapped from acknowledged state", snapshot)
 	}
 
 	emitted, events := sink.snapshot()
@@ -94,5 +96,48 @@ func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 	}
 	if events[1].ActiveStage == nil || *events[1].ActiveStage != 4 || events[1].Battery != nil {
 		t.Fatalf("events[1] = %+v; want stage-only event", events[1])
+	}
+}
+
+func TestStageObservationUsesAcknowledgedMappingAndPreemptsUnsentIntent(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	listener := newListenerFake()
+	service.AttachListener(listener, &eventSinkFake{})
+	service.StageDPI(ToDTO(x6.DPIConfig{StageMask: 0x3f, LiftDistance: 1, ActiveStage: 1, DPI: [8]int{1600, 1200, 3200, 2400, 5600, 26000, 50, 50}}))
+
+	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 3, StageAvailable: true})
+	got := service.GetSnapshot()
+	if got.ObservedStage == nil || *got.ObservedStage != 3 || got.ObservedDPI == nil || *got.ObservedDPI != 1600 {
+		t.Fatalf("stage observation = %#v; want stage 3 mapped to acknowledged 1600 DPI", got)
+	}
+	if got.Pending != got.Applied {
+		t.Fatalf("pending = %#v; want unsent intent discarded in favor of acknowledged mapping %#v", got.Pending, got.Applied)
+	}
+}
+
+func TestStageObservationKeepsMissingAcknowledgedMappingUnknown(t *testing.T) {
+	applied := x6.DefaultDPIConfig()
+	applied.StageMask = 0x03
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: applied})
+	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 3, StageAvailable: true})
+
+	got := service.GetSnapshot()
+	if got.ObservedStage == nil || *got.ObservedStage != 3 || got.ObservedDPI != nil {
+		t.Fatalf("missing mapping observation = %#v; want stage 3 with unknown DPI", got)
+	}
+}
+
+func TestInventoryRefreshStartsNewStageObservationEpoch(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
+	selected := service.RefreshInventory(context.Background()).Selected
+	service.handleAttributedStatusEvent(StatusEvent{ID: selected.ID, Path: selected.Path, InventoryRevision: selected.InventoryRevision, ActiveStage: intPtr(3)})
+	if service.GetSnapshot().ObservedStage == nil {
+		t.Fatal("stage report did not establish an observation")
+	}
+	service.RefreshInventory(context.Background())
+	if got := service.GetSnapshot(); got.ObservedStage != nil || got.ObservedDPI != nil {
+		t.Fatalf("reconnect snapshot = %#v; want prior epoch observation cleared", got)
 	}
 }

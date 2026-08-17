@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/alejandro/attack-shark-linux/internal/transport"
-	"github.com/alejandro/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestAdapterDiscoveryRejectsEveryMismatchBeforeUSBAccess(t *testing.T) {

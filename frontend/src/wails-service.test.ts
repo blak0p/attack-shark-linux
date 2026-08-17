@@ -4,14 +4,14 @@ const bindings = vi.hoisted(() => ({
   GetSnapshot: vi.fn(),
   RefreshStatus: vi.fn(),
   StageDPI: vi.fn(),
-  ApplyDPI: vi.fn(),
+  RetryPersistence: vi.fn(),
   RefreshInventory: vi.fn(),
   SelectDevice: vi.fn(),
 }));
 
 const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
 
-vi.mock("../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/service", () => bindings);
+vi.mock("../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
 vi.mock("@wailsio/runtime", () => runtime);
 
 import { desktopService } from "./wails-service";
@@ -23,7 +23,7 @@ describe("desktopService", () => {
     expect(desktopService.GetSnapshot).toBe(bindings.GetSnapshot);
     expect(desktopService.RefreshStatus).toBe(bindings.RefreshStatus);
     expect(desktopService.StageDPI).toBe(bindings.StageDPI);
-    expect(desktopService.ApplyDPI).toBe(bindings.ApplyDPI);
+    expect(desktopService.RetryPersistence).toBe(bindings.RetryPersistence);
     desktopService.StageDPI(config);
     expect(bindings.StageDPI).toHaveBeenCalledWith(config);
   });
@@ -38,6 +38,15 @@ describe("desktopService", () => {
     expect(callback).toHaveBeenCalledWith({ Connection: "dongle", Battery: 90 });
 
     expect(unsubscribe).toBe(runtime.Events.On.mock.results[0].value);
+  });
+
+  it("subscribes to emitted configuration snapshots", () => {
+    const callback = vi.fn();
+    desktopService.OnConfiguration(callback);
+
+    expect(runtime.Events.On).toHaveBeenCalledWith("mouse:configuration", expect.any(Function));
+    runtime.Events.On.mock.calls.at(-1)[1]({ data: { Snapshot: { Firmware: "success" } } });
+    expect(callback).toHaveBeenCalledWith({ Snapshot: { Firmware: "success" } });
   });
 
   it("delegates generated inventory bindings and subscribes to device-scoped status events", () => {

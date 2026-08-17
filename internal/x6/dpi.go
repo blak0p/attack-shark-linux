@@ -3,7 +3,7 @@ package x6
 import (
 	"fmt"
 
-	protocol "github.com/alejandro/attack-shark-linux/internal/protocol/x6"
+	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 // DPIConfig represents the entire documented 0x04 configuration report.

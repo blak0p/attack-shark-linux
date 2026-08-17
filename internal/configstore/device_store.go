@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
 
 const deviceSchemaVersion = 2

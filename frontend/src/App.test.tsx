@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, type DesktopService, type Snapshot } from "./App";
-import type { Binding } from "../bindings/github.com/alejandro/attack-shark-linux/internal/desktop/models";
+import { App, type ConfigurationEvent, type DesktopService, type Snapshot } from "./App";
+import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
 
@@ -32,9 +32,10 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
-  StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
-  ApplyDPI: vi.fn().mockResolvedValue(initial),
+	StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
+  RetryPersistence: vi.fn().mockResolvedValue(initial),
   OnStatusEvent: vi.fn().mockReturnValue(() => {}),
+	OnConfiguration: vi.fn().mockReturnValue(() => {}),
   ...overrides,
 });
 
@@ -82,6 +83,17 @@ describe("App", () => {
     expect(screen.getByText("Active DPI: 2400")).toBeInTheDocument();
   });
 
+  it("renders a physical stage from its acknowledged mapping and keeps missing mappings unknown", async () => {
+    const mapped = snapshot({ ObservedStage: 3, ObservedDPI: 1600 } as Snapshot);
+    const { rerender } = render(<App service={serviceFor(mapped)} />);
+
+    expect(await screen.findByText("Active DPI: 1600")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stage 3, active" })).toBeInTheDocument();
+
+    rerender(<App service={serviceFor(snapshot({ ObservedStage: 3, ObservedDPI: null } as Snapshot))} />);
+    expect(await screen.findByText("Active DPI: unknown")).toBeInTheDocument();
+  });
+
   it("renders only the stages enabled by the firmware StageMask", async () => {
     const masked = snapshot({ Pending: { ...configuration(), StageMask: 0x0f } });
     render(<App service={serviceFor(masked)} />);
@@ -122,8 +134,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Stage 1" }));
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ ActiveStage: 1 })));
-    expect(service.ApplyDPI).not.toHaveBeenCalled();
-    expect(screen.getByText("Changes are staged locally. Select Save to Device to send them.")).toBeInTheDocument();
+	expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
   });
 
   it("stages factory defaults on Reset without applying them", async () => {
@@ -133,11 +144,10 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Reset to factory/ }));
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(snapshot().Factory));
-    expect(service.ApplyDPI).not.toHaveBeenCalled();
-    expect(screen.getByText("Factory defaults staged. Select Save to Device to send them.")).toBeInTheDocument();
+	expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
   });
 
-  it("stages a DPI edit locally without applying it", async () => {
+  it("queues a DPI edit for automatic synchronization without an explicit Save control", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
@@ -145,29 +155,61 @@ describe("App", () => {
     fireEvent.change(input, { target: { value: "1600" } });
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: expect.arrayContaining([1600]) })));
-    expect(service.ApplyDPI).not.toHaveBeenCalled();
-    expect(screen.getByText("Changes are staged locally. Select Save to Device to send them.")).toBeInTheDocument();
+	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
   });
 
-  it("reports a successful Save only after the service returns success", async () => {
-    const service = serviceFor(snapshot(), { ApplyDPI: vi.fn().mockResolvedValue(snapshot({ Applied: configuration(1600), Pending: configuration(1600) })) });
+  it("renders distinct firmware and persistence outcomes with a persistence-only retry", async () => {
+    const service = serviceFor(snapshot({ Firmware: "success", Persistence: "failed", RetryAvailable: true }) as Snapshot, { RetryPersistence: vi.fn().mockResolvedValue(snapshot({ Firmware: "success", Persistence: "success", RetryAvailable: false }) as Snapshot) });
     render(<App service={service} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Save to Device/ }));
-
-    expect(await screen.findByText("DPI configuration applied and saved.")).toBeInTheDocument();
-    expect(service.ApplyDPI).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Firmware applied")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry local persistence" }));
+    await waitFor(() => expect(service.RetryPersistence).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Persistence saved")).toBeInTheDocument();
   });
 
-  it("preserves staged values and reports an unsuccessful Save", async () => {
-    const failed = snapshot({ Applied: configuration(), Pending: configuration(1600), Error: { Code: "apply_failed" } });
-    const service = serviceFor(snapshot({ Pending: configuration(1600) }), { ApplyDPI: vi.fn().mockResolvedValue(failed) });
+  it("renders pending firmware as queued feedback during automatic synchronization", async () => {
+    render(<App service={serviceFor(snapshot({ Firmware: "pending" }))} />);
+
+    expect(await screen.findByRole("status", { name: "Firmware synchronization queued" })).toBeInTheDocument();
+    expect(screen.queryByText("Firmware synchronization failed")).not.toBeInTheDocument();
+  });
+
+  it("refreshes acknowledged colors without replacing editable pending controls", async () => {
+    const listeners: Array<(event: ConfigurationEvent) => void> = [];
+    const acknowledgedColors = [[12, 34, 56], [23, 45, 67], [34, 56, 78], [45, 67, 89], [56, 78, 90], [67, 89, 101], [78, 90, 112], [89, 101, 123]];
+    const acknowledged = { ...configuration(), Colors: acknowledgedColors };
+    const pending = configuration(1600);
+    const service = serviceFor(snapshot(), {
+      OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
     render(<App service={service} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Save to Device/ }));
+    await screen.findByText("Device available");
+    await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: snapshot({ Applied: acknowledged, Pending: pending, Revision: 1 }) }));
 
-    expect(await screen.findByText("Save failed. Your staged values are still available.")).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "Stage 1 DPI" })).toHaveValue("1600");
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).value).toBe("1600");
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(12, 34, 56)");
+    expect((screen.getByRole("button", { name: "Stage 1" }) as HTMLElement).style.getPropertyValue("--dot-color")).toBe("rgb(12, 34, 56)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(45, 67, 89)");
+  });
+
+  it("ignores acknowledged color events from a mismatched binding", async () => {
+    const listeners: Array<(event: ConfigurationEvent) => void> = [];
+    const service = serviceFor(snapshot(), {
+      OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
+    render(<App service={service} />);
+
+    await screen.findByText("Device available");
+    await act(async () => listeners[0]({
+      Binding: { ...selectedDevice, ID: { ...selectedDevice.ID, Serial: "bravo" }, Path: "/dev/hidraw1" },
+      Snapshot: snapshot({ Applied: { ...configuration(), Colors: [[12, 34, 56], ...configuration().Colors!.slice(1)] } }),
+    }));
+
+    expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(255, 0, 0)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(0, 255, 255)");
   });
 
   it("restores the last applied DPI state when the desktop service restarts", async () => {
@@ -175,7 +217,7 @@ describe("App", () => {
     render(<App service={serviceFor(restored)} />);
 
     expect(await screen.findByRole("slider", { name: "Stage 1 DPI" })).toHaveValue("1600");
-    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeEnabled();
+	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
   });
 
   it("subscribes to status events on mount and applies heartbeats and stage presses", async () => {
@@ -265,8 +307,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Device available")).toBeInTheDocument();
     expect(screen.queryByText(/ambiguous identity/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
+	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
     expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
   });
@@ -296,12 +337,10 @@ describe("App", () => {
     expect(screen.getByText("VID 1D57 · PID FA60 · Serial unavailable")).toBeInTheDocument();
     expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
     expect(screen.getAllByText("ambiguous identity")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeDisabled();
+	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
     expect(screen.getAllByRole("slider").every((slider) => (slider as HTMLInputElement).disabled)).toBe(true);
     expect(service.StageDPI).not.toHaveBeenCalled();
-    expect(service.ApplyDPI).not.toHaveBeenCalled();
   });
 
   it("applies status events only when their identity matches the selected device", async () => {
@@ -334,7 +373,7 @@ describe("App", () => {
 
     await screen.findByText("Device available");
     expect(screen.queryByRole("button", { name: /macro|profile|remap|lighting/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Save to Device/ })).toBeEnabled();
+	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
 });

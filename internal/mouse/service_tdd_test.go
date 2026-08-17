@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestTargetedServiceSelectsSoleDeviceAndRequiresSelectionForMany(t *testing.T) {

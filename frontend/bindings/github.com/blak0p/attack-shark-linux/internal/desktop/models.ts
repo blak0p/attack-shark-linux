@@ -174,6 +174,11 @@ export class Snapshot {
     "Factory": DPIConfig;
     "Revision": number;
     "Error": Error;
+    "Firmware": string;
+    "Persistence": string;
+    "RetryAvailable": boolean;
+    "ObservedStage": number | null;
+    "ObservedDPI": number | null;
 
     /** Creates a new Snapshot instance. */
     constructor($$source: Partial<Snapshot> = {}) {
@@ -197,6 +202,21 @@ export class Snapshot {
         }
         if (!("Error" in $$source)) {
             this["Error"] = (new Error());
+        }
+        if (!("Firmware" in $$source)) {
+            this["Firmware"] = "";
+        }
+        if (!("Persistence" in $$source)) {
+            this["Persistence"] = "";
+        }
+        if (!("RetryAvailable" in $$source)) {
+            this["RetryAvailable"] = false;
+        }
+        if (!("ObservedStage" in $$source)) {
+            this["ObservedStage"] = null;
+        }
+        if (!("ObservedDPI" in $$source)) {
+            this["ObservedDPI"] = null;
         }
 
         Object.assign(this, $$source);

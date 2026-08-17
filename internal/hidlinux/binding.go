@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 // SendAndAwaitBound revalidates one captured binding and uses only its matching
@@ -48,14 +48,13 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 	defer release()
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
 	defer cancel()
-	node := b.commandNode(binding.Path)
-	if node == nil {
-		node, err = b.opener.OpenNode(path)
-		if err != nil {
-			return &diagnosticError{operation: "transfer", err: classify(err)}
-		}
-		defer node.Close()
+	// Commands own a separate node from the always-on listener. The listener
+	// may close its node while its bounded read shuts down.
+	node, err := b.opener.OpenNode(path)
+	if err != nil {
+		return &diagnosticError{operation: "transfer", err: classify(err)}
 	}
+	defer node.Close()
 	count, err := node.SendFeatureReport(payload)
 	if err != nil {
 		return &diagnosticError{operation: "transfer", err: classify(err)}

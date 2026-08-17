@@ -1,0 +1,16 @@
+# Default owner
+* @blak0p
+
+# Hardware adapter (hidraw), device validation and passive status
+/internal/hidlinux/ @blak0p
+
+# X6 protocol and reports
+/internal/x6/ @blak0p
+/internal/protocol/ @blak0p
+
+# Desktop service and config persistence
+/internal/desktop/ @blak0p
+/internal/configstore/ @blak0p
+
+# udev access policy
+/packaging/ @blak0p

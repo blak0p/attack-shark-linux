@@ -1,4 +1,4 @@
-module github.com/alejandro/attack-shark-linux
+module github.com/blak0p/attack-shark-linux
 
 go 1.25.0
 

@@ -1,0 +1,113 @@
+name: Bug Report
+description: Report a bug to help us improve attack-shark-linux
+title: "bug: "
+labels: [bug, "status:pending-approval"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        For security vulnerabilities, follow [SECURITY.md](https://github.com/blak0p/attack-shark-linux/blob/main/SECURITY.md) — do NOT open a public issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Which version or commit are you running? (no installer yet — build from source)
+      placeholder: "main @ 2eea068"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "Ubuntu 24.04 / Arch / Fedora 41"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device details
+      description: Dongle/model, whether `lsusb -d 1d57:fa60` shows the dongle, and whether a serial is reported.
+      placeholder: "X6 magnetic charging base, dongle detected, serial available"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: udev
+    attributes:
+      label: udev policy installed?
+      description: See docs/linux-usb-prerequisites.md
+      options:
+        - "Yes"
+        - "No"
+        - "Unsure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Blocks usage entirely (crash, device state corrupted, data loss)"
+        - "Major - workaround exists but painful"
+        - "Minor - cosmetic or edge case"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the issue and what you expected to happen.
+      placeholder: "Tell us what went wrong"
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact — why does this matter to you?
+      description: What were you trying to do and how does this block your workflow?
+      placeholder: "I was trying to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the app...
+        2. ...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste any error messages or logs.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Search
+      options:
+        - label: |
+            I searched for existing open and closed issues before opening this
+          required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+    validations:
+      required: false

@@ -5,16 +5,18 @@ package hidlinux
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/alejandro/attack-shark-linux/internal/mouse"
-	"github.com/alejandro/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func writeFixtureFile(t *testing.T, path, contents string) {
@@ -301,10 +303,65 @@ func TestHidrawReadInterruptINTimesOutWithoutReports(t *testing.T) {
 	}
 }
 
+func TestHidrawReadInterruptINWaitsForReadWorkerShutdown(t *testing.T) {
+	root := fixtureRoot(t)
+	nodePath := filepath.Join(root, "dev/hidraw3")
+	node := &delayedCloseHidrawNode{
+		closed:      make(chan struct{}),
+		closeCalled: make(chan struct{}),
+		readRelease: make(chan struct{}),
+	}
+	opener := fakeHidrawOpener{nodes: map[string]hidrawNode{nodePath: node}}
+	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
+
+	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- backend.ReadInterruptIN(context.Background(), transport.InputSource{Path: "1:1-4"}, func([]byte) bool { return true })
+	}()
+	<-node.closeCalled
+	select {
+	case err := <-done:
+		t.Fatalf("ReadInterruptIN() returned before read worker shutdown: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(node.readRelease)
+	if err := <-done; !IsErrorKind(err, Timeout) {
+		t.Fatalf("ReadInterruptIN() error = %v, want Timeout", err)
+	}
+}
+
 func TestHidrawReadInterruptINReturnsNotFoundForUnknownSource(t *testing.T) {
 	backend, _ := hidrawBackendForFixture(t, fakeHidrawOpener{})
 	err := backend.ReadInterruptIN(context.Background(), transport.InputSource{Path: "missing"}, func([]byte) bool { return true })
 	if !IsErrorKind(err, NotFound) {
 		t.Fatalf("ReadInterruptIN() error = %v; want NotFound", err)
 	}
+}
+
+type delayedCloseHidrawNode struct {
+	closed      chan struct{}
+	closeCalled chan struct{}
+	readRelease chan struct{}
+	closeOnce   sync.Once
+}
+
+func (n *delayedCloseHidrawNode) Read([]byte) (int, error) {
+	<-n.closed
+	<-n.readRelease
+	return 0, io.EOF
+}
+
+func (n *delayedCloseHidrawNode) Close() error {
+	n.closeOnce.Do(func() {
+		close(n.closeCalled)
+		close(n.closed)
+	})
+	return nil
+}
+
+func (n *delayedCloseHidrawNode) SendFeatureReport([]byte) (int, error) {
+	return 0, errors.New("unexpected feature report")
 }

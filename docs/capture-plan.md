@@ -49,7 +49,7 @@ driver can replicate every report with evidence.
 2. Compare the report payloads against `docs/protocol-captures.md`.
 3. Note which bytes changed between two SET_REPORTs of the same report: the
    changed byte is the field the action edits.
-4. Update `docs/protocol-captures.md` and, when confirmed, `docs/protocolo-x6.md`.
+4. Update `docs/protocol-captures.md` and, when confirmed, `docs/protocol-x6.md`.
 
 ## Rules
 
