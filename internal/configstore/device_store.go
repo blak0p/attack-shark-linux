@@ -8,13 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
-const deviceSchemaVersion = 2
+const deviceSchemaVersion = 3
 
 var ErrIncompatibleRecord = errors.New("incompatible device record")
 var ErrTransientPath = errors.New("transient path cannot be persisted")
@@ -30,10 +32,34 @@ type DeviceRecord struct {
 	Configuration json.RawMessage `json:"configuration"`
 }
 type migrationRecord struct{ SourceHash, TargetKey, Status string }
+type claimRecord struct {
+	Alias            string                     `json:"alias"`
+	ValidatedProfile string                     `json:"validatedProfile"`
+	Topology         transport.TopologyEvidence `json:"topology"`
+}
 type deviceEnvelope struct {
 	Version    int                        `json:"version"`
 	Devices    map[string]DeviceRecord    `json:"devices"`
 	Migrations map[string]migrationRecord `json:"migrations"`
+	Claims     map[ClaimID]claimRecord    `json:"claims,omitempty"`
+}
+
+// ClaimLookup deliberately excludes every settings-derived field.
+type ClaimLookup struct {
+	Alias            string                     `json:"alias"`
+	ValidatedProfile string                     `json:"validatedProfile"`
+	Topology         transport.TopologyEvidence `json:"topology"`
+}
+
+type ClaimID string
+
+type claimManifest struct {
+	Generation uint64 `json:"generation"`
+}
+
+type claimSettings struct {
+	ConfigVersion int             `json:"configVersion"`
+	Configuration json.RawMessage `json:"configuration"`
 }
 
 type DeviceStore struct {
@@ -42,6 +68,122 @@ type DeviceStore struct {
 }
 
 func NewDeviceStore(path string) *DeviceStore { return &DeviceStore{path: path} }
+
+func (s *DeviceStore) CreateClaim(alias, profile string, topology transport.TopologyEvidence) (ClaimID, ClaimLookup, error) {
+	if strings.TrimSpace(alias) == "" || strings.TrimSpace(profile) == "" || topology.Validate() != nil {
+		return "", ClaimLookup{}, ErrIncompatibleRecord
+	}
+	lookup := ClaimLookup{Alias: alias, ValidatedProfile: profile, Topology: topology}
+	sum := sha256.Sum256([]byte(alias + "\x00" + profile + "\x00" + topology.String()))
+	id := ClaimID(hex.EncodeToString(sum[:]))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	envelope, err := s.read()
+	if err != nil {
+		return "", ClaimLookup{}, err
+	}
+	if existing, ok := envelope.Claims[id]; ok && !sameClaim(existing, claimRecord{Alias: alias, ValidatedProfile: profile, Topology: topology}) {
+		return "", ClaimLookup{}, ErrIncompatibleRecord
+	}
+	envelope.Claims[id] = claimRecord(lookup)
+	if err := s.write(envelope); err != nil {
+		return "", ClaimLookup{}, err
+	}
+	return id, lookup, nil
+}
+
+func sameClaim(left, right claimRecord) bool {
+	if left.Alias != right.Alias || left.ValidatedProfile != right.ValidatedProfile || left.Topology.Bus != right.Topology.Bus || len(left.Topology.Ports) != len(right.Topology.Ports) {
+		return false
+	}
+	for index := range left.Topology.Ports {
+		if left.Topology.Ports[index] != right.Topology.Ports[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *DeviceStore) ListClaimLookups() ([]ClaimLookup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	envelope, err := s.read()
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(envelope.Claims))
+	for id := range envelope.Claims {
+		ids = append(ids, string(id))
+	}
+	sort.Strings(ids)
+	lookups := make([]ClaimLookup, 0, len(ids))
+	for _, id := range ids {
+		claim := envelope.Claims[ClaimID(id)]
+		lookups = append(lookups, ClaimLookup{Alias: claim.Alias, ValidatedProfile: claim.ValidatedProfile, Topology: claim.Topology})
+	}
+	return lookups, nil
+}
+
+func (s *DeviceStore) SaveClaimSettings(id ClaimID, configVersion int, configuration any) error {
+	contents, err := json.Marshal(configuration)
+	if err != nil || hasPath(contents) {
+		if err != nil {
+			return err
+		}
+		return ErrTransientPath
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	envelope, err := s.read()
+	if err != nil {
+		return err
+	}
+	if _, ok := envelope.Claims[id]; !ok {
+		return os.ErrNotExist
+	}
+	manifest, err := s.readManifest(id)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	manifest.Generation++
+	payload, err := json.Marshal(claimSettings{ConfigVersion: configVersion, Configuration: contents})
+	if err != nil {
+		return err
+	}
+	if err := writeAtomic(s.claimPayloadPath(id, manifest.Generation), payload, ".claim-payload-*.tmp"); err != nil {
+		return err
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(s.claimManifestPath(id), manifestBytes, ".claim-manifest-*.tmp")
+}
+
+func (s *DeviceStore) LoadClaimSettings(id ClaimID, destination any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	envelope, err := s.read()
+	if err != nil {
+		return err
+	}
+	if _, ok := envelope.Claims[id]; !ok {
+		return os.ErrNotExist
+	}
+	manifest, err := s.readManifest(id)
+	if err != nil {
+		return err
+	}
+	contents, err := os.ReadFile(s.claimPayloadPath(id, manifest.Generation))
+	if err != nil {
+		return err
+	}
+	var settings claimSettings
+	if err := json.Unmarshal(contents, &settings); err != nil {
+		return err
+	}
+	return json.Unmarshal(settings.Configuration, destination)
+}
 
 func (s *DeviceStore) Save(id mouse.DeviceID, profile, model string, configVersion int, configuration any) error {
 	if err := id.Validate(); err != nil {
@@ -164,7 +306,7 @@ func (s *DeviceStore) MigrateV1(appliedPath, factoryPath string, targets []Migra
 func (s *DeviceStore) read() (deviceEnvelope, error) {
 	contents, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
-		return deviceEnvelope{Version: deviceSchemaVersion, Devices: map[string]DeviceRecord{}, Migrations: map[string]migrationRecord{}}, nil
+		return deviceEnvelope{Version: deviceSchemaVersion, Devices: map[string]DeviceRecord{}, Migrations: map[string]migrationRecord{}, Claims: map[ClaimID]claimRecord{}}, nil
 	}
 	if err != nil {
 		return deviceEnvelope{}, err
@@ -173,7 +315,7 @@ func (s *DeviceStore) read() (deviceEnvelope, error) {
 	if err := json.Unmarshal(contents, &envelope); err != nil {
 		return deviceEnvelope{}, err
 	}
-	if envelope.Version != deviceSchemaVersion {
+	if envelope.Version != 2 && envelope.Version != deviceSchemaVersion {
 		return deviceEnvelope{}, fmt.Errorf("unsupported device-state schema %d", envelope.Version)
 	}
 	if envelope.Devices == nil {
@@ -182,6 +324,11 @@ func (s *DeviceStore) read() (deviceEnvelope, error) {
 	if envelope.Migrations == nil {
 		envelope.Migrations = map[string]migrationRecord{}
 	}
+	if envelope.Claims == nil {
+		envelope.Claims = map[ClaimID]claimRecord{}
+	}
+	// v2 records remain readable; the next mutation writes a v3 envelope.
+	envelope.Version = deviceSchemaVersion
 	return envelope, nil
 }
 func (s *DeviceStore) write(envelope deviceEnvelope) error {
@@ -189,10 +336,37 @@ func (s *DeviceStore) write(envelope deviceEnvelope) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	return writeAtomic(s.path, contents, ".devices-*.tmp")
+}
+
+func (s *DeviceStore) claimManifestPath(id ClaimID) string {
+	return filepath.Join(filepath.Dir(s.path), ".claims", string(id)+".manifest.json")
+}
+
+func (s *DeviceStore) claimPayloadPath(id ClaimID, generation uint64) string {
+	return filepath.Join(filepath.Dir(s.path), ".claims", fmt.Sprintf("%s.%d.json", id, generation))
+}
+
+func (s *DeviceStore) readManifest(id ClaimID) (claimManifest, error) {
+	contents, err := os.ReadFile(s.claimManifestPath(id))
+	if err != nil {
+		return claimManifest{}, err
+	}
+	var manifest claimManifest
+	if err := json.Unmarshal(contents, &manifest); err != nil || manifest.Generation == 0 {
+		if err == nil {
+			err = ErrIncompatibleRecord
+		}
+		return claimManifest{}, err
+	}
+	return manifest, nil
+}
+
+func writeAtomic(path string, contents []byte, pattern string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(s.path), ".devices-*.tmp")
+	file, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return err
 	}
@@ -207,7 +381,7 @@ func (s *DeviceStore) write(envelope deviceEnvelope) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(name, s.path)
+	return os.Rename(name, path)
 }
 func readV1(path string) (json.RawMessage, error) {
 	contents, err := os.ReadFile(path)

@@ -1,13 +1,82 @@
 package configstore
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
+
+func TestSeriallessStoreAtomicCommit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devices-v2.json")
+	store := NewDeviceStore(path)
+	claimID, _, err := store.CreateClaim("desk receiver", "x6", transport.TopologyEvidence{Bus: 1, Ports: []uint8{4}})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+	if err := store.SaveClaimSettings(claimID, 1, map[string]int{"dpi": 1600}); err != nil {
+		t.Fatalf("SaveClaimSettings() error = %v", err)
+	}
+	lookups, err := store.ListClaimLookups()
+	if err != nil || len(lookups) != 1 {
+		t.Fatalf("ListClaimLookups() = %#v, %v", lookups, err)
+	}
+	if lookups[0].Alias != "desk receiver" || lookups[0].ValidatedProfile != "x6" || lookups[0].Topology.String() != "1-4" {
+		t.Fatalf("lookup = %#v, want only claim metadata", lookups[0])
+	}
+	encoded, err := json.Marshal(lookups[0])
+	if err != nil || string(encoded) != `{"alias":"desk receiver","validatedProfile":"x6","topology":{"bus":1,"ports":[4]}}` {
+		t.Fatalf("lookup JSON = %s, %v; want no settings fields", encoded, err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".claims", string(claimID)+".manifest.json")); err != nil {
+		t.Fatalf("private manifest missing: %v", err)
+	}
+}
+
+func TestSeriallessStorePreservesMalformedPayloadAndReadsV2BeforeV3Write(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devices-v2.json")
+	legacy := []byte(`{"version":2,"devices":{},"migrations":{}}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewDeviceStore(path)
+	if _, err := store.ListClaimLookups(); err != nil {
+		t.Fatalf("ListClaimLookups() v2 read error = %v", err)
+	}
+	claimID, _, err := store.CreateClaim("moved receiver", "x6", transport.TopologyEvidence{Bus: 2, Ports: []uint8{3, 7}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveClaimSettings(claimID, 1, map[string]int{"dpi": 800}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(dir, ".claims", string(claimID)+".manifest.json")
+	if err := os.WriteFile(manifest, []byte(`{malformed`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var destination map[string]int
+	if err := store.LoadClaimSettings(claimID, &destination); err == nil {
+		t.Fatal("LoadClaimSettings() error = nil, want malformed manifest rejection")
+	}
+	after, err := os.ReadFile(manifest)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("malformed manifest changed = %q, %v", after, err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil || !bytes.Contains(contents, []byte(`"version":3`)) {
+		t.Fatalf("v3 first write = %q, %v", contents, err)
+	}
+}
 
 func TestDeviceStoreRoundTripPreservesUnknownAndRejectsPaths(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devices-v2.json")
