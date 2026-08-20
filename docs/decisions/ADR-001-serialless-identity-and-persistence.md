@@ -1,11 +1,11 @@
-# ADR-001 — Durable identity and persistence for serial-less X6 receivers
+# ADR-001 — Persist serial-less X6 receivers by VID:PID
 
 | | |
 |---|---|
-| **Status** | Proposed (pending maintainer approval) |
-| **Date** | 2026-08-17 |
-| **Scope** | Durable identity + persistence only (no product features) |
-| **Split** | Backend and frontend as two separate work units (maintainer decision) |
+| **Status** | Accepted (maintainer decision, 2026-08-18) |
+| **Date** | 2026-08-18 |
+| **Scope** | Durable persistence for serial-less receivers only (no product features) |
+| **Supersedes** | The earlier topology + human-claims proposal for serial-less identity (never approved) |
 
 ---
 
@@ -42,116 +42,78 @@ The Windows official app never reads configuration back — it only pushes the
 complete `0x04` report at startup and after every change, so durable state is
 **local by nature**.
 
-> ⚠️ The previous `serialless-x6-persistence` attempt was discarded wholesale.
-> The claim-store format (devices-v2.json v3) survives on disk as residue but is
-> **not** in `main`; current `main` is schema v2 (`devices` + `migrations`
-> only). This ADR redefines the design cleanly.
+> An earlier proposal keyed serial-less receivers by USB topology (bus + nested
+> ports) plus a human-confirmed claim. It was **discarded before approval**: it
+> solved a two-identical-receivers scenario that the backend already rejects by
+> design (`commandCandidate` refuses more than one validated X6 device) and
+> cost a claims store, a confirmation UI, and port-move re-confirmation flows.
 
 ---
 
 ## 2. Decision
 
-Add a **second, coexisting durable identity** for serial-less receivers:
+For **serial-less** receivers, persist by `VID:PID` alone — a model-level key.
 
 ```
 Has serial?
      │
      ├─ YES ──►  key = VID : PID : serial        (unchanged, stable)
      │
-     └─ NO  ──►  key = VID : PID : topology      (new)
-                        │
-                        └── bound to a human-confirmed claim
+     └─ NO  ──►  key = VID : PID                (new, model-level)
 ```
 
-### 2.1 Topology is the identity source
+- `DeviceID.Validate()` accepts an empty serial (VID:PID non-zero);
+  `DeviceID.Key()` returns `1d57:fa60` when serial is empty and
+  `1d57:fa60:<serial>` otherwise.
+- The `sessionOnlyID` path is removed; a serial-less candidate flows through the
+  normal eligible path with `ID = {1d57, fa60, ""}` and is persisted exactly like
+  a serial-bearing device.
+- `Binding.SessionOnly` is always `false`; the field stays on the struct so the
+  generated Wails bindings do not need regeneration.
+- Existing migration (v1 → `devices-v2.json`) and the ACK-before-save
+  persistence path apply to the serial-less device unchanged.
 
-The key is the **physical USB path**: `bus` plus the nested `ports` array
-(hub-aware), e.g. `bus:1, ports:[1,4]`.
+### 2.1 Rationale
 
-> HID facts and connection type are deliberately **not** part of the key: two
-> identical receivers would collide.
-
-### 2.2 A claim is the human bridge
-
-Persistence happens **only after the user explicitly confirms** "this topology
-is this receiver" (alias). Without a confirmed claim, nothing is loaded and
-nothing is saved.
-
-### 2.3 Never overwrite
-
-A topology that matches no claim is **never loaded and never overwrites**
-anything. It is offered as a new claim, or surfaced as ambiguous when more than
-one candidate exists.
-
-### 2.4 Port move = no assumption
-
-If the topology changes, the app asks again. It must never silently adopt
-another device's configuration.
-
-### 2.5 Fail closed
-
-Any ambiguity, unknown outcome, or missing claim leaves the device in a
-session-only state and asks the user. No defaults, no inference.
+- A single receiver is the real usage: one person, one PC, one mouse. Almost
+  nobody connects two identical receivers at once, and when they do, they are
+  testing, not configuring.
+- A replaced or borrowed X6 inherits the saved configuration — reasonable
+  behavior, not a bug.
+- Port moves stop mattering: the key carries no topology, so nothing needs
+  re-confirming.
+- Two identical serial-less receivers connected simultaneously would share the
+  `1d57:fa60` key. This is an **accepted tradeoff**: the current backend already
+  surfaces that situation as `ambiguous identity` and rejects Apply.
 
 ---
 
-## 3. Work split — backend and frontend
+## 3. Consequences
 
-Two **separate work units**, as the maintainer requested. Each keeps its own
-tests, its own change, and its own review surface. The frontend depends on the
-backend API and never reimplements it.
+- ✅ The serial-less X6 now remembers its configuration across reconnects.
+- ✅ Change DPI → ACK → persisted under the `1d57:fa60` key.
+- ✅ A port move or hub change no longer affects identity.
+- ✅ Serial-bearing receivers keep their per-device behavior exactly.
+- ⚠️ Two identical serial-less receivers at once share one configuration
+  (accepted; rare and already guarded as ambiguous).
+- ✅ Net removal of machinery: no claims store, no topology, no confirmation UI.
 
-### 3.1 Backend — identity, store, resolution, service API
+## 4. Non-goals
 
-| Area | File(s) | Responsibility |
-|---|---|---|
-| Identity model | `internal/mouse` | Extend `DeviceID` with a topology-derived identity for serial-less candidates (`bus` + nested `ports`); serial identity untouched |
-| Store v3 | `internal/configstore` | Evolve `DeviceStore` to v3: `claims` map (`claimID → {alias, validatedProfile, topology}`) beside `devices` (`claimID → DeviceRecord`); load/save/validate by claim |
-| Resolution | store or small resolver | exact topology match → load that claim; no match → `new_claim_required` (metadata only, never another device's payload); multiple matches/candidates → `selection_required` |
-| Service API | `internal/desktop` | Claim lifecycle: propose from topology, confirm (persists), reject (session-only), load/save bound to the confirmed claim; keep the ACK-before-save invariant |
-| Bindings | `cmd/x6configurator` + Wails bindings | Expose the claim API to the frontend |
-
-**Acceptance:** Go tests for identity, store v3, resolution cases, and
-ACK-before-save on claims; `go test ./...` green.
-
-### 3.2 Frontend — claim confirmation UI only
-
-| Area | File(s) | Responsibility |
-|---|---|---|
-| First connection | `frontend/src` | "This receiver is new — confirm and name it" |
-| Topology changed / ambiguous | `frontend/src` | Ask which receiver, or whether to re-confirm |
-| Confirmed claim | `frontend/src` | Show alias + loaded configuration; persistence feedback after save |
-
-No frontend identity logic, no direct file writes, no persistence rules.
-
-**Acceptance:** frontend tests for the claim flows; `npm test --prefix frontend`
-green.
+- ❌ Per-device identity for serial-less receivers (no topology, no claims).
+- ❌ Claim confirmation UI or rebind flows.
+- ❌ Per-stage color or other product features (persistence only).
+- ❌ Regenerating Wails bindings (the `SessionOnly` field is retained).
 
 ---
 
-## 4. Consequences
-
-- ✅ Maintainer's daily flow: connect on the same port → app loads the saved
-  configuration; change DPI → ACK → persisted to that claim.
-- ✅ Two identical serial-less receivers never share or overwrite each other's
-  configuration.
-- ✅ A port move costs one re-confirmation instead of a silent wrong load.
-- ✅ Existing serial-bearing receivers keep their current behavior exactly.
-
-## 5. Non-goals
-
-- ❌ Rebind / identical-receiver selection flows beyond the minimal confirm flow.
-- ❌ Per-stage color or other product features (identity/persistence only).
-- ❌ Any resurrection of the discarded claim-creation UI beyond this ADR.
-
----
-
-## 6. References
+## 5. References
 
 | File | Role |
 |---|---|
-| `internal/mouse/profile.go` | `DeviceID`, `Validate`, `Key` |
-| `internal/mouse/service.go` | Inventory classification, `sessionOnlyID` |
-| `internal/configstore/device_store.go` | v2 store, `Save`/`Load` |
+| `internal/mouse/profile.go` | `DeviceID`, `Validate`, `Key` (serial optional) |
+| `internal/mouse/service.go` | Inventory, serial-less now a regular eligible device |
+| `internal/configstore/device_store.go` | v2 store, `Save`/`Load` by `DeviceID.Key()` |
 | `internal/desktop/service.go` | `DevicePersistence`, ACK-before-save path |
-| `docs/protocol-captures.md` | `0x04` write-only protocol evidence |
+| `docs/protocol-x6.md` | `0x04` write-only protocol evidence |
+| Issue #26 | Approved plan for this change |
