@@ -45,7 +45,6 @@ func NewSyncCoordinator(scheduler SyncScheduler, valid BindingValidator, apply B
 }
 
 // Schedule replaces a binding's desired configuration and restarts its debounce.
-// Serial-less bindings remain memory-only; persistence is excluded by the caller.
 func (c *SyncCoordinator) Schedule(binding Binding, config x6.DPIConfig) (uint64, error) {
 	return c.schedule(binding, 0, config)
 }

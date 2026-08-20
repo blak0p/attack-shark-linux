@@ -3,6 +3,7 @@ package x6
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,25 +20,42 @@ func TestListenDeliversHeartbeatAndStageEvents(t *testing.T) {
 	}
 	service := NewService(tr)
 
-	var events []StatusEvent
+	var (
+		events   []StatusEvent
+		eventsMu sync.Mutex
+	)
+	eventReady := make(chan struct{}, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- service.Listen(ctx, func(event StatusEvent) { events = append(events, event) }) }()
+	go func() {
+		done <- service.Listen(ctx, func(event StatusEvent) {
+			eventsMu.Lock()
+			events = append(events, event)
+			eventsMu.Unlock()
+			eventReady <- struct{}{}
+		})
+	}()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for len(events) < 2 {
-		if time.Now().After(deadline) {
-			t.Fatalf("events = %+v; want heartbeat and stage event", events)
+	for range 2 {
+		select {
+		case <-eventReady:
+		case <-time.After(2 * time.Second):
+			eventsMu.Lock()
+			got := append([]StatusEvent(nil), events...)
+			eventsMu.Unlock()
+			t.Fatalf("events = %+v; want heartbeat and stage event", got)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
+	eventsMu.Lock()
+	gotEvents := append([]StatusEvent(nil), events...)
+	eventsMu.Unlock()
 
-	if events[0].Connection != transport.Dongle || !events[0].BatteryAvailable || events[0].BatteryPercent != 100 {
-		t.Fatalf("events[0] = %+v; want dongle heartbeat battery 100", events[0])
+	if gotEvents[0].Connection != transport.Dongle || !gotEvents[0].BatteryAvailable || gotEvents[0].BatteryPercent != 100 {
+		t.Fatalf("events[0] = %+v; want dongle heartbeat battery 100", gotEvents[0])
 	}
-	if !events[1].StageAvailable || events[1].ActiveStage != 3 {
-		t.Fatalf("events[1] = %+v; want DPI stage event stage 3", events[1])
+	if !gotEvents[1].StageAvailable || gotEvents[1].ActiveStage != 3 {
+		t.Fatalf("events[1] = %+v; want DPI stage event stage 3", gotEvents[1])
 	}
 
 	cancel()
@@ -52,7 +70,7 @@ func TestListenDeliversHeartbeatAndStageEvents(t *testing.T) {
 }
 
 func TestListenRecoversWhenDeviceAppears(t *testing.T) {
-	tr := &listenTransport{err: errors.New("no device yet")}
+	tr := newListenTransport(errors.New("no device yet"))
 	service := NewService(tr)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,17 +78,20 @@ func TestListenRecoversWhenDeviceAppears(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- service.Listen(ctx, func(StatusEvent) {}) }()
 
-	time.Sleep(50 * time.Millisecond)
-	tr.err = nil
-	tr.candidates = []transport.Candidate{{Path: "1:1-4", Connection: transport.Dongle}}
-	tr.reports = [][]byte{{0x03, 0x10, 0x40, 0x01, 0x05}}
+	select {
+	case <-tr.enumerated:
+	case <-time.After(time.Second):
+		t.Fatal("Listen() did not try to enumerate before the device appeared")
+	}
+	tr.setDevice(
+		[]transport.Candidate{{Path: "1:1-4", Connection: transport.Dongle}},
+		[][]byte{{0x03, 0x10, 0x40, 0x01, 0x05}},
+	)
 
-	deadline := time.Now().Add(2 * time.Second)
-	for tr.reads == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("Listen() did not resume reading after the device appeared")
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-tr.read:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Listen() did not resume reading after the device appeared")
 	}
 
 	cancel()
@@ -85,14 +106,40 @@ func TestListenRecoversWhenDeviceAppears(t *testing.T) {
 }
 
 type listenTransport struct {
+	mu         sync.RWMutex
 	candidates []transport.Candidate
 	reports    [][]byte
 	err        error
-	reads      int
+	enumerated chan struct{}
+	read       chan struct{}
+}
+
+func newListenTransport(err error) *listenTransport {
+	return &listenTransport{
+		err:        err,
+		enumerated: make(chan struct{}, 1),
+		read:       make(chan struct{}, 1),
+	}
 }
 
 func (f *listenTransport) Enumerate(context.Context, transport.Match) ([]transport.Candidate, error) {
-	return f.candidates, f.err
+	f.mu.RLock()
+	candidates := append([]transport.Candidate(nil), f.candidates...)
+	err := f.err
+	f.mu.RUnlock()
+	select {
+	case f.enumerated <- struct{}{}:
+	default:
+	}
+	return candidates, err
+}
+
+func (f *listenTransport) setDevice(candidates []transport.Candidate, reports [][]byte) {
+	f.mu.Lock()
+	f.err = nil
+	f.candidates = append([]transport.Candidate(nil), candidates...)
+	f.reports = append([][]byte(nil), reports...)
+	f.mu.Unlock()
 }
 
 func (f *listenTransport) ValidateDescriptor(context.Context, transport.Candidate, transport.InputDescriptor) (transport.InputSource, error) {
@@ -100,9 +147,15 @@ func (f *listenTransport) ValidateDescriptor(context.Context, transport.Candidat
 }
 
 func (f *listenTransport) ReadInterruptIN(ctx context.Context, _ transport.InputSource, use func([]byte) bool) error {
-	for _, report := range f.reports {
-		f.reads++
+	f.mu.RLock()
+	reports := append([][]byte(nil), f.reports...)
+	f.mu.RUnlock()
+	for _, report := range reports {
 		use(report)
+		select {
+		case f.read <- struct{}{}:
+		default:
+		}
 	}
 	<-ctx.Done()
 	return nil

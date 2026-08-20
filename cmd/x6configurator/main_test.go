@@ -141,14 +141,14 @@ func TestDesktopCompositionSelectsSoleSeriallessValidatedX6(t *testing.T) {
 	if len(inventory.Devices) != 1 || !inventory.Devices[0].Eligible {
 		t.Fatalf("RefreshInventory() = %#v; want one eligible device", inventory)
 	}
-	if inventory.Devices[0].Warning != "session-only (no serial)" {
-		t.Fatalf("device warning = %q; want session-only (no serial)", inventory.Devices[0].Warning)
+	if inventory.Devices[0].Warning != "" {
+		t.Fatalf("device warning = %q; want durable serialless binding", inventory.Devices[0].Warning)
 	}
 	if inventory.Selected == nil {
-		t.Fatal("RefreshInventory().Selected = nil; want a selected session-only binding")
+		t.Fatal("RefreshInventory().Selected = nil; want a selected durable binding")
 	}
-	if !inventory.Selected.SessionOnly {
-		t.Fatalf("RefreshInventory().Selected.SessionOnly = false; want true")
+	if inventory.Selected.SessionOnly {
+		t.Fatalf("RefreshInventory().Selected.SessionOnly = true; want false")
 	}
 	if observed.StatusInput.InterfaceNumber != 2 {
 		t.Fatalf("ProfileValid() facts interface = %d; want interface 2", observed.StatusInput.InterfaceNumber)
@@ -183,21 +183,15 @@ func TestDesktopCompositionMigratesLegacyStateForTheSoleSelectedDevice(t *testin
 		t.Fatalf("RefreshInventory() = %#v; want the sole selected device", inventory)
 	}
 
-	var migrated struct {
-		Applied struct {
-			DPI struct {
-				DPI [8]int `json:"dpi"`
-			} `json:"dpi"`
-		} `json:"applied"`
-	}
+	var migrated x6.DPIConfig
 	err = configstore.NewDeviceStore(filepath.Join(dataDir, "devices-v2.json")).Load(
 		inventory.Selected.ID, "attack-shark-x6", &migrated,
 	)
 	if err != nil {
 		t.Fatalf("load migrated selected-device state: %v", err)
 	}
-	if migrated.Applied.DPI.DPI[0] != 1600 {
-		t.Fatalf("migrated applied DPI = %d; want 1600", migrated.Applied.DPI.DPI[0])
+	if migrated.DPI[0] != 1600 {
+		t.Fatalf("migrated applied DPI = %d; want 1600", migrated.DPI[0])
 	}
 }
 
@@ -260,12 +254,12 @@ func TestDesktopCompositionMigratesLegacyStateAfterExplicitSelection(t *testing.
 	if selected.Error.Code != "" || selected.Selected == nil {
 		t.Fatalf("SelectDevice() = %#v; want explicit bravo selection", selected)
 	}
-	var migrated map[string]json.RawMessage
+	var migrated x6.DPIConfig
 	if err := configstore.NewDeviceStore(filepath.Join(dataDir, "devices-v2.json")).Load(selected.Selected.ID, "attack-shark-x6", &migrated); err != nil {
 		t.Fatalf("load explicitly selected device migration: %v", err)
 	}
-	if !strings.Contains(string(migrated["applied"]), "2400") {
-		t.Fatalf("explicitly selected migration = %s; want 2400 DPI", migrated["applied"])
+	if migrated.DPI[0] != 2400 {
+		t.Fatalf("explicitly selected migration = %d; want 2400 DPI", migrated.DPI[0])
 	}
 }
 
