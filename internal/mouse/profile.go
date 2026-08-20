@@ -4,7 +4,6 @@ package mouse
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
@@ -22,13 +21,16 @@ type DeviceID struct {
 }
 
 func (id DeviceID) Validate() error {
-	if id.VendorID == 0 || id.ProductID == 0 || strings.TrimSpace(id.Serial) == "" {
+	if id.VendorID == 0 || id.ProductID == 0 {
 		return ErrAmbiguousIdentity
 	}
 	return nil
 }
 
 func (id DeviceID) Key() string {
+	if id.Serial == "" {
+		return fmt.Sprintf("%04x:%04x", id.VendorID, id.ProductID)
+	}
 	return fmt.Sprintf("%04x:%04x:%s", id.VendorID, id.ProductID, id.Serial)
 }
 
@@ -53,6 +55,7 @@ type Profile interface {
 	Match() transport.Match
 	HIDFacts() HIDFacts
 	Codec() Codec
+	AllowsSeriallessIdentity() bool
 }
 
 // ProfileRegistry owns the unique VID/PID-to-profile mapping.

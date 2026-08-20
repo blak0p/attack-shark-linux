@@ -450,14 +450,14 @@ func TestSelectedApplyPersistsAndRestoresPerDeviceState(t *testing.T) {
 	}
 }
 
-func TestSessionOnlyBindingSkipsPersistenceAndMigration(t *testing.T) {
+func TestSeriallessBindingMigratesLoadsAndPersistsAfterConfirmedApply(t *testing.T) {
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}
 	command := &fakeHidrawCommand{}
-	persistenceCalls, migrationCalls := 0, 0
+	loadCalls, saveCalls, migrationCalls := 0, 0, 0
 	legacyApplied := x6.DefaultDPIConfig()
 	legacyApplied.DPI[0] = 2400
 	legacyFactory := x6.DefaultDPIConfig()
@@ -466,27 +466,123 @@ func TestSessionOnlyBindingSkipsPersistenceAndMigration(t *testing.T) {
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{candidate}, valid: true}, command)).
 		AttachMigrator(func(Binding) error { migrationCalls++; return nil }).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { persistenceCalls++; return x6.DPIConfig{}, os.ErrNotExist },
-			func(Binding, x6.DPIConfig) error { persistenceCalls++; return nil },
+			func(Binding) (x6.DPIConfig, error) { loadCalls++; return legacyApplied, nil },
+			func(Binding, x6.DPIConfig) error { saveCalls++; return nil },
 		)
 
 	inventory := service.RefreshInventory(context.Background())
-	if inventory.Selected == nil || !inventory.Selected.SessionOnly || inventory.Devices[0].Warning != "session-only (no serial)" {
-		t.Fatalf("RefreshInventory() = %#v; want selected session-only device", inventory)
+	if inventory.Selected == nil || inventory.Selected.SessionOnly || inventory.Devices[0].Warning != "" {
+		t.Fatalf("RefreshInventory() = %#v; want selected durable serialless device", inventory)
 	}
-	if migrationCalls != 0 || persistenceCalls != 0 {
-		t.Fatalf("migration=%d persistence=%d; want no durable operations", migrationCalls, persistenceCalls)
+	if migrationCalls != 1 || loadCalls != 1 || saveCalls != 0 {
+		t.Fatalf("migration=%d load=%d save=%d; want migration and load before confirmed apply", migrationCalls, loadCalls, saveCalls)
 	}
-	defaults := x6.DefaultDPIConfig()
-	if snapshot := service.GetSnapshot(); snapshot.Applied.DPI[0] != defaults.DPI[0] || snapshot.Pending.DPI[0] != defaults.DPI[0] || snapshot.Factory.DPI[0] != defaults.DPI[0] {
-		t.Fatalf("session-only snapshot = %#v; want safe defaults %#v rather than legacy applied=%d factory=%d", snapshot, defaults, legacyApplied.DPI[0], legacyFactory.DPI[0])
+	if snapshot := service.GetSnapshot(); snapshot.Applied.DPI[0] != legacyApplied.DPI[0] || snapshot.Pending.DPI[0] != legacyApplied.DPI[0] || snapshot.Factory.DPI[0] != legacyFactory.DPI[0] {
+		t.Fatalf("serialless snapshot = %#v; want restored applied=%d factory=%d", snapshot, legacyApplied.DPI[0], legacyFactory.DPI[0])
 	}
 	if result := service.ApplyDPI(context.Background()); result.Error.Code != "" {
 		t.Fatalf("ApplyDPI() = %#v", result)
 	}
-	if command.callCount() != 1 || migrationCalls != 0 || persistenceCalls != 0 {
-		t.Fatalf("command=%d migration=%d persistence=%d; want hidraw-only apply without durable operations", command.callCount(), migrationCalls, persistenceCalls)
+	if command.callCount() != 1 || migrationCalls != 1 || loadCalls != 1 || saveCalls != 1 {
+		t.Fatalf("command=%d migration=%d load=%d save=%d; want one confirmed durable apply", command.callCount(), migrationCalls, loadCalls, saveCalls)
 	}
+}
+
+func TestSeriallessDuplicateSkipsMigrationAndPersistence(t *testing.T) {
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []transport.Candidate{
+		{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"},
+		{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw1"},
+	}
+	migrations, loads, saves := 0, 0, 0
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: candidates, valid: true}, &fakeHidrawCommand{})).
+		AttachMigrator(func(Binding) error { migrations++; return nil }).
+		AttachDevicePersistence(
+			func(Binding) (x6.DPIConfig, error) { loads++; return x6.DPIConfig{}, nil },
+			func(Binding, x6.DPIConfig) error { saves++; return nil },
+		)
+
+	inventory := service.RefreshInventory(context.Background())
+	if inventory.Error.Code != AmbiguousIdentity || inventory.Selected != nil {
+		t.Fatalf("RefreshInventory() = %#v; want explicit ambiguity without selection", inventory)
+	}
+	if migrations != 0 || loads != 0 || saves != 0 {
+		t.Fatalf("migration=%d load=%d save=%d; want zero durable operations for duplicate identity", migrations, loads, saves)
+	}
+}
+
+func TestSeriallessExplicitAndDebouncedApplySaveOnlyAfterACK(t *testing.T) {
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := []string{}
+	command := &orderedHidrawCommand{events: &events}
+	scheduler := &fakeSyncScheduler{}
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}}, valid: true}, command)).
+		attachAutomaticSave(scheduler).
+		AttachDevicePersistence(
+			func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil },
+			func(Binding, x6.DPIConfig) error { events = append(events, "save"); return nil },
+		)
+	service.RefreshInventory(context.Background())
+
+	explicit := x6.DefaultDPIConfig()
+	explicit.DPI[0] = 1600
+	service.StageDPI(ToDTO(explicit))
+	if result := service.ApplyDPI(context.Background()); result.Error.Code != "" {
+		t.Fatalf("ApplyDPI() = %#v", result)
+	}
+	debounced := x6.DefaultDPIConfig()
+	debounced.DPI[0] = 2400
+	service.StageDPI(ToDTO(debounced))
+	scheduler.Advance(syncDebounceDelay)
+
+	if len(events) != 4 || events[0] != "ack" || events[1] != "save" || events[2] != "ack" || events[3] != "save" {
+		t.Fatalf("events = %#v; want ACK before save for explicit and debounced applies", events)
+	}
+}
+
+func TestSeriallessFailedApplyDoesNotSave(t *testing.T) {
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	saves := 0
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}}, valid: true}, failingHidrawCommand{})).
+		AttachDevicePersistence(
+			func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil },
+			func(Binding, x6.DPIConfig) error { saves++; return nil },
+		)
+	service.RefreshInventory(context.Background())
+
+	if result := service.ApplyDPI(context.Background()); result.Error.Code != StaleBinding {
+		t.Fatalf("ApplyDPI() = %#v; want failed application", result)
+	}
+	if saves != 0 {
+		t.Fatalf("saves = %d; want no durable write after unconfirmed application", saves)
+	}
+}
+
+type orderedHidrawCommand struct{ events *[]string }
+
+func (f *orderedHidrawCommand) SendAndAwaitBound(_ context.Context, _ mouse.Binding, _ []byte, continueReading func([]byte) bool) error {
+	if !continueReading([]byte{0x03, 0x10, 0x50, 0, 0x04}) {
+		*f.events = append(*f.events, "ack")
+	}
+	return nil
+}
+
+type failingHidrawCommand struct{}
+
+func (failingHidrawCommand) SendAndAwaitBound(context.Context, mouse.Binding, []byte, func([]byte) bool) error {
+	return mouse.ErrStaleBinding
 }
 
 type mutableInventorySource struct{ candidates []transport.Candidate }

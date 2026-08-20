@@ -19,7 +19,7 @@ export class Binding {
     "InventoryRevision": number;
 
     /**
-     * SessionOnly marks a serial-less binding which must never be persisted or migrated.
+     * SessionOnly marks bindings that must never be persisted or migrated.
      */
     "SessionOnly": boolean;
 

@@ -1,6 +1,9 @@
 package configstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -40,6 +43,22 @@ func TestDeviceStoreRoundTripPreservesUnknownAndRejectsPaths(t *testing.T) {
 	}
 }
 
+func TestDeviceStoreRoundTripsSeriallessIdentity(t *testing.T) {
+	store := NewDeviceStore(filepath.Join(t.TempDir(), "devices-v2.json"))
+	id := mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa60}
+	want := map[string]int{"active": 3}
+	if err := store.Save(id, "x6", "Attack Shark X6", 1, want); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	var got map[string]int
+	if err := store.Load(id, "x6", &got); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got["active"] != want["active"] {
+		t.Fatalf("Load() = %#v, want %#v", got, want)
+	}
+}
+
 func TestDeviceStoreMigratesV1BackupFirstAndDeterministically(t *testing.T) {
 	dir := t.TempDir()
 	applied, factory := legacyFiles(t, dir)
@@ -49,6 +68,13 @@ func TestDeviceStoreMigratesV1BackupFirstAndDeterministically(t *testing.T) {
 	result, err := store.MigrateV1(applied, factory, []MigrationTarget{target}, false)
 	if err != nil || result.Status != MigrationImported || result.TargetKey != target.ID.Key() {
 		t.Fatalf("MigrateV1() = %#v, %v", result, err)
+	}
+	var migrated map[string]int
+	if err := store.Load(target.ID, target.Profile, &migrated); err != nil {
+		t.Fatalf("Load() migrated record error = %v", err)
+	}
+	if migrated["active"] != 3 || len(migrated) != 1 {
+		t.Fatalf("Load() migrated record = %#v, want direct applied DPI", migrated)
 	}
 	for _, source := range []string{applied, factory} {
 		backup, backupErr := os.ReadFile(source + ".v1.bak")
@@ -60,6 +86,70 @@ func TestDeviceStoreMigratesV1BackupFirstAndDeterministically(t *testing.T) {
 	result, err = store.MigrateV1(applied, factory, []MigrationTarget{target}, false)
 	if err != nil || result.Status != MigrationAlreadyImported {
 		t.Fatalf("repeat MigrateV1() = %#v, %v", result, err)
+	}
+	if err := store.Load(target.ID, target.Profile, &migrated); err != nil || migrated["active"] != 3 || len(migrated) != 1 {
+		t.Fatalf("repeat Load() = %#v, %v, want normalized direct applied DPI", migrated, err)
+	}
+}
+
+func TestDeviceStoreMigrationReplaysEqualBackupsAfterInterruptedWrite(t *testing.T) {
+	dir := t.TempDir()
+	applied, factory := legacyFiles(t, dir)
+	for _, source := range []string{applied, factory} {
+		contents, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(source+".v1.bak", contents, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := NewDeviceStore(filepath.Join(dir, "devices-v2.json"))
+	result, err := store.MigrateV1(applied, factory, []MigrationTarget{testTarget("")}, false)
+	if err != nil || result.Status != MigrationImported {
+		t.Fatalf("MigrateV1() after equal backups = %#v, %v", result, err)
+	}
+}
+
+func TestDeviceStoreNormalizesOnlyLinkedLegacyWrapper(t *testing.T) {
+	dir := t.TempDir()
+	appliedPath, factoryPath := legacyFiles(t, dir)
+	applied, err := os.ReadFile(appliedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory, err := os.ReadFile(factoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := testTarget("")
+	sum := sha256.Sum256(append(append([]byte(nil), applied...), factory...))
+	hash := hex.EncodeToString(sum[:])
+	wrapper, err := json.Marshal(map[string]json.RawMessage{"applied": applied, "factory": factory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := deviceEnvelope{
+		Version:    deviceSchemaVersion,
+		Devices:    map[string]DeviceRecord{target.ID.Key(): {Profile: target.Profile, Model: target.Model, ConfigVersion: 1, Configuration: wrapper}},
+		Migrations: map[string]migrationRecord{hash: {SourceHash: hash, TargetKey: target.ID.Key(), Status: string(MigrationImported)}},
+	}
+	contents, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "devices-v2.json")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewDeviceStore(path)
+	result, err := store.MigrateV1(appliedPath, factoryPath, []MigrationTarget{target}, false)
+	if err != nil || result.Status != MigrationAlreadyImported {
+		t.Fatalf("MigrateV1() = %#v, %v", result, err)
+	}
+	var got map[string]int
+	if err := store.Load(target.ID, target.Profile, &got); err != nil || got["active"] != 3 || len(got) != 1 {
+		t.Fatalf("Load() = %#v, %v, want normalized direct applied DPI", got, err)
 	}
 }
 

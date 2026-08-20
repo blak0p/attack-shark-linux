@@ -1,6 +1,7 @@
 package configstore
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -126,14 +127,10 @@ func (s *DeviceStore) MigrateV1(appliedPath, factoryPath string, targets []Migra
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	configuration, err := json.Marshal(map[string]json.RawMessage{"applied": applied, "factory": factory})
-	if err != nil || hasPath(configuration) {
-		if err != nil {
-			return MigrationResult{}, err
-		}
+	if hasPath(applied.DPI) {
 		return MigrationResult{}, ErrTransientPath
 	}
-	sum := sha256.Sum256(append(append([]byte(nil), applied...), factory...))
+	sum := sha256.Sum256(append(append([]byte(nil), applied.Contents...), factory.Contents...))
 	hash := hex.EncodeToString(sum[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -142,18 +139,27 @@ func (s *DeviceStore) MigrateV1(appliedPath, factoryPath string, targets []Migra
 		return MigrationResult{}, err
 	}
 	if previous, ok := envelope.Migrations[hash]; ok && previous.TargetKey == target.ID.Key() && previous.Status == string(MigrationImported) {
+		if record, ok := envelope.Devices[target.ID.Key()]; ok {
+			if normalized, ok := normalizeMigratedConfiguration(record.Configuration); ok {
+				record.Configuration = normalized
+				envelope.Devices[target.ID.Key()] = record
+				if err := s.write(envelope); err != nil {
+					return MigrationResult{}, err
+				}
+			}
+		}
 		return MigrationResult{Status: MigrationAlreadyImported, SourceHash: hash, TargetKey: target.ID.Key()}, nil
 	}
 	if _, exists := envelope.Devices[target.ID.Key()]; exists {
 		return MigrationResult{}, ErrMigrationTargetExists
 	}
-	if err := backup(appliedPath, applied); err != nil {
+	if err := backup(appliedPath, applied.Contents); err != nil {
 		return MigrationResult{}, err
 	}
-	if err := backup(factoryPath, factory); err != nil {
+	if err := backup(factoryPath, factory.Contents); err != nil {
 		return MigrationResult{}, err
 	}
-	envelope.Devices[target.ID.Key()] = DeviceRecord{Profile: target.Profile, Model: target.Model, ConfigVersion: 1, Configuration: configuration}
+	envelope.Devices[target.ID.Key()] = DeviceRecord{Profile: target.Profile, Model: target.Model, ConfigVersion: 1, Configuration: applied.DPI}
 	envelope.Migrations[hash] = migrationRecord{SourceHash: hash, TargetKey: target.ID.Key(), Status: string(MigrationImported)}
 	if err := s.write(envelope); err != nil {
 		return MigrationResult{}, err
@@ -207,28 +213,43 @@ func (s *DeviceStore) write(envelope deviceEnvelope) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(name, s.path)
+	if err := os.Rename(name, s.path); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
-func readV1(path string) (json.RawMessage, error) {
+
+type legacyState struct {
+	Contents json.RawMessage
+	DPI      json.RawMessage `json:"dpi"`
+}
+
+func readV1(path string) (legacyState, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return legacyState{}, err
 	}
-	var state struct {
-		Version int             `json:"version"`
-		DPI     json.RawMessage `json:"dpi"`
+	state, err := readLegacyContents(contents)
+	if err != nil {
+		return legacyState{}, err
 	}
-	if err := json.Unmarshal(contents, &state); err != nil {
-		return nil, err
-	}
-	if state.Version != schemaVersion || len(state.DPI) == 0 {
-		return nil, fmt.Errorf("unsupported legacy schema %d", state.Version)
-	}
-	return contents, nil
+	state.Contents = contents
+	return state, nil
 }
 func backup(path string, contents []byte) error {
 	file, err := os.OpenFile(path+".v1.bak", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		if os.IsExist(err) {
+			existing, readErr := os.ReadFile(path + ".v1.bak")
+			if readErr == nil && bytes.Equal(existing, contents) {
+				return nil
+			}
+		}
 		return err
 	}
 	_, err = file.Write(contents)
@@ -239,6 +260,39 @@ func backup(path string, contents []byte) error {
 		err = closeErr
 	}
 	return err
+}
+func normalizeMigratedConfiguration(contents json.RawMessage) (json.RawMessage, bool) {
+	var wrapper struct {
+		Applied json.RawMessage `json:"applied"`
+		Factory json.RawMessage `json:"factory"`
+	}
+	if err := json.Unmarshal(contents, &wrapper); err != nil || len(wrapper.Applied) == 0 || len(wrapper.Factory) == 0 {
+		return nil, false
+	}
+	applied, err := readLegacyContents(wrapper.Applied)
+	if err != nil {
+		return nil, false
+	}
+	if _, err := readLegacyContents(wrapper.Factory); err != nil {
+		return nil, false
+	}
+	return applied.DPI, true
+}
+func readLegacyContents(contents []byte) (legacyState, error) {
+	var state legacyState
+	var version struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(contents, &version); err != nil {
+		return legacyState{}, err
+	}
+	if err := json.Unmarshal(contents, &state); err != nil {
+		return legacyState{}, err
+	}
+	if version.Version != schemaVersion || len(state.DPI) == 0 {
+		return legacyState{}, fmt.Errorf("unsupported legacy schema %d", version.Version)
+	}
+	return state, nil
 }
 func hasPath(contents []byte) bool {
 	return strings.Contains(strings.ToLower(string(contents)), `"path"`)

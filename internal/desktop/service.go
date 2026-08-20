@@ -230,6 +230,9 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 	}
 	devices, err := inventory.Refresh(ctx)
 	if err != nil {
+		if err == mouse.ErrAmbiguousIdentity {
+			return Inventory{Devices: devices, Error: Error{Code: AmbiguousIdentity}}
+		}
 		return Inventory{Error: Error{Code: DeviceUnavailable}}
 	}
 	result := Inventory{Devices: devices}

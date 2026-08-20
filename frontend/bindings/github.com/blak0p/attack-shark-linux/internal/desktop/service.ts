@@ -14,7 +14,7 @@ import * as mouse$0 from "../mouse/models.js";
 import * as $models from "./models.js";
 
 export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
-    return $Call.ByID(2499238003).then(($result: any) => {
+    return $Call.ByID(3461389201).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -23,7 +23,7 @@ export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
  * AttachDevicePersistence wires keyed selected-device applied-state storage.
  */
 export function AttachDevicePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
-    return $Call.ByID(1880501470, load, save).then(($result: any) => {
+    return $Call.ByID(3887596840, load, save).then(($result: any) => {
         return $$createType2($result);
     });
 }
@@ -32,7 +32,7 @@ export function AttachDevicePersistence(load: any, save: any): $CancellablePromi
  * AttachInventory wires the targeted device service used for explicit desktop selection.
  */
 export function AttachInventory(inventory: mouse$0.TargetedService | null): $CancellablePromise<$models.Service | null> {
-    return $Call.ByID(1807781335, inventory).then(($result: any) => {
+    return $Call.ByID(3655060073, inventory).then(($result: any) => {
         return $$createType2($result);
     });
 }
@@ -42,7 +42,7 @@ export function AttachInventory(inventory: mouse$0.TargetedService | null): $Can
  * sink. It does not start listening; call StartListener with a context.
  */
 export function AttachListener(listener: $models.StatusListener, events: $models.EventSink): $CancellablePromise<$models.Service | null> {
-    return $Call.ByID(1212653785, listener, events).then(($result: any) => {
+    return $Call.ByID(3795100807, listener, events).then(($result: any) => {
         return $$createType2($result);
     });
 }
@@ -51,13 +51,13 @@ export function AttachListener(listener: $models.StatusListener, events: $models
  * AttachMigrator wires backup-first legacy migration to a selected device.
  */
 export function AttachMigrator(migrate: any): $CancellablePromise<$models.Service | null> {
-    return $Call.ByID(594930334, migrate).then(($result: any) => {
+    return $Call.ByID(1213464496, migrate).then(($result: any) => {
         return $$createType2($result);
     });
 }
 
 export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
-    return $Call.ByID(3468627504).then(($result: any) => {
+    return $Call.ByID(152452614).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -66,19 +66,19 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
  * RefreshInventory exposes all discovered devices and the explicit selection.
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
-    return $Call.ByID(1988986909).then(($result: any) => {
+    return $Call.ByID(2420989727).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
-    return $Call.ByID(4154748181).then(($result: any) => {
+    return $Call.ByID(3077675599).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
-    return $Call.ByID(3626311145).then(($result: any) => {
+    return $Call.ByID(808566931).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -87,13 +87,13 @@ export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
  * SelectDevice establishes an explicit binding for a previously inventoried device.
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
-    return $Call.ByID(3742231770, id).then(($result: any) => {
+    return $Call.ByID(236647672, id).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models.Snapshot> {
-    return $Call.ByID(777652337, config).then(($result: any) => {
+    return $Call.ByID(2647292463, config).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -104,7 +104,7 @@ export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models
  * It is a no-op when no listener has been attached.
  */
 export function StartListener(): $CancellablePromise<void> {
-    return $Call.ByID(3414376916);
+    return $Call.ByID(987205650);
 }
 
 // Private type creation functions

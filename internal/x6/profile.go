@@ -16,8 +16,9 @@ func NewProfile() mouse.Profile { return Profile{} }
 
 type Profile struct{}
 
-func (Profile) ID() string             { return x6ProfileID }
-func (Profile) Match() transport.Match { return transport.X6Match() }
+func (Profile) ID() string                     { return x6ProfileID }
+func (Profile) Match() transport.Match         { return transport.X6Match() }
+func (Profile) AllowsSeriallessIdentity() bool { return true }
 func (Profile) HIDFacts() mouse.HIDFacts {
 	return mouse.HIDFacts{
 		StatusInput:             transport.InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83},

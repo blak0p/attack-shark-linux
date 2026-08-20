@@ -2,9 +2,7 @@ package mouse
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/transport"
@@ -22,7 +20,7 @@ type Binding struct {
 	ProfileID         string
 	Path              string
 	InventoryRevision uint64
-	// SessionOnly marks a serial-less binding which must never be persisted or migrated.
+	// SessionOnly marks bindings that must never be persisted or migrated.
 	SessionOnly bool
 }
 
@@ -97,7 +95,7 @@ func (s *TargetedService) Refresh(ctx context.Context) ([]Device, error) {
 		id := DeviceID{VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial}
 		profile, ok := s.registry.Lookup(id.VendorID, id.ProductID)
 		profileValid := ok && (!validatesProfiles || validator.ProfileValid(ctx, candidate, profile.HIDFacts()))
-		if ok && id.Validate() == nil && profileValid {
+		if ok && id.Validate() == nil && profileValid && (id.Serial != "" || profile.AllowsSeriallessIdentity()) {
 			counts[id]++
 		}
 		inventoryDiagnosticf("event=inventory_validation candidate_index=%d vid_pid=%04x:%04x interface_number=unknown endpoint=unknown hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=%t profile_validation=%t eligibility=pending warning=%s selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, candidate.Serial != "", ok, profileValid, inventoryWarning(ok, id, profileValid))
@@ -109,6 +107,7 @@ func (s *TargetedService) Refresh(ctx context.Context) ([]Device, error) {
 	eligible := make([]Device, 0, len(candidates))
 	selectedIndex := -1
 	result := make([]Device, 0, len(candidates))
+	ambiguousSerialless := false
 	for index, candidate := range candidates {
 		id := DeviceID{VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial}
 		profile, found := s.registry.Lookup(id.VendorID, id.ProductID)
@@ -119,16 +118,13 @@ func (s *TargetedService) Refresh(ctx context.Context) ([]Device, error) {
 		case validatesProfiles && !validator.ProfileValid(ctx, candidate, profile.HIDFacts()):
 			device.Profile = profile.ID()
 			device.Warning = "profile/interface mismatch"
-		case id.Validate() != nil && len(candidates) == 1 && validatesProfiles:
-			id = sessionOnlyID(candidate, profile)
-			device.ID, device.Profile, device.Eligible, device.Warning = id, profile.ID(), true, "session-only (no serial)"
-			eligible = append(eligible, device)
-			if _, exists := s.states[id]; !exists {
-				s.states[id] = &deviceState{state: State{Applied: profile.Codec().Defaults(), Pending: profile.Codec().Defaults()}}
-			}
-		case id.Validate() != nil || counts[id] != 1:
+		case id.Validate() != nil || (id.Serial == "" && !profile.AllowsSeriallessIdentity()):
 			device.Profile = profile.ID()
 			device.Warning = "ambiguous identity"
+		case counts[id] != 1:
+			device.Profile = profile.ID()
+			device.Warning = "ambiguous identity"
+			ambiguousSerialless = ambiguousSerialless || id.Serial == ""
 		default:
 			device.Profile, device.Eligible = profile.ID(), true
 			eligible = append(eligible, device)
@@ -147,8 +143,9 @@ func (s *TargetedService) Refresh(ctx context.Context) ([]Device, error) {
 		}
 		inventoryDiagnosticf("event=inventory_selection candidate_index=%d vid_pid=%04x:%04x interface_number=unknown endpoint=unknown hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=%t profile_validation=%t eligibility=%t warning=%s selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, candidate.Serial != "", found, found && device.Warning != "profile/interface mismatch", device.Eligible, warning)
 	}
-	if len(candidates) == 1 && len(eligible) == 1 {
-		s.selection = &Binding{ID: eligible[0].ID, ProfileID: eligible[0].Profile, Path: eligible[0].Path, InventoryRevision: s.revision, SessionOnly: eligible[0].Warning == "session-only (no serial)"}
+	if len(eligible) == 1 {
+		binding := inventoryBinding(eligible[0], s.revision)
+		s.selection = &binding
 		inventoryDiagnosticf("event=selection_boundary candidate_index=%d vid_pid=%04x:%04x interface_number=unknown endpoint=unknown hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=true profile_validation=true eligibility=true warning=none selected_binding_present=true", selectedIndex, eligible[0].ID.VendorID, eligible[0].ID.ProductID, !s.selection.SessionOnly && eligible[0].ID.Serial != "")
 	} else if len(candidates) > 1 || len(eligible) > 1 {
 		s.selection = nil
@@ -157,13 +154,10 @@ func (s *TargetedService) Refresh(ctx context.Context) ([]Device, error) {
 		s.selection = nil
 		inventoryDiagnosticf("event=selection_boundary candidate_index=unknown vid_pid=none interface_number=unknown endpoint=unknown hid_usage=unknown serial_present=unknown hidraw_basename=unknown profile_match=false profile_validation=false eligibility=false warning=selection_required selected_binding_present=false")
 	}
+	if ambiguousSerialless {
+		return result, ErrAmbiguousIdentity
+	}
 	return result, nil
-}
-
-func sessionOnlyID(candidate transport.Candidate, profile Profile) DeviceID {
-	facts := profile.HIDFacts().StatusInput
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%04x:%04x:%d:%04x:%04x:%02x:%s", profile.ID(), candidate.VendorID, candidate.ProductID, facts.InterfaceNumber, facts.UsagePage, facts.Usage, facts.EndpointAddress, candidate.Connection)))
-	return DeviceID{VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: fmt.Sprintf("session-%x", sum[:8])}
 }
 
 func inventoryWarning(profileMatch bool, id DeviceID, profileValid bool) string {
@@ -176,6 +170,15 @@ func inventoryWarning(profileMatch bool, id DeviceID, profileValid bool) string 
 		return "missing_serial"
 	default:
 		return "none"
+	}
+}
+
+func inventoryBinding(device Device, revision uint64) Binding {
+	return Binding{
+		ID:                device.ID,
+		ProfileID:         device.Profile,
+		Path:              device.Path,
+		InventoryRevision: revision,
 	}
 }
 
@@ -195,7 +198,8 @@ func (s *TargetedService) Select(id DeviceID) error {
 	if !ok || !device.Eligible {
 		return ErrSelectionRequired
 	}
-	s.selection = &Binding{ID: device.ID, ProfileID: device.Profile, Path: device.Path, InventoryRevision: s.revision, SessionOnly: device.Warning == "session-only (no serial)"}
+	binding := inventoryBinding(device, s.revision)
+	s.selection = &binding
 	return nil
 }
 
