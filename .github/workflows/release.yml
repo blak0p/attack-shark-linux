@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Verify and release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pushed tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Verify annotated tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Pushed tag '$TAG' is not a semantic version tag."
+            exit 1
+          fi
+
+          object_type="$(git for-each-ref --format='%(objecttype)' "refs/tags/$TAG")"
+          if [[ "$object_type" != "tag" ]]; then
+            echo "::error::Pushed tag '$TAG' is lightweight; an annotated tag is required."
+            exit 1
+          fi
+
+          release_notes="$(git for-each-ref --format='%(contents)' "refs/tags/$TAG")"
+          if [[ -z "${release_notes//[[:space:]]/}" ]]; then
+            echo "::error::Annotated tag '$TAG' has an empty message."
+            exit 1
+          fi
+
+          printf '%s\n' "$release_notes" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Run verification
+        run: make check
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
