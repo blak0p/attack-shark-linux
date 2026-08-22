@@ -253,24 +253,40 @@ func (s *TargetedService) Apply(ctx context.Context) error {
 
 // ApplyBound validates and writes only the immutable binding captured by a caller.
 func (s *TargetedService) ApplyBound(ctx context.Context, binding Binding, value any) error {
-	selected, state, profile, err := s.selectedState()
-	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) {
+	_, _, profile, err := s.selectedState()
+	if err != nil {
 		return ErrStaleBinding
 	}
-	if err := profile.Codec().Validate(value); err != nil {
+	return s.ApplyOperationBound(ctx, binding, codecOperation{profile.Codec()}, value)
+}
+
+// ApplyOperationBound validates and writes a typed operation only through the
+// immutable binding captured by its caller.
+func (s *TargetedService) ApplyOperationBound(ctx context.Context, binding Binding, operation CommandOperation, value any) error {
+	selected, state, _, err := s.selectedState()
+	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) || operation == nil {
+		return ErrStaleBinding
+	}
+	if err := operation.Validate(value); err != nil {
 		return err
 	}
-	report, err := profile.Codec().Encode(value)
-	if err != nil || s.command == nil {
-		if err != nil {
-			return err
-		}
+	report, err := operation.Encode(value)
+	if err != nil {
+		return err
+	}
+	if s.command == nil {
 		return ErrStaleBinding
 	}
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
-	return s.command.SendAndAwaitBound(ctx, binding, report, func(report []byte) bool { return !profile.Codec().MatchesACK(report) })
+	return s.command.SendAndAwaitBound(ctx, binding, report, func(report []byte) bool { return !operation.MatchesACK(report) })
 }
+
+type codecOperation struct{ codec Codec }
+
+func (o codecOperation) Validate(value any) error         { return o.codec.Validate(value) }
+func (o codecOperation) Encode(value any) ([]byte, error) { return o.codec.Encode(value) }
+func (o codecOperation) MatchesACK(report []byte) bool    { return o.codec.MatchesACK(report) }
 
 func (s *TargetedService) HandleEvent(event Event) bool {
 	s.mu.Lock()
