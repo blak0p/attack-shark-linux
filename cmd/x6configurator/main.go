@@ -122,7 +122,25 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		return config, err
 	}
 	saveDevice := func(binding mouse.Binding, config x6.DPIConfig) error {
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 1, config)
+		combined := x6.DefaultDeviceConfig()
+		if err := deviceStore.Load(binding.ID, binding.ProfileID, &combined); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		combined.DPIConfig = config
+		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 2, combined)
 	}
-	return desktop.Compose(status, writer, store).AttachInventory(inventory).AttachMigrator(migrate).AttachDevicePersistence(loadDevice, saveDevice)
+	loadPolling := func(binding mouse.Binding) (x6.DeviceConfig, error) {
+		config := x6.DefaultDeviceConfig()
+		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
+		return config, err
+	}
+	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
+		combined := x6.DefaultDeviceConfig()
+		if err := deviceStore.Load(binding.ID, binding.ProfileID, &combined); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		combined.PollingRate = config.PollingRate
+		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 2, combined)
+	}
+	return desktop.Compose(status, writer, store).AttachInventory(inventory).AttachMigrator(migrate).AttachDevicePersistence(loadDevice, saveDevice).AttachPollingPersistence(loadPolling, savePolling)
 }

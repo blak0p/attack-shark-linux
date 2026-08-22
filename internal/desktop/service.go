@@ -58,6 +58,15 @@ type Snapshot struct {
 	ObservedStage  *int
 	ObservedDPI    *int
 }
+type PollingSnapshot struct {
+	Desired, Applied x6.PollingRate
+	Persisted        *x6.PollingRate
+	Factory          x6.PollingRate
+	Revision         uint64
+	Firmware         string
+	Persistence      string
+	RetryAvailable   bool
+}
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
 }
@@ -73,6 +82,10 @@ type AppliedStore interface {
 type DevicePersistence interface {
 	Load(Binding) (x6.DPIConfig, error)
 	Save(Binding, x6.DPIConfig) error
+}
+type PollingPersistence interface {
+	Load(Binding) (x6.DeviceConfig, error)
+	Save(Binding, x6.DeviceConfig) error
 }
 
 // StatusListener runs the always-on status listener until its context is
@@ -116,21 +129,31 @@ type deviceState struct {
 	retry                      *x6.DPIConfig
 	observedStage, observedDPI *int
 }
+type pollingState struct {
+	mu                        sync.Mutex
+	desired, applied, factory x6.PollingRate
+	persisted, retry          *x6.PollingRate
+	revision                  uint64
+	firmware, persistence     string
+}
 
 type Service struct {
-	status            StatusReader
-	writer            DPIWriter
-	store             AppliedStore
-	listener          StatusListener
-	events            EventSink
-	inventory         *mouse.TargetedService
-	migrate           func(Binding) error
-	devicePersistence DevicePersistence
-	inventoryDevices  []Device
-	mu                sync.Mutex
-	legacy            *deviceState
-	states            map[DeviceID]*deviceState
-	sync              *SyncCoordinator
+	status             StatusReader
+	writer             DPIWriter
+	store              AppliedStore
+	listener           StatusListener
+	events             EventSink
+	inventory          *mouse.TargetedService
+	migrate            func(Binding) error
+	devicePersistence  DevicePersistence
+	inventoryDevices   []Device
+	mu                 sync.Mutex
+	legacy             *deviceState
+	states             map[DeviceID]*deviceState
+	sync               *SyncCoordinator
+	pollingStates      map[DeviceID]*pollingState
+	pollingSync        *PollingSyncCoordinator
+	pollingPersistence PollingPersistence
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -142,7 +165,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState)}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState)}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -165,6 +188,14 @@ func (s *Service) AttachInventory(inventory *mouse.TargetedService) *Service {
 	s.inventory = inventory
 	s.inventoryDevices = nil
 	s.sync = NewSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyBound)
+	s.pollingSync = NewPollingSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyPollingBound)
+	return s
+}
+
+func (s *Service) attachPollingAutomaticSave(scheduler SyncScheduler) *Service {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pollingSync = NewPollingSyncCoordinator(scheduler, s.bindingCurrent, s.applyPollingBound)
 	return s
 }
 
@@ -199,9 +230,33 @@ func (s *Service) AttachDevicePersistence(load func(Binding) (x6.DPIConfig, erro
 	return s
 }
 
+func (s *Service) AttachPollingPersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pollingPersistence = pollingPersistence{load: load, save: save}
+	return s
+}
+
 type devicePersistence struct {
 	load func(Binding) (x6.DPIConfig, error)
 	save func(Binding, x6.DPIConfig) error
+}
+type pollingPersistence struct {
+	load func(Binding) (x6.DeviceConfig, error)
+	save func(Binding, x6.DeviceConfig) error
+}
+
+func (p pollingPersistence) Load(binding Binding) (x6.DeviceConfig, error) {
+	if p.load == nil {
+		return x6.DeviceConfig{}, os.ErrNotExist
+	}
+	return p.load(binding)
+}
+func (p pollingPersistence) Save(binding Binding, config x6.DeviceConfig) error {
+	if p.save == nil {
+		return nil
+	}
+	return p.save(binding, config)
 }
 
 func (p devicePersistence) Load(binding Binding) (x6.DPIConfig, error) {
@@ -227,6 +282,7 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 	}
 	if selected, ok := inventory.Selection(); ok {
 		s.cancelSync(selected)
+		s.cancelPollingSync(selected)
 	}
 	devices, err := inventory.Refresh(ctx)
 	if err != nil {
@@ -264,6 +320,13 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 					state = newDeviceState(applied, state.factory)
 				}
 			}
+			polling := newPollingState()
+			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.pollingPersistence != nil {
+				if config, err := s.pollingPersistence.Load(*result.Selected); err == nil {
+					polling = newPollingStateFromConfig(config)
+				}
+			}
+			s.pollingStates[device.ID] = polling
 			s.states[device.ID] = state
 		}
 	}
@@ -288,6 +351,7 @@ func (s *Service) SelectDevice(id DeviceID) Inventory {
 	if inventory != nil {
 		if previous, ok := inventory.Selection(); ok {
 			s.cancelSync(previous)
+			s.cancelPollingSync(previous)
 		}
 	}
 	if inventory == nil || inventory.Select(id) != nil {
@@ -303,6 +367,21 @@ func (s *Service) SelectDevice(id DeviceID) Inventory {
 			state.mu.Lock()
 			state.applied, state.pending = applied, applied
 			state.mu.Unlock()
+		}
+	}
+	if !selected.SessionOnly {
+		s.mu.Lock()
+		pollingPersistence, polling := s.pollingPersistence, s.pollingStates[selected.ID]
+		s.mu.Unlock()
+		if pollingPersistence != nil && polling != nil {
+			if config, err := pollingPersistence.Load(selected); err == nil {
+				next := newPollingStateFromConfig(config)
+				polling.mu.Lock()
+				polling.desired, polling.applied, polling.factory = next.desired, next.applied, next.factory
+				polling.persisted, polling.retry, polling.revision = next.persisted, next.retry, next.revision
+				polling.firmware, polling.persistence = next.firmware, next.persistence
+				polling.mu.Unlock()
+			}
 		}
 	}
 	if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
@@ -454,6 +533,72 @@ func (s *Service) StageDPI(config DPIConfig) Snapshot {
 	return snapshotLocked(state)
 }
 
+// GetPollingSnapshot reports desired, acknowledged, and persistence state; it
+// deliberately does not claim a live hardware observation.
+func (s *Service) GetPollingSnapshot() PollingSnapshot {
+	return pollingSnapshotOf(s.currentPollingState())
+}
+
+func (s *Service) StagePollingRate(rate x6.PollingRate) PollingSnapshot {
+	state := s.currentPollingState()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err := x6.NewPollingOperation().Validate(rate); err != nil {
+		return pollingSnapshotLocked(state)
+	}
+	state.desired = rate
+	state.revision++
+	state.firmware, state.persistence, state.retry = "pending", "", nil
+	if binding, ok := s.selectedBinding(); ok {
+		s.mu.Lock()
+		sync := s.pollingSync
+		s.mu.Unlock()
+		if sync != nil {
+			_ = sync.ScheduleAt(binding, state.revision, rate)
+		}
+	}
+	return pollingSnapshotLocked(state)
+}
+
+func (s *Service) RetryPollingPersistence() PollingSnapshot {
+	binding, ok := s.selectedBinding()
+	if !ok || binding.SessionOnly {
+		return s.GetPollingSnapshot()
+	}
+	state := s.currentPollingState()
+	state.mu.Lock()
+	retry := state.retry
+	state.mu.Unlock()
+	if retry == nil {
+		return s.GetPollingSnapshot()
+	}
+	s.mu.Lock()
+	persistence := s.pollingPersistence
+	s.mu.Unlock()
+	if persistence == nil || persistence.Save(binding, x6.DeviceConfig{PollingRate: *retry}) != nil {
+		state.mu.Lock()
+		state.persistence = "failed"
+		state.mu.Unlock()
+		return s.GetPollingSnapshot()
+	}
+	state.mu.Lock()
+	state.persisted, state.retry, state.persistence = retry, nil, "success"
+	state.mu.Unlock()
+	return s.GetPollingSnapshot()
+}
+
+// ResetToFactory stages both configuration lanes through their normal debounce
+// and acknowledgement lifecycle.
+func (s *Service) ResetToFactory() Snapshot {
+	state := s.currentState()
+	state.mu.Lock()
+	factory := state.factory
+	state.mu.Unlock()
+	s.StageDPI(ToDTO(factory))
+	s.StagePollingRate(x6.PollingRate1000)
+	return s.GetSnapshot()
+}
+
 func (s *Service) RetryPersistence() Snapshot {
 	binding, ok := s.selectedBinding()
 	if !ok || binding.SessionOnly {
@@ -555,6 +700,27 @@ func (s *Service) currentState() *deviceState {
 	return state
 }
 
+func (s *Service) currentPollingState() *pollingState {
+	s.mu.Lock()
+	inventory, states := s.inventory, s.pollingStates
+	s.mu.Unlock()
+	if inventory == nil {
+		return newPollingState()
+	}
+	selected, ok := inventory.Selection()
+	if !ok {
+		return newPollingState()
+	}
+	s.mu.Lock()
+	state := states[selected.ID]
+	if state == nil {
+		state = newPollingState()
+		states[selected.ID] = state
+	}
+	s.mu.Unlock()
+	return state
+}
+
 func (s *Service) selectedBinding() (Binding, bool) {
 	s.mu.Lock()
 	inventory := s.inventory
@@ -573,6 +739,15 @@ func (s *Service) bindingCurrent(binding Binding) bool {
 func (s *Service) cancelSync(binding Binding) {
 	s.mu.Lock()
 	sync := s.sync
+	s.mu.Unlock()
+	if sync != nil {
+		sync.Cancel(binding)
+	}
+}
+
+func (s *Service) cancelPollingSync(binding Binding) {
+	s.mu.Lock()
+	sync := s.pollingSync
 	s.mu.Unlock()
 	if sync != nil {
 		sync.Cancel(binding)
@@ -607,7 +782,7 @@ func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConf
 	}
 	state.applied, state.firmware, state.err = config, "success", Error{}
 	state.mu.Unlock()
-	if binding.SessionOnly || persistence == nil {
+	if !pollingPersistenceAllowed(binding) || persistence == nil {
 		return nil
 	}
 	if err := persistence.Save(binding, config); err != nil {
@@ -618,6 +793,53 @@ func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConf
 	}
 	state.mu.Lock()
 	state.persistence = "success"
+	state.mu.Unlock()
+	return nil
+}
+
+func pollingPersistenceAllowed(binding Binding) bool { return !binding.SessionOnly }
+
+func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.PollingRate) error {
+	if !s.bindingCurrent(binding) {
+		return mouse.ErrStaleBinding
+	}
+	state := s.currentPollingState()
+	state.mu.Lock()
+	if state.revision != revision {
+		state.mu.Unlock()
+		return mouse.ErrRevisionChanged
+	}
+	state.mu.Unlock()
+	s.mu.Lock()
+	inventory, persistence := s.inventory, s.pollingPersistence
+	s.mu.Unlock()
+	if inventory == nil {
+		return mouse.ErrStaleBinding
+	}
+	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewPollingOperation(), rate); err != nil {
+		state.mu.Lock()
+		state.firmware = "failed"
+		state.mu.Unlock()
+		return err
+	}
+	state.mu.Lock()
+	if state.revision != revision {
+		state.mu.Unlock()
+		return mouse.ErrRevisionChanged
+	}
+	state.applied, state.firmware = rate, "success"
+	state.mu.Unlock()
+	if binding.SessionOnly || persistence == nil {
+		return nil
+	}
+	if err := persistence.Save(binding, x6.DeviceConfig{PollingRate: rate}); err != nil {
+		state.mu.Lock()
+		state.retry, state.persistence = &rate, "failed"
+		state.mu.Unlock()
+		return nil
+	}
+	state.mu.Lock()
+	state.persisted, state.persistence = &rate, "success"
 	state.mu.Unlock()
 	return nil
 }
@@ -645,6 +867,24 @@ func snapshotOf(state *deviceState) Snapshot {
 
 func snapshotLocked(state *deviceState) Snapshot {
 	return Snapshot{Connection: string(state.connection), Battery: state.battery, Applied: ToDTO(state.applied), Pending: ToDTO(state.pending), Factory: ToDTO(state.factory), Revision: state.revision, Error: state.err, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, ObservedStage: state.observedStage, ObservedDPI: state.observedDPI}
+}
+
+func newPollingState() *pollingState {
+	return &pollingState{desired: x6.PollingRate1000, applied: x6.PollingRate1000, factory: x6.PollingRate1000}
+}
+
+func newPollingStateFromConfig(config x6.DeviceConfig) *pollingState {
+	return &pollingState{desired: config.PollingRate, applied: config.PollingRate, persisted: &config.PollingRate, factory: x6.PollingRate1000}
+}
+
+func pollingSnapshotOf(state *pollingState) PollingSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return pollingSnapshotLocked(state)
+}
+
+func pollingSnapshotLocked(state *pollingState) PollingSnapshot {
+	return PollingSnapshot{Desired: state.desired, Applied: state.applied, Persisted: state.persisted, Factory: state.factory, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil}
 }
 
 func mappedDPI(config x6.DPIConfig, stage int) *int {
