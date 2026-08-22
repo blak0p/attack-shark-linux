@@ -1,11 +1,31 @@
 package x6
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
+
+// DeviceConfig is the durable X6 configuration. DPI remains flattened for
+// backward-compatible reads of existing DPI-only records.
+type DeviceConfig struct {
+	DPIConfig
+	PollingRate PollingRate `json:"pollingRate"`
+}
+
+func DefaultDeviceConfig() DeviceConfig {
+	return DeviceConfig{DPIConfig: DefaultDPIConfig(), PollingRate: PollingRate1000}
+}
+
+// UnmarshalJSON keeps old direct DPI records valid while supplying the polling
+// factory default when their new field is absent.
+func (c *DeviceConfig) UnmarshalJSON(contents []byte) error {
+	*c = DefaultDeviceConfig()
+	type plain DeviceConfig
+	return json.Unmarshal(contents, (*plain)(c))
+}
 
 // PollingRate is the typed X6 polling-rate selection.
 type PollingRate = protocol.PollingRate

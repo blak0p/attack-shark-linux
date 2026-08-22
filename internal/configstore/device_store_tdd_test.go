@@ -10,7 +10,29 @@ import (
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
+
+func TestDeviceStoreRoundTripsPollingConfigPerDevice(t *testing.T) {
+	store := NewDeviceStore(filepath.Join(t.TempDir(), "devices-v2.json"))
+	first := mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "one"}
+	second := mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "two"}
+	config := x6.DefaultDeviceConfig()
+	config.DPI[0], config.PollingRate = 1600, x6.PollingRate250
+	if err := store.Save(first, "attack-shark-x6", "Attack Shark X6", 2, config); err != nil {
+		t.Fatalf("Save(first) error = %v", err)
+	}
+	if err := store.Save(second, "attack-shark-x6", "Attack Shark X6", 2, x6.DefaultDeviceConfig()); err != nil {
+		t.Fatalf("Save(second) error = %v", err)
+	}
+	var got x6.DeviceConfig
+	if err := store.Load(first, "attack-shark-x6", &got); err != nil {
+		t.Fatalf("Load(first) error = %v", err)
+	}
+	if got.DPI[0] != 1600 || got.PollingRate != x6.PollingRate250 {
+		t.Fatalf("Load(first) = %#v; want its DPI and polling values", got)
+	}
+}
 
 func TestDeviceStoreRoundTripPreservesUnknownAndRejectsPaths(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devices-v2.json")
