@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/transport"
@@ -360,6 +361,79 @@ func TestTargetedServiceDoesNotCommitApplyWhenPendingRevisionChanges(t *testing.
 	}
 }
 
+func TestApplyOperationBoundRejectsStaleBindingBeforeCommand(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	candidate := transport.Candidate{Path: "hidraw-1", Serial: "A", VendorID: 0x1D57, ProductID: 0xFA60}
+	source := &mutableInventory{candidates: []transport.Candidate{candidate}}
+	command := &commandFake{}
+	service := NewTargetedService(registry, source, command)
+	if _, err := service.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, ok := service.Selection()
+	if !ok {
+		t.Fatal("Selection() = no binding")
+	}
+	source.candidates[0].Path = "hidraw-2"
+
+	if err := service.ApplyOperationBound(context.Background(), binding, operationFake{}, "polling"); !errors.Is(err, ErrStaleBinding) {
+		t.Fatalf("ApplyOperationBound() error = %v, want ErrStaleBinding", err)
+	}
+	if command.calls != 0 {
+		t.Fatalf("command calls = %d, want 0", command.calls)
+	}
+}
+
+func TestApplyOperationBoundIgnoresUnrelatedACK(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	candidate := transport.Candidate{Path: "hidraw-1", Serial: "A", VendorID: 0x1D57, ProductID: 0xFA60}
+	command := &ackCommandFake{reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}}, err: context.DeadlineExceeded}
+	service := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{candidate}}, command)
+	if _, err := service.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, _ := service.Selection()
+
+	if err := service.ApplyOperationBound(context.Background(), binding, operationFake{}, "polling"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ApplyOperationBound() error = %v, want unrelated ACK to time out", err)
+	}
+	if command.keepReading[0] != true {
+		t.Fatal("polling operation accepted a DPI acknowledgement")
+	}
+}
+
+func TestApplyOperationBoundSerializesCommandsForTheSelectedDevice(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	candidate := transport.Candidate{Path: "hidraw-1", Serial: "A", VendorID: 0x1D57, ProductID: 0xFA60}
+	command := &serialCommandFake{entered: make(chan struct{}), release: make(chan struct{})}
+	service := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{candidate}}, command)
+	if _, err := service.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, _ := service.Selection()
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			results <- service.ApplyOperationBound(context.Background(), binding, operationFake{}, "polling")
+		}()
+	}
+	<-command.entered
+	if calls, maximum := command.values(); calls != 1 || maximum != 1 {
+		t.Fatalf("command calls/in flight = %d/%d, want 1/1 while first operation blocks", calls, maximum)
+	}
+	close(command.release)
+	if err := <-results; err != nil {
+		t.Fatalf("first ApplyOperationBound() error = %v", err)
+	}
+	if err := <-results; err != nil {
+		t.Fatalf("second ApplyOperationBound() error = %v", err)
+	}
+	if calls, maximum := command.values(); calls != 2 || maximum != 1 {
+		t.Fatalf("command calls/in flight = %d/%d, want 2/1", calls, maximum)
+	}
+}
+
 type inventoryFake struct{ candidates []transport.Candidate }
 
 func (f inventoryFake) Enumerate(context.Context) ([]transport.Candidate, error) {
@@ -422,6 +496,59 @@ func (targetedCodec) Encode(any) ([]byte, error)      { return []byte{0x04}, nil
 func (targetedCodec) DecodeStatus([]byte) (any, bool) { return nil, false }
 func (targetedCodec) MatchesACK([]byte) bool          { return true }
 func (targetedCodec) Defaults() any                   { return nil }
+
+type operationFake struct{}
+
+func (operationFake) Validate(any) error         { return nil }
+func (operationFake) Encode(any) ([]byte, error) { return []byte{0x06}, nil }
+func (operationFake) MatchesACK(report []byte) bool {
+	return len(report) == 5 && report[4] == 0x06
+}
+
+type ackCommandFake struct {
+	reports     [][]byte
+	err         error
+	keepReading []bool
+}
+
+type serialCommandFake struct {
+	entered, release chan struct{}
+	mu               sync.Mutex
+	calls, inFlight  int
+	maximum          int
+}
+
+func (f *serialCommandFake) SendAndAwaitBound(context.Context, Binding, []byte, func([]byte) bool) error {
+	f.mu.Lock()
+	f.calls++
+	f.inFlight++
+	if f.inFlight > f.maximum {
+		f.maximum = f.inFlight
+	}
+	calls := f.calls
+	f.mu.Unlock()
+	if calls == 1 {
+		close(f.entered)
+	}
+	<-f.release
+	f.mu.Lock()
+	f.inFlight--
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *serialCommandFake) values() (int, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.maximum
+}
+
+func (f *ackCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []byte, keepReading func([]byte) bool) error {
+	for _, report := range f.reports {
+		f.keepReading = append(f.keepReading, keepReading(report))
+	}
+	return f.err
+}
 
 func (f *commandFake) SendAndAwaitBound(context.Context, Binding, []byte, func([]byte) bool) error {
 	f.calls++

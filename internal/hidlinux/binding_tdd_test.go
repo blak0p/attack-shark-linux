@@ -33,6 +33,40 @@ func TestHidrawSendAndAwaitBindingUsesOnlyExactValidatedPath(t *testing.T) {
 	}
 }
 
+func TestHidrawSendAndAwaitBindingAdmitsOnlyKnownReportPairs(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   []byte
+		wantError bool
+	}{
+		{name: "polling report", payload: []byte{0x06, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}},
+		{name: "wrong report ID", payload: []byte{0x05, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}, wantError: true},
+		{name: "DPI ID with polling length", payload: []byte{0x04, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
+			node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x06}})
+			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
+			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
+
+			err := backend.SendAndAwaitBound(context.Background(), binding, tt.payload, func(report []byte) bool { return !protocol.MatchesPollingACK(report) })
+			if tt.wantError {
+				if !IsErrorKind(err, Mismatch) || opener.opens() != 0 {
+					t.Fatalf("SendAndAwaitBound() = %v, opens=%d; want mismatch before opening", err, opener.opens())
+				}
+				return
+			}
+			if err != nil || opener.opens() != 1 {
+				t.Fatalf("SendAndAwaitBound() = %v, opens=%d; want admitted polling report", err, opener.opens())
+			}
+		})
+	}
+}
+
 func TestHidrawSendAndAwaitBindingDoesNotReuseTimedOutListenerNode(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")

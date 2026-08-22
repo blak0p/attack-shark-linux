@@ -11,12 +11,14 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
+const pollingReportLength = 9
+
 // SendAndAwaitBound revalidates one captured binding and uses only its matching
 // hidraw node. It performs no USB claims, resets, rebinding, or live discovery
 // fallback to another device.
 func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Binding, payload []byte, continueReading func([]byte) bool) error {
-	if len(payload) != dpiReportLength {
-		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI feature report length = %d, want %d", len(payload), dpiReportLength)}
+	if !supportedFeatureReport(payload) {
+		return &Error{Kind: Mismatch, Err: fmt.Errorf("unsupported feature report ID/length = %#x/%d", payloadID(payload), len(payload))}
 	}
 	if err := ctx.Err(); err != nil {
 		return classify(err)
@@ -60,7 +62,7 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 		return &diagnosticError{operation: "transfer", err: classify(err)}
 	}
 	if count != len(payload) {
-		return &diagnosticError{operation: "transfer", err: fmt.Errorf("DPI feature report wrote %d bytes, want %d", count, len(payload))}
+		return &diagnosticError{operation: "transfer", err: fmt.Errorf("feature report wrote %d bytes, want %d", count, len(payload))}
 	}
 	buffer := make([]byte, 64)
 	for {
@@ -74,6 +76,17 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 			return nil
 		}
 	}
+}
+
+func supportedFeatureReport(payload []byte) bool {
+	return (len(payload) == dpiReportLength && payload[0] == 0x04) || (len(payload) == pollingReportLength && payload[0] == 0x06)
+}
+
+func payloadID(payload []byte) byte {
+	if len(payload) == 0 {
+		return 0
+	}
+	return payload[0]
 }
 
 func (b *HidrawBackend) serial(candidate Candidate) string {
