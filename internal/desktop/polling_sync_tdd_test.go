@@ -83,16 +83,97 @@ func TestPollingPersistenceExcludesSessionOnlyBindings(t *testing.T) {
 	}
 }
 
+func TestPollingApplyAndPersistenceCompletionEmitSnapshots(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	serial := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	scheduler := &fakeSyncScheduler{}
+	events := &pollingEventSink{}
+	saves := 0
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{serial}}, &pollingCommandFake{})).
+		AttachListener(nil, events).
+		AttachPollingPersistence(
+			func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), os.ErrNotExist },
+			func(Binding, x6.DeviceConfig) error {
+				saves++
+				if saves == 1 {
+					return errors.New("disk full")
+				}
+				return nil
+			},
+		).
+		attachPollingAutomaticSave(scheduler)
+	service.RefreshInventory(context.Background())
+	service.StagePollingRate(x6.PollingRate500)
+	scheduler.Advance(syncDebounceDelay)
+
+	if len(events.events) != 1 {
+		t.Fatalf("polling completion events = %#v; want one apply completion", events.events)
+	}
+	failed, ok := events.events[0].payload.(PollingConfigurationEvent)
+	if !ok || failed.Snapshot.Firmware != "success" || failed.Snapshot.Persistence != "failed" || !failed.Snapshot.RetryAvailable {
+		t.Fatalf("first completion = %#v; want applied polling with retryable persistence failure", events.events[0].payload)
+	}
+
+	service.RetryPollingPersistence()
+	if len(events.events) != 2 {
+		t.Fatalf("polling completion events after retry = %#v; want persistence retry completion", events.events)
+	}
+	retried, ok := events.events[1].payload.(PollingConfigurationEvent)
+	if !ok || retried.Snapshot.Persistence != "success" || retried.Snapshot.Persisted == nil || *retried.Snapshot.Persisted != x6.PollingRate500 {
+		t.Fatalf("retry completion = %#v; want persisted polling result", events.events[1].payload)
+	}
+}
+
+func TestPollingApplyFailureEmitsFailureSnapshot(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	serial := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	scheduler := &fakeSyncScheduler{}
+	events := &pollingEventSink{}
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{serial}}, &pollingCommandFake{err: errors.New("ack timeout")})).
+		AttachListener(nil, events).
+		attachPollingAutomaticSave(scheduler)
+	service.RefreshInventory(context.Background())
+	service.StagePollingRate(x6.PollingRate250)
+	scheduler.Advance(syncDebounceDelay)
+
+	if len(events.events) != 1 || events.events[0].event != "mouse:polling-configuration" {
+		t.Fatalf("polling completion events = %#v; want one polling failure event", events.events)
+	}
+	failed, ok := events.events[0].payload.(PollingConfigurationEvent)
+	if !ok || failed.Snapshot.Desired != x6.PollingRate250 || failed.Snapshot.Applied != x6.PollingRate1000 || failed.Snapshot.Firmware != "failed" {
+		t.Fatalf("failure completion = %#v; want failed polling snapshot", events.events[0].payload)
+	}
+}
+
 type pollingCall struct {
 	binding  Binding
 	revision uint64
 	rate     x6.PollingRate
 }
 
-type pollingCommandFake struct{ calls int }
+type pollingCommandFake struct {
+	calls int
+	err   error
+}
 
 func (f *pollingCommandFake) SendAndAwaitBound(_ context.Context, _ mouse.Binding, _ []byte, continueReading func([]byte) bool) error {
 	f.calls++
+	if f.err != nil {
+		return f.err
+	}
 	continueReading([]byte{0x03, 0x10, 0x50, 0, 0x06})
 	return nil
+}
+
+type pollingEvent struct {
+	event   string
+	payload any
+}
+
+type pollingEventSink struct{ events []pollingEvent }
+
+func (s *pollingEventSink) Emit(event string, payload any) {
+	s.events = append(s.events, pollingEvent{event: event, payload: payload})
 }

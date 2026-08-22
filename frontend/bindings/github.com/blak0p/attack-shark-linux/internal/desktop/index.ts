@@ -14,6 +14,7 @@ export {
     Error,
     ErrorCode,
     Inventory,
+    PollingSnapshot,
     Service,
     Snapshot
 } from "./models.js";

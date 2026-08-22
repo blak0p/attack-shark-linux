@@ -8,6 +8,12 @@ import { Create as $Create } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as mouse$0 from "../mouse/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as x6$1 from "../protocol/x6/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as x6$0 from "../x6/models.js";
 
 export const Binding = mouse$0.Binding;
 export type Binding = mouse$0.Binding;
@@ -146,6 +152,55 @@ export class Inventory {
             $$parsedSource["Error"] = $$createField2_0($$parsedSource["Error"]);
         }
         return new Inventory($$parsedSource as Partial<Inventory>);
+    }
+}
+
+export class PollingSnapshot {
+    "Desired": x6$0.PollingRate;
+    "Applied": x6$0.PollingRate;
+    "Persisted": x6$0.PollingRate | null;
+    "Factory": x6$0.PollingRate;
+    "Revision": number;
+    "Firmware": string;
+    "Persistence": string;
+    "RetryAvailable": boolean;
+
+    /** Creates a new PollingSnapshot instance. */
+    constructor($$source: Partial<PollingSnapshot> = {}) {
+        if (!("Desired" in $$source)) {
+            this["Desired"] = x6$1.PollingRate.$zero;
+        }
+        if (!("Applied" in $$source)) {
+            this["Applied"] = x6$1.PollingRate.$zero;
+        }
+        if (!("Persisted" in $$source)) {
+            this["Persisted"] = null;
+        }
+        if (!("Factory" in $$source)) {
+            this["Factory"] = x6$1.PollingRate.$zero;
+        }
+        if (!("Revision" in $$source)) {
+            this["Revision"] = 0;
+        }
+        if (!("Firmware" in $$source)) {
+            this["Firmware"] = "";
+        }
+        if (!("Persistence" in $$source)) {
+            this["Persistence"] = "";
+        }
+        if (!("RetryAvailable" in $$source)) {
+            this["RetryAvailable"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PollingSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PollingSnapshot {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PollingSnapshot($$parsedSource as Partial<PollingSnapshot>);
     }
 }
 
