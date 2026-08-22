@@ -114,6 +114,27 @@ func TestNewDesktopServiceUsesDurableAppliedState(t *testing.T) {
 	}
 }
 
+func TestDesktopCompositionLoadsVersionTwoPollingWithoutChangingDPI(t *testing.T) {
+	dataDir := t.TempDir()
+	id := mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha"}
+	config := x6.DefaultDeviceConfig()
+	config.DPI[0], config.PollingRate = 1600, x6.PollingRate250
+	if err := configstore.NewDeviceStore(filepath.Join(dataDir, "devices-v2.json")).Save(id, "attack-shark-x6", "Attack Shark X6", 2, config); err != nil {
+		t.Fatalf("seed version 2 device config: %v", err)
+	}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	service := composeDesktopServiceWithTargeted(dataDir, nil, nil, registry, inventorySourceFake{candidates: []transport.Candidate{{
+		VendorID: id.VendorID, ProductID: id.ProductID, Serial: id.Serial, Path: "/dev/hidraw0",
+	}}}, nil)
+	service.RefreshInventory(context.Background())
+	if got := service.GetSnapshot().Applied.DPI[0]; got != 1600 {
+		t.Fatalf("loaded DPI = %d, want 1600", got)
+	}
+	if got := service.GetPollingSnapshot().Applied; got != x6.PollingRate250 {
+		t.Fatalf("loaded polling = %d, want 250", got)
+	}
+}
+
 func TestDesktopCompositionSelectsSoleSeriallessValidatedX6(t *testing.T) {
 	dataDir := t.TempDir()
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
@@ -319,5 +340,43 @@ func TestWailsBuildTaskDoesNotRecursivelyInvokeWails(t *testing.T) {
 	}
 	if !strings.Contains(string(contents), "go build") {
 		t.Fatal("Wails build task must compile the composition root directly")
+	}
+}
+
+func TestGeneratedWailsBindingsExposePollingOperations(t *testing.T) {
+	service, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service.ts")
+	if err != nil {
+		t.Fatalf("read generated desktop service binding: %v", err)
+	}
+	for _, operation := range []string{"GetPollingSnapshot", "StagePollingRate", "ResetToFactory"} {
+		if !strings.Contains(string(service), "export function "+operation) {
+			t.Errorf("generated Wails service binding must expose %s", operation)
+		}
+	}
+
+	models, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+	if err != nil {
+		t.Fatalf("read generated desktop model binding: %v", err)
+	}
+	if !strings.Contains(string(models), "class PollingSnapshot") {
+		t.Error("generated Wails model binding must expose PollingSnapshot")
+	}
+}
+
+func TestConfigurationBaselineDocumentsPollingDefaultsAndPersistence(t *testing.T) {
+	contents, err := os.ReadFile("../../docs/config-baseline.md")
+	if err != nil {
+		t.Fatalf("read configuration baseline: %v", err)
+	}
+
+	baseline := strings.ToLower(strings.Join(strings.Fields(string(contents)), " "))
+	for _, want := range []string{
+		"Polling rate | 1000 Hz (factory default)",
+		"serial-bearing device profiles persist the acknowledged selection per device",
+		"Session-only devices apply the selection for the current session only.",
+	} {
+		if !strings.Contains(baseline, strings.ToLower(strings.Join(strings.Fields(want), " "))) {
+			t.Errorf("configuration baseline must document %q", want)
+		}
 	}
 }

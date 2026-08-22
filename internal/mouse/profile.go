@@ -49,6 +49,14 @@ type Codec interface {
 	Defaults() any
 }
 
+// CommandOperation describes one model-specific command without exposing its
+// type or acknowledgement contract to the transport service.
+type CommandOperation interface {
+	Validate(any) error
+	Encode(any) ([]byte, error)
+	MatchesACK([]byte) bool
+}
+
 // Profile describes one supported VID/PID model without selecting a device.
 type Profile interface {
 	ID() string

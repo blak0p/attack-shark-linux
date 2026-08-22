@@ -4,6 +4,10 @@ const bindings = vi.hoisted(() => ({
   GetSnapshot: vi.fn(),
   RefreshStatus: vi.fn(),
   StageDPI: vi.fn(),
+  GetPollingSnapshot: vi.fn(),
+  StagePollingRate: vi.fn(),
+  RetryPollingPersistence: vi.fn(),
+  ResetToFactory: vi.fn(),
   RetryPersistence: vi.fn(),
   RefreshInventory: vi.fn(),
   SelectDevice: vi.fn(),
@@ -28,6 +32,21 @@ describe("desktopService", () => {
     expect(bindings.StageDPI).toHaveBeenCalledWith(config);
   });
 
+  it("forwards polling selections and factory reset to generated Wails bindings", () => {
+    expect(desktopService.GetPollingSnapshot).toBe(bindings.GetPollingSnapshot);
+    expect(desktopService.StagePollingRate).toBe(bindings.StagePollingRate);
+    expect(desktopService.RetryPollingPersistence).toBe(bindings.RetryPollingPersistence);
+    expect(desktopService.ResetToFactory).toBe(bindings.ResetToFactory);
+
+    desktopService.StagePollingRate(500);
+    desktopService.RetryPollingPersistence();
+    desktopService.ResetToFactory();
+
+    expect(bindings.StagePollingRate).toHaveBeenCalledWith(500);
+    expect(bindings.RetryPollingPersistence).toHaveBeenCalledOnce();
+    expect(bindings.ResetToFactory).toHaveBeenCalledOnce();
+  });
+
   it("subscribes to device-scoped status events and returns the Wails unsubscribe function", () => {
     const callback = vi.fn();
     const unsubscribe = desktopService.OnStatusEvent(callback);
@@ -47,6 +66,15 @@ describe("desktopService", () => {
     expect(runtime.Events.On).toHaveBeenCalledWith("mouse:configuration", expect.any(Function));
     runtime.Events.On.mock.calls.at(-1)[1]({ data: { Snapshot: { Firmware: "success" } } });
     expect(callback).toHaveBeenCalledWith({ Snapshot: { Firmware: "success" } });
+  });
+
+  it("subscribes to polling completion snapshots", () => {
+    const callback = vi.fn();
+    desktopService.OnPollingConfiguration(callback);
+
+    expect(runtime.Events.On).toHaveBeenCalledWith("mouse:polling-configuration", expect.any(Function));
+    runtime.Events.On.mock.calls.at(-1)[1]({ data: { Snapshot: { Firmware: "success", Persistence: "failed" } } });
+    expect(callback).toHaveBeenCalledWith({ Snapshot: { Firmware: "success", Persistence: "failed" } });
   });
 
   it("delegates generated inventory bindings and subscribes to device-scoped status events", () => {

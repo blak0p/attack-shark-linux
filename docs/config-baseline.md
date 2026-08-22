@@ -19,7 +19,7 @@
 | DPI 7 | (undefined) | low 0x00 |
 | DPI 8 | (undefined) | low 0x00 |
 | Light mode | fixed | `0x10` (steady) |
-| Polling rate | 100 Hz | `0x06`: byte[3] = `0x0a` (1000/100) |
+| Polling rate | 1000 Hz (factory default) | Selectable: 125, 250, 500, or 1000 Hz |
 | Sleep (normal) | 0.5 min | `0x05` byte[9] = `0x01` (min × 2) |
 | Deep sleep | 10 min | `0x05` bytes 4/5/11 = `03 a8 01` |
 | Lift of distance | 1 mm | `0x04` byte[7] = `0x00` |
@@ -27,6 +27,14 @@
 | Ripple control | OFF | `0x04` byte[4] = `0x00` |
 | Angle snap | OFF | `0x04` byte[3] = byte[6] = `0x00` |
 | Motion Sync | ON | **unmapped byte — capture pending** |
+
+## Polling behavior
+
+The factory reset and legacy DPI-only profiles resolve polling to 1000 Hz.
+Serial-bearing device profiles persist the acknowledged selection per device
+after it is applied. Session-only devices apply the selection for the current
+session only. The configurator shows desired, applied, and persisted state; it
+does not read a live polling value from the mouse.
 
 ## Buttons (app numbering vs wire groups)
 
@@ -68,6 +76,5 @@ The app numbering **does not match 1:1** the wire group index beyond button 3
 - DPI: exact match with the factory payload lows `0f 17 1f 3f 6f 07 00 00`.
 - Normal sleep 0.5 min → byte[9] = `0x01` (min × 2 format, bar 0.5-60).
 - Deep sleep 10 min → `(10+0.5)×16 = 0xa8` → bytes `03 a8 01`.
-- 100 Hz rate differs from the captured factory reset (1000 Hz) → the mouse
-  persists whatever it was last sent; the app's real factory template is NOT
-  the reset.
+- Polling reset and legacy profile default: 1000 Hz. Durable polling data is
+  stored per serial-bearing device only after acknowledgement.

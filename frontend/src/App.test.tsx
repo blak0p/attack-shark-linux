@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, type ConfigurationEvent, type DesktopService, type Snapshot } from "./App";
+import { App, type ConfigurationEvent, type DesktopService, type PollingConfigurationEvent, type PollingSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
@@ -25,17 +25,33 @@ const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
   ...overrides,
 });
 
+const pollingSnapshot = (overrides: Partial<PollingSnapshot> = {}): PollingSnapshot => ({
+  Desired: 1000,
+  Applied: 1000,
+  Persisted: 1000,
+  Factory: 1000,
+  Revision: 0,
+  Firmware: "success",
+  Persistence: "success",
+  ...overrides,
+});
+
 const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
 
 const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => ({
   GetSnapshot: vi.fn().mockResolvedValue(initial),
+  GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
 	StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
+  StagePollingRate: vi.fn().mockImplementation(async (rate) => pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" })),
+  RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
+  ResetToFactory: vi.fn().mockResolvedValue(initial),
   RetryPersistence: vi.fn().mockResolvedValue(initial),
   OnStatusEvent: vi.fn().mockReturnValue(() => {}),
 	OnConfiguration: vi.fn().mockReturnValue(() => {}),
+	OnPollingConfiguration: vi.fn().mockReturnValue(() => {}),
   ...overrides,
 });
 
@@ -137,14 +153,14 @@ describe("App", () => {
 	expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
   });
 
-  it("stages factory defaults on Reset without applying them", async () => {
+  it("stages factory defaults across configuration lanes on Reset", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Reset to factory/ }));
 
-    await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(snapshot().Factory));
-	expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
+    await waitFor(() => expect(service.ResetToFactory).toHaveBeenCalledOnce());
+	expect(screen.getByText("Factory defaults queued. They will apply after one second of inactivity.")).toBeInTheDocument();
   });
 
   it("queues a DPI edit for automatic synchronization without an explicit Save control", async () => {
@@ -375,5 +391,100 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /macro|profile|remap|lighting/i })).not.toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
+  });
+
+  it("offers four keyboard-accessible polling choices with concise responsiveness and battery guidance", async () => {
+    render(<App service={serviceFor(snapshot())} />);
+
+    const group = await screen.findByRole("radiogroup", { name: "Polling rate" });
+    expect(group).toBeInTheDocument();
+    for (const rate of [125, 250, 500, 1000]) {
+      expect(screen.getByRole("radio", { name: `${rate} Hz` })).toBeInTheDocument();
+    }
+    const selected = screen.getByRole("radio", { name: "1000 Hz" });
+    selected.focus();
+    expect(selected).toHaveFocus();
+    expect(screen.getByText(/Higher rates favor responsiveness; lower rates favor battery life/i)).toBeInTheDocument();
+    expect(screen.queryByText(/live.*polling|polling.*live/i)).not.toBeInTheDocument();
+  });
+
+  it("refreshes pending polling feedback from a debounced completion event without remounting", async () => {
+	const listeners: Array<(event: PollingConfigurationEvent) => void> = [];
+    const service = serviceFor(snapshot(), {
+      StagePollingRate: vi.fn().mockResolvedValue(pollingSnapshot({ Desired: 500, Applied: 1000, Firmware: "pending", Persistence: "" })),
+		OnPollingConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+    });
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "500 Hz" }));
+
+    await waitFor(() => expect(service.StagePollingRate).toHaveBeenCalledWith(500));
+    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling change queued");
+    expect(screen.getByText("Desired polling rate: 500 Hz")).toBeInTheDocument();
+
+	await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success" }) }));
+	expect(screen.getByText("Applied polling rate: 500 Hz")).toBeInTheDocument();
+    expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument();
+  });
+
+	it("renders polling failure and persistence failure completion events", async () => {
+		const listeners: Array<(event: PollingConfigurationEvent) => void> = [];
+		const service = serviceFor(snapshot(), {
+			OnPollingConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+		});
+		render(<App service={service} />);
+		await screen.findByRole("radiogroup", { name: "Polling rate" });
+
+		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 1000, Firmware: "failed", Persistence: "" }) }));
+		expect(screen.getByText("Polling change failed")).toBeInTheDocument();
+
+		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 250, Firmware: "success", Persistence: "failed", RetryAvailable: true }) }));
+		expect(screen.getByText("Polling preference was not saved.")).toBeInTheDocument();
+	});
+
+	it("retries failed polling persistence and refreshes the existing polling status", async () => {
+		const listeners: Array<(event: PollingConfigurationEvent) => void> = [];
+		const service = serviceFor(snapshot(), {
+			RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success", RetryAvailable: false })),
+			OnPollingConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
+		});
+		render(<App service={service} />);
+		await screen.findByRole("radiogroup", { name: "Polling rate" });
+
+		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: null, Firmware: "success", Persistence: "failed", RetryAvailable: true }) }));
+		fireEvent.click(screen.getByRole("button", { name: "Retry polling persistence" }));
+
+		await waitFor(() => expect(service.RetryPollingPersistence).toHaveBeenCalledOnce());
+		await waitFor(() => expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument());
+	});
+
+	it("shows acknowledged persistence for an eligible serial-less X6 binding", async () => {
+		const seriallessBinding = { ...selectedDevice, ID: { ...selectedDevice.ID, Serial: "" }, SessionOnly: false };
+		const service = serviceFor(snapshot(), {
+			RefreshInventory: vi.fn().mockResolvedValue({ Devices: [seriallessBinding], Selected: seriallessBinding, Error: { Code: "" } }),
+			GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success" })),
+		});
+		render(<App service={service} />);
+
+		expect(await screen.findByText("Applied polling rate: 500 Hz")).toBeInTheDocument();
+		expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument();
+		expect(screen.queryByText(/session-only device/i)).not.toBeInTheDocument();
+	});
+
+  it("disables polling controls when no device is selected and resets through the combined factory API", async () => {
+    const service = serviceFor(snapshot(), {
+      ResetToFactory: vi.fn().mockResolvedValue(snapshot()),
+    });
+    render(<App service={service} />);
+    await screen.findByRole("radiogroup", { name: "Polling rate" });
+    fireEvent.click(screen.getByRole("button", { name: /Reset to factory/ }));
+    await waitFor(() => expect(service.ResetToFactory).toHaveBeenCalledOnce());
+
+    cleanup();
+    const unavailable = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "selection_required" } }),
+    });
+    render(<App service={unavailable} />);
+    expect(await screen.findByRole("radio", { name: "125 Hz" })).toBeDisabled();
   });
 });
