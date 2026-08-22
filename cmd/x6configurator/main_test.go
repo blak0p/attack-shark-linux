@@ -342,3 +342,41 @@ func TestWailsBuildTaskDoesNotRecursivelyInvokeWails(t *testing.T) {
 		t.Fatal("Wails build task must compile the composition root directly")
 	}
 }
+
+func TestGeneratedWailsBindingsExposePollingOperations(t *testing.T) {
+	service, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service.ts")
+	if err != nil {
+		t.Fatalf("read generated desktop service binding: %v", err)
+	}
+	for _, operation := range []string{"GetPollingSnapshot", "StagePollingRate", "ResetToFactory"} {
+		if !strings.Contains(string(service), "export function "+operation) {
+			t.Errorf("generated Wails service binding must expose %s", operation)
+		}
+	}
+
+	models, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+	if err != nil {
+		t.Fatalf("read generated desktop model binding: %v", err)
+	}
+	if !strings.Contains(string(models), "class PollingSnapshot") {
+		t.Error("generated Wails model binding must expose PollingSnapshot")
+	}
+}
+
+func TestConfigurationBaselineDocumentsPollingDefaultsAndPersistence(t *testing.T) {
+	contents, err := os.ReadFile("../../docs/config-baseline.md")
+	if err != nil {
+		t.Fatalf("read configuration baseline: %v", err)
+	}
+
+	baseline := strings.ToLower(strings.Join(strings.Fields(string(contents)), " "))
+	for _, want := range []string{
+		"Polling rate | 1000 Hz (factory default)",
+		"serial-bearing device profiles persist the acknowledged selection per device",
+		"Session-only devices apply the selection for the current session only.",
+	} {
+		if !strings.Contains(baseline, strings.ToLower(strings.Join(strings.Fields(want), " "))) {
+			t.Errorf("configuration baseline must document %q", want)
+		}
+	}
+}

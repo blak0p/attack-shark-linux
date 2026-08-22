@@ -4,12 +4,14 @@ import type { Binding as GeneratedBinding } from "../bindings/github.com/blak0p/
 export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
 export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string }; Firmware?: string; Persistence?: string; RetryAvailable?: boolean; ObservedStage?: number | null; ObservedDPI?: number | null };
+export type PollingSnapshot = { Desired: number; Applied: number; Persisted?: number | null; Factory: number; Revision: number; Firmware?: string; Persistence?: string; RetryAvailable?: boolean };
 export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
 export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
 export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
 export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
 export type ConfigurationEvent = { Binding: Binding; Snapshot: Snapshot };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void };
+export type PollingConfigurationEvent = { Binding: Binding; Snapshot: PollingSnapshot };
+export type DesktopService = { GetSnapshot(): Promise<Snapshot>; GetPollingSnapshot(): Promise<PollingSnapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; StagePollingRate(rate: number): Promise<PollingSnapshot>; ResetToFactory(): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; RetryPollingPersistence(): Promise<PollingSnapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void; OnPollingConfiguration(callback: (event: PollingConfigurationEvent) => void): () => void };
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -25,10 +27,12 @@ const feedbackFor = (code: string) => code === "stale_binding"
 
 export function App({ service }: { service: DesktopService }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [polling, setPolling] = useState<PollingSnapshot>();
   const [inventory, setInventory] = useState<Inventory>();
   const selected = useRef<Binding | null>(null);
   const [notice, setNotice] = useState("");
   useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
+  useEffect(() => { void service.GetPollingSnapshot().then(setPolling); }, [service]);
   useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected; }, [inventory]);
   useEffect(() => {
@@ -38,7 +42,13 @@ export function App({ service }: { service: DesktopService }) {
     return unsubscribe;
   }, [service]);
 	  useEffect(() => service.OnConfiguration((event) => {
-	  if (receivesEvent(selected.current, event.Binding)) setSnapshot(event.Snapshot);
+	  if (receivesEvent(selected.current, event.Binding)) {
+	      setSnapshot(event.Snapshot);
+	      void service.GetPollingSnapshot().then(setPolling);
+	    }
+		}), [service]);
+	useEffect(() => service.OnPollingConfiguration((event) => {
+		if (receivesEvent(selected.current, event.Binding)) setPolling(event.Snapshot);
 	}), [service]);
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
@@ -64,8 +74,17 @@ export function App({ service }: { service: DesktopService }) {
     const next = { ...pending, ActiveStage: index + 1 };
     void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
   };
-  const reset = () => void service.StageDPI(snapshot.Factory).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
+  const stagePollingRate = (rate: number) => {
+    void service.StagePollingRate(rate).then((next) => {
+      setPolling(next);
+      setNotice("Polling synchronization queued. It will apply after one second of inactivity.");
+    });
+  };
+  const reset = () => void service.ResetToFactory()
+    .then((snap) => { setSnapshot(snap); return service.GetPollingSnapshot(); })
+    .then((next) => { setPolling(next); setNotice("Factory defaults queued. They will apply after one second of inactivity."); });
   const retryPersistence = () => void service.RetryPersistence().then(setSnapshot);
+  const retryPollingPersistence = () => void service.RetryPollingPersistence().then(setPolling);
 
   return (
     <div className="app">
@@ -165,6 +184,32 @@ export function App({ service }: { service: DesktopService }) {
                   ))}
             </div>
           </div>
+
+          {polling && <fieldset className="polling-control" disabled={!ready}>
+            <legend>Polling rate</legend>
+            <p className="polling-guidance">Higher rates favor responsiveness; lower rates favor battery life.</p>
+            <div className="polling-options" role="radiogroup" aria-label="Polling rate">
+              {[125, 250, 500, 1000].map((rate) => (
+                <label className="polling-option" key={rate}>
+                  <input
+                    type="radio"
+                    name="polling-rate"
+                    value={rate}
+                    checked={polling.Desired === rate}
+                    onChange={() => stagePollingRate(rate)}
+                  />
+                  <span>{rate} Hz</span>
+                </label>
+              ))}
+            </div>
+            <div className="polling-state" role="status" aria-label="Polling status">
+              <span>Desired polling rate: {polling.Desired} Hz</span>
+	              {polling.Firmware === "pending" ? <span>Polling change queued</span> : polling.Firmware === "failed" ? <span>Polling change failed</span> : <span>Applied polling rate: {polling.Applied} Hz</span>}
+              {polling.Persistence === "success" && polling.Persisted != null ? <span>Polling preference saved: {polling.Persisted} Hz</span>
+                : polling.Persistence === "failed" ? <span>Polling preference was not saved.</span> : null}
+              {polling.RetryAvailable && <button type="button" onClick={retryPollingPersistence}>Retry polling persistence</button>}
+            </div>
+          </fieldset>}
 
           <button className="reset-btn" disabled={!ready} onClick={reset}>Reset to factory</button>
         </section>

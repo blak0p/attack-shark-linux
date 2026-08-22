@@ -117,6 +117,13 @@ type ConfigurationEvent struct {
 	Snapshot Snapshot
 }
 
+// PollingConfigurationEvent reports a completed polling apply or persistence retry.
+// It is separate from ConfigurationEvent so existing DPI event consumers remain compatible.
+type PollingConfigurationEvent struct {
+	Binding  Binding
+	Snapshot PollingSnapshot
+}
+
 type deviceState struct {
 	mu                         sync.Mutex
 	applyMu                    sync.Mutex
@@ -579,12 +586,16 @@ func (s *Service) RetryPollingPersistence() PollingSnapshot {
 		state.mu.Lock()
 		state.persistence = "failed"
 		state.mu.Unlock()
-		return s.GetPollingSnapshot()
+		snapshot := pollingSnapshotOf(state)
+		s.emitPollingConfiguration(binding, snapshot)
+		return snapshot
 	}
 	state.mu.Lock()
 	state.persisted, state.retry, state.persistence = retry, nil, "success"
 	state.mu.Unlock()
-	return s.GetPollingSnapshot()
+	snapshot := pollingSnapshotOf(state)
+	s.emitPollingConfiguration(binding, snapshot)
+	return snapshot
 }
 
 // ResetToFactory stages both configuration lanes through their normal debounce
@@ -804,6 +815,12 @@ func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.Po
 		return mouse.ErrStaleBinding
 	}
 	state := s.currentPollingState()
+	completed := false
+	defer func() {
+		if completed {
+			s.emitPollingConfiguration(binding, pollingSnapshotOf(state))
+		}
+	}()
 	state.mu.Lock()
 	if state.revision != revision {
 		state.mu.Unlock()
@@ -820,6 +837,7 @@ func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.Po
 		state.mu.Lock()
 		state.firmware = "failed"
 		state.mu.Unlock()
+		completed = true
 		return err
 	}
 	state.mu.Lock()
@@ -830,18 +848,30 @@ func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.Po
 	state.applied, state.firmware = rate, "success"
 	state.mu.Unlock()
 	if binding.SessionOnly || persistence == nil {
+		completed = true
 		return nil
 	}
 	if err := persistence.Save(binding, x6.DeviceConfig{PollingRate: rate}); err != nil {
 		state.mu.Lock()
 		state.retry, state.persistence = &rate, "failed"
 		state.mu.Unlock()
+		completed = true
 		return nil
 	}
 	state.mu.Lock()
 	state.persisted, state.persistence = &rate, "success"
 	state.mu.Unlock()
+	completed = true
 	return nil
+}
+
+func (s *Service) emitPollingConfiguration(binding Binding, snapshot PollingSnapshot) {
+	s.mu.Lock()
+	sink := s.events
+	s.mu.Unlock()
+	if sink != nil {
+		sink.Emit("mouse:polling-configuration", PollingConfigurationEvent{Binding: binding, Snapshot: snapshot})
+	}
 }
 
 func (s *Service) emitConfiguration(binding Binding, state *deviceState) {

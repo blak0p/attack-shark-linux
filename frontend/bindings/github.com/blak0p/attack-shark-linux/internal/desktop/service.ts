@@ -8,6 +8,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as mouse$0 from "../mouse/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as x6$1 from "../protocol/x6/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as x6$0 from "../x6/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -56,6 +62,22 @@ export function AttachMigrator(migrate: any): $CancellablePromise<$models.Servic
     });
 }
 
+export function AttachPollingPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(46337553, load, save).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
+ * GetPollingSnapshot reports desired, acknowledged, and persistence state; it
+ * deliberately does not claim a live hardware observation.
+ */
+export function GetPollingSnapshot(): $CancellablePromise<$models.PollingSnapshot> {
+    return $Call.ByID(1825488429).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(152452614).then(($result: any) => {
         return $$createType0($result);
@@ -67,12 +89,22 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(2420989727).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
 export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(3077675599).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
+ * ResetToFactory stages both configuration lanes through their normal debounce
+ * and acknowledgement lifecycle.
+ */
+export function ResetToFactory(): $CancellablePromise<$models.Snapshot> {
+    return $Call.ByID(2708725118).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -83,18 +115,30 @@ export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
     });
 }
 
+export function RetryPollingPersistence(): $CancellablePromise<$models.PollingSnapshot> {
+    return $Call.ByID(3085626362).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
 /**
  * SelectDevice establishes an explicit binding for a previously inventoried device.
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(236647672, id).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
 export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(2647292463, config).then(($result: any) => {
         return $$createType0($result);
+    });
+}
+
+export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
+    return $Call.ByID(1822189569, rate).then(($result: any) => {
+        return $$createType3($result);
     });
 }
 
@@ -111,4 +155,5 @@ export function StartListener(): $CancellablePromise<void> {
 const $$createType0 = $models.Snapshot.createFrom;
 const $$createType1 = $models.Service.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = $models.Inventory.createFrom;
+const $$createType3 = $models.PollingSnapshot.createFrom;
+const $$createType4 = $models.Inventory.createFrom;

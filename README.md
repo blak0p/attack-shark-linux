@@ -17,6 +17,9 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
   (`SET_REPORT`), with debounced auto-sync after one second of inactivity.
 - **Per-device persistence** — versioned device profiles survive restarts,
   with factory-defaults restore.
+- **Polling-rate configuration** — select 125, 250, 500, or 1000 Hz; the
+  acknowledged choice persists per serial-bearing device, while session-only
+  devices retain it only for the current session.
 - **Serialless X6 sessions** — identifies and configures dongles without a
   usable serial.
 
@@ -60,6 +63,7 @@ go vet ./...         # static analysis
 | [docs/protocol-captures.md](docs/protocol-captures.md) | Captured report evidence (raw `.pcapng` in `captures/`) |
 | [docs/app-x6.md](docs/app-x6.md) | Complete UI map of the official Windows app |
 | [docs/capture-plan.md](docs/capture-plan.md) | How captures are produced |
+| [docs/config-baseline.md](docs/config-baseline.md) | Factory defaults and per-device configuration semantics |
 
 ## Security
 
