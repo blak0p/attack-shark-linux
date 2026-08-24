@@ -158,6 +158,19 @@ button, input { font: inherit; }
 .polling-control:disabled .polling-option { cursor: not-allowed; opacity: 0.5; }
 .polling-state { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; color: #94a3b8; font-size: 12px; }
 
+.lighting-control { margin-top: 20px; }
+.lighting-control h3, .lighting-color legend { color: #e2e8f0; font-size: 13px; font-weight: 600; }
+.lighting-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.lighting-option { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; border: 1px solid #334155; border-radius: 8px; color: #cbd5e1; cursor: pointer; font-size: 12px; }
+.lighting-option:has(input:checked) { border-color: #60a5fa; background: #172554; color: #eff6ff; }
+.lighting-option:has(input:focus-visible) { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.lighting-color { margin-top: 12px; border: 0; min-width: 0; }
+.lighting-color:disabled .lighting-option { cursor: not-allowed; opacity: 0.5; }
+.apply-lighting-btn { margin-top: 12px; background: linear-gradient(135deg, #064e3b, #065f46); border: 1px solid #10b981; border-radius: 8px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; padding: 8px 16px; }
+.apply-lighting-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.lighting-state { margin-top: 8px; color: #94a3b8; font-size: 12px; }
+.lighting-state [role="alert"] { color: #f87171; }
+
 .reset-btn {
   margin-top: 16px;
   width: 100%;
@@ -181,4 +194,5 @@ button, input { font: inherit; }
   .panel-body { flex-direction: column; }
   .stage-indicator { flex-direction: row; flex-wrap: wrap; }
   .polling-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lighting-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -6,6 +6,9 @@ const bindings = vi.hoisted(() => ({
   StageDPI: vi.fn(),
   GetPollingSnapshot: vi.fn(),
   StagePollingRate: vi.fn(),
+  GetLightingSnapshot: vi.fn(),
+  StageLighting: vi.fn(),
+  ApplyLighting: vi.fn(),
   RetryPollingPersistence: vi.fn(),
   ResetToFactory: vi.fn(),
   RetryPersistence: vi.fn(),
@@ -45,6 +48,19 @@ describe("desktopService", () => {
     expect(bindings.StagePollingRate).toHaveBeenCalledWith(500);
     expect(bindings.RetryPollingPersistence).toHaveBeenCalledOnce();
     expect(bindings.ResetToFactory).toHaveBeenCalledOnce();
+  });
+
+  it("forwards lighting reads, staging, and explicit application to generated Wails bindings", () => {
+    const selection = { Mode: 0x20, TemplateID: "breathing-ff7f00" };
+
+    expect(desktopService.GetLightingSnapshot).toBe(bindings.GetLightingSnapshot);
+    expect(desktopService.StageLighting).toBe(bindings.StageLighting);
+    expect(desktopService.ApplyLighting).toBe(bindings.ApplyLighting);
+    desktopService.StageLighting(selection);
+    desktopService.ApplyLighting();
+
+    expect(bindings.StageLighting).toHaveBeenCalledWith(selection);
+    expect(bindings.ApplyLighting).toHaveBeenCalledOnce();
   });
 
   it("subscribes to device-scoped status events and returns the Wails unsubscribe function", () => {

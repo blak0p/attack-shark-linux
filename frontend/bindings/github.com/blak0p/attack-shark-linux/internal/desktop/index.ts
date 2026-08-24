@@ -14,6 +14,7 @@ export {
     Error,
     ErrorCode,
     Inventory,
+    LightingSnapshot,
     PollingSnapshot,
     Service,
     Snapshot

@@ -155,6 +155,63 @@ export class Inventory {
     }
 }
 
+export class LightingSnapshot {
+    "Pending": x6$0.LightingSelection;
+    "Applied": x6$0.LightingSelection | null;
+    "Options": x6$0.LightingOption[];
+    "Revision": number;
+    "Firmware": string;
+    "Error": Error;
+
+    /** Creates a new LightingSnapshot instance. */
+    constructor($$source: Partial<LightingSnapshot> = {}) {
+        if (!("Pending" in $$source)) {
+            this["Pending"] = (new x6$0.LightingSelection());
+        }
+        if (!("Applied" in $$source)) {
+            this["Applied"] = null;
+        }
+        if (!("Options" in $$source)) {
+            this["Options"] = [];
+        }
+        if (!("Revision" in $$source)) {
+            this["Revision"] = 0;
+        }
+        if (!("Firmware" in $$source)) {
+            this["Firmware"] = "";
+        }
+        if (!("Error" in $$source)) {
+            this["Error"] = (new Error());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingSnapshot {
+        const $$createField0_0 = $$createType5;
+        const $$createField1_0 = $$createType6;
+        const $$createField2_0 = $$createType8;
+        const $$createField5_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Pending" in $$parsedSource) {
+            $$parsedSource["Pending"] = $$createField0_0($$parsedSource["Pending"]);
+        }
+        if ("Applied" in $$parsedSource) {
+            $$parsedSource["Applied"] = $$createField1_0($$parsedSource["Applied"]);
+        }
+        if ("Options" in $$parsedSource) {
+            $$parsedSource["Options"] = $$createField2_0($$parsedSource["Options"]);
+        }
+        if ("Error" in $$parsedSource) {
+            $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
+        }
+        return new LightingSnapshot($$parsedSource as Partial<LightingSnapshot>);
+    }
+}
+
 export class PollingSnapshot {
     "Desired": x6$0.PollingRate;
     "Applied": x6$0.PollingRate;
@@ -281,9 +338,9 @@ export class Snapshot {
      * Creates a new Snapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): Snapshot {
-        const $$createField2_0 = $$createType5;
-        const $$createField3_0 = $$createType5;
-        const $$createField4_0 = $$createType5;
+        const $$createField2_0 = $$createType9;
+        const $$createField3_0 = $$createType9;
+        const $$createField4_0 = $$createType9;
         const $$createField6_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Applied" in $$parsedSource) {
@@ -314,4 +371,8 @@ const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = mouse$0.Binding.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
 const $$createType4 = Error.createFrom;
-const $$createType5 = DPIConfig.createFrom;
+const $$createType5 = x6$1.LightingSelection.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);
+const $$createType7 = x6$0.LightingOption.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = DPIConfig.createFrom;

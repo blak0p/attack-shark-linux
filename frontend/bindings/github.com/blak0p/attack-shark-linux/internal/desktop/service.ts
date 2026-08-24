@@ -26,11 +26,20 @@ export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
 }
 
 /**
+ * ApplyLighting writes the staged catalog vector through one validated binding.
+ */
+export function ApplyLighting(): $CancellablePromise<$models.LightingSnapshot> {
+    return $Call.ByID(2699165782).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
  * AttachDevicePersistence wires keyed selected-device applied-state storage.
  */
 export function AttachDevicePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3887596840, load, save).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
@@ -39,7 +48,7 @@ export function AttachDevicePersistence(load: any, save: any): $CancellablePromi
  */
 export function AttachInventory(inventory: mouse$0.TargetedService | null): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3655060073, inventory).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
@@ -49,7 +58,7 @@ export function AttachInventory(inventory: mouse$0.TargetedService | null): $Can
  */
 export function AttachListener(listener: $models.StatusListener, events: $models.EventSink): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3795100807, listener, events).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
@@ -58,13 +67,23 @@ export function AttachListener(listener: $models.StatusListener, events: $models
  */
 export function AttachMigrator(migrate: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(1213464496, migrate).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
 export function AttachPollingPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(46337553, load, save).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
+    });
+}
+
+/**
+ * GetLightingSnapshot reports staged and acknowledged lighting state without
+ * claiming a live hardware read.
+ */
+export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnapshot> {
+    return $Call.ByID(1849424142).then(($result: any) => {
+        return $$createType1($result);
     });
 }
 
@@ -74,7 +93,7 @@ export function AttachPollingPersistence(load: any, save: any): $CancellableProm
  */
 export function GetPollingSnapshot(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1825488429).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -89,7 +108,7 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(2420989727).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
@@ -117,7 +136,7 @@ export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
 
 export function RetryPollingPersistence(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(3085626362).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -126,7 +145,7 @@ export function RetryPollingPersistence(): $CancellablePromise<$models.PollingSn
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(236647672, id).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
@@ -136,9 +155,18 @@ export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models
     });
 }
 
+/**
+ * StageLighting updates only the selected device's pending state.
+ */
+export function StageLighting(selection: x6$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
+    return $Call.ByID(1205871004, selection).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1822189569, rate).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -153,7 +181,8 @@ export function StartListener(): $CancellablePromise<void> {
 
 // Private type creation functions
 const $$createType0 = $models.Snapshot.createFrom;
-const $$createType1 = $models.Service.createFrom;
-const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = $models.PollingSnapshot.createFrom;
-const $$createType4 = $models.Inventory.createFrom;
+const $$createType1 = $models.LightingSnapshot.createFrom;
+const $$createType2 = $models.Service.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = $models.PollingSnapshot.createFrom;
+const $$createType5 = $models.Inventory.createFrom;

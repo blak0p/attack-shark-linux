@@ -9,6 +9,46 @@ import { Create as $Create } from "@wailsio/runtime";
 // @ts-ignore: Unused imports
 import * as x6$0 from "../protocol/x6/models.js";
 
+export type LightingMode = x6$0.LightingMode;
+
+export class LightingOption {
+    "Mode": LightingMode;
+    "TemplateID": LightingTemplateID;
+    "Label": string;
+    "CSSColor": string;
+
+    /** Creates a new LightingOption instance. */
+    constructor($$source: Partial<LightingOption> = {}) {
+        if (!("Mode" in $$source)) {
+            this["Mode"] = x6$0.LightingMode.$zero;
+        }
+        if (!("TemplateID" in $$source)) {
+            this["TemplateID"] = x6$0.LightingTemplateID.$zero;
+        }
+        if (!("Label" in $$source)) {
+            this["Label"] = "";
+        }
+        if (!("CSSColor" in $$source)) {
+            this["CSSColor"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingOption instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingOption {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LightingOption($$parsedSource as Partial<LightingOption>);
+    }
+}
+
+export const LightingSelection = x6$0.LightingSelection;
+export type LightingSelection = x6$0.LightingSelection;
+
+export type LightingTemplateID = x6$0.LightingTemplateID;
+
 /**
  * PollingRate is the typed X6 polling-rate selection.
  */
