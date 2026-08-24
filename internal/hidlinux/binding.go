@@ -11,7 +11,10 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
-const pollingReportLength = 9
+const (
+	pollingReportLength  = 9
+	lightingReportLength = 13
+)
 
 // SendAndAwaitBound revalidates one captured binding and uses only its matching
 // hidraw node. It performs no USB claims, resets, rebinding, or live discovery
@@ -79,7 +82,9 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 }
 
 func supportedFeatureReport(payload []byte) bool {
-	return (len(payload) == dpiReportLength && payload[0] == 0x04) || (len(payload) == pollingReportLength && payload[0] == 0x06)
+	return (len(payload) == dpiReportLength && payload[0] == 0x04) ||
+		(len(payload) == pollingReportLength && payload[0] == 0x06) ||
+		(len(payload) == lightingReportLength && payload[0] == 0x05)
 }
 
 func payloadID(payload []byte) byte {
