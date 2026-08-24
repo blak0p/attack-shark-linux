@@ -67,6 +67,14 @@ type PollingSnapshot struct {
 	Persistence      string
 	RetryAvailable   bool
 }
+type LightingSnapshot struct {
+	Pending  x6.LightingSelection
+	Applied  *x6.LightingSelection
+	Options  []x6.LightingOption
+	Revision uint64
+	Firmware string
+	Error    Error
+}
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
 }
@@ -143,6 +151,15 @@ type pollingState struct {
 	revision                  uint64
 	firmware, persistence     string
 }
+type lightingState struct {
+	mu       sync.Mutex
+	applyMu  sync.Mutex
+	pending  x6.LightingSelection
+	applied  *x6.LightingSelection
+	revision uint64
+	firmware string
+	err      Error
+}
 
 type Service struct {
 	status             StatusReader
@@ -161,6 +178,7 @@ type Service struct {
 	pollingStates      map[DeviceID]*pollingState
 	pollingSync        *PollingSyncCoordinator
 	pollingPersistence PollingPersistence
+	lightingStates     map[DeviceID]*lightingState
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -172,7 +190,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState)}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), lightingStates: make(map[DeviceID]*lightingState)}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -546,6 +564,77 @@ func (s *Service) GetPollingSnapshot() PollingSnapshot {
 	return pollingSnapshotOf(s.currentPollingState())
 }
 
+// GetLightingSnapshot reports staged and acknowledged lighting state without
+// claiming a live hardware read.
+func (s *Service) GetLightingSnapshot() LightingSnapshot {
+	return lightingSnapshotOf(s.currentLightingState())
+}
+
+// StageLighting updates only the selected device's pending state.
+func (s *Service) StageLighting(selection x6.LightingSelection) LightingSnapshot {
+	state := s.currentLightingState()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err := x6.NewLightingOperation().Validate(selection); err != nil {
+		state.err = Error{Code: InvalidConfiguration}
+		return lightingSnapshotLocked(state)
+	}
+	state.pending = selection
+	state.revision++
+	state.firmware = "pending"
+	state.err = Error{}
+	return lightingSnapshotLocked(state)
+}
+
+// ApplyLighting writes the staged catalog vector through one validated binding.
+func (s *Service) ApplyLighting() LightingSnapshot {
+	binding, ok := s.selectedBinding()
+	state := s.currentLightingState()
+	if !ok {
+		return s.failLighting(state, SelectionRequired)
+	}
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	state.mu.Lock()
+	selection, revision := state.pending, state.revision
+	state.mu.Unlock()
+	if !s.bindingCurrent(binding) {
+		return s.failLighting(state, StaleBinding)
+	}
+	s.mu.Lock()
+	inventory := s.inventory
+	s.mu.Unlock()
+	if inventory == nil {
+		return s.failLighting(state, StaleBinding)
+	}
+	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewLightingOperation(), selection); err != nil {
+		if errors.Is(err, mouse.ErrStaleBinding) {
+			return s.failLighting(state, StaleBinding)
+		}
+		return s.failLighting(state, ApplyFailed)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.revision != revision {
+		state.firmware = "failed"
+		state.err = Error{Code: ApplyFailed}
+		return lightingSnapshotLocked(state)
+	}
+	applied := selection
+	state.applied = &applied
+	state.firmware = "success"
+	state.err = Error{}
+	return lightingSnapshotLocked(state)
+}
+
+func (s *Service) failLighting(state *lightingState, code ErrorCode) LightingSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.firmware = "failed"
+	state.err = Error{Code: code}
+	return lightingSnapshotLocked(state)
+}
+
 func (s *Service) StagePollingRate(rate x6.PollingRate) PollingSnapshot {
 	state := s.currentPollingState()
 	state.mu.Lock()
@@ -732,6 +821,21 @@ func (s *Service) currentPollingState() *pollingState {
 	return state
 }
 
+func (s *Service) currentLightingState() *lightingState {
+	binding, ok := s.selectedBinding()
+	if !ok {
+		return newLightingState()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.lightingStates[binding.ID]
+	if state == nil {
+		state = newLightingState()
+		s.lightingStates[binding.ID] = state
+	}
+	return state
+}
+
 func (s *Service) selectedBinding() (Binding, bool) {
 	s.mu.Lock()
 	inventory := s.inventory
@@ -915,6 +1019,25 @@ func pollingSnapshotOf(state *pollingState) PollingSnapshot {
 
 func pollingSnapshotLocked(state *pollingState) PollingSnapshot {
 	return PollingSnapshot{Desired: state.desired, Applied: state.applied, Persisted: state.persisted, Factory: state.factory, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil}
+}
+
+func newLightingState() *lightingState {
+	return &lightingState{pending: x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen}}
+}
+
+func lightingSnapshotOf(state *lightingState) LightingSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return lightingSnapshotLocked(state)
+}
+
+func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
+	var applied *x6.LightingSelection
+	if state.applied != nil {
+		copy := *state.applied
+		applied = &copy
+	}
+	return LightingSnapshot{Pending: state.pending, Applied: applied, Options: x6.LightingOptions(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
 }
 
 func mappedDPI(config x6.DPIConfig, stage int) *int {
