@@ -70,7 +70,7 @@ type PollingSnapshot struct {
 type LightingSnapshot struct {
 	Pending  x6.LightingSelection
 	Applied  *x6.LightingSelection
-	Options  []x6.LightingOption
+	Effects  []x6.LightingEffect
 	Revision uint64
 	Firmware string
 	Error    Error
@@ -1037,7 +1037,7 @@ func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
 		copy := *state.applied
 		applied = &copy
 	}
-	return LightingSnapshot{Pending: state.pending, Applied: applied, Options: x6.LightingOptions(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
+	return LightingSnapshot{Pending: state.pending, Applied: applied, Effects: x6.LightingEffects(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
 }
 
 func mappedDPI(config x6.DPIConfig, stage int) *int {

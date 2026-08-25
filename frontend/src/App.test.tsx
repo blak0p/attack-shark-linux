@@ -39,13 +39,17 @@ const pollingSnapshot = (overrides: Partial<PollingSnapshot> = {}): PollingSnaps
 const lightingSnapshot = (overrides: Partial<LightingSnapshot> = {}): LightingSnapshot => ({
   Pending: { Mode: 0x10, TemplateID: "fixed-green" },
   Applied: null,
-  Options: [
-    { Mode: 0x00, TemplateID: "off", Label: "Off", CSSColor: "" },
-    { Mode: 0x10, TemplateID: "fixed-green", Label: "Fixed Green", CSSColor: "#00FF00" },
-    { Mode: 0x20, TemplateID: "breathing-green", Label: "Breathing Green", CSSColor: "#00FF00" },
-    { Mode: 0x20, TemplateID: "breathing-fe5ef9", Label: "Breathing #FE5EF9", CSSColor: "#FE5EF9" },
-    { Mode: 0x20, TemplateID: "breathing-ff7f00", Label: "Breathing #FF7F00", CSSColor: "#FF7F00" },
-    { Mode: 0x20, TemplateID: "breathing-ffff00", Label: "Breathing #FFFF00", CSSColor: "#FFFF00" },
+  Effects: [
+    { Mode: 0x00, Label: "Off", DefaultTemplateID: "off", SpeedVariants: [], ColorTemplates: [] },
+    { Mode: 0x10, Label: "Fixed", DefaultTemplateID: "fixed-green", SpeedVariants: [], ColorTemplates: [{ TemplateID: "fixed-green", CSSColor: "#00FF00" }] },
+    { Mode: 0x20, Label: "Breathing", DefaultTemplateID: "breathing-green", SpeedVariants: [], ColorTemplates: [
+      { TemplateID: "breathing-green", CSSColor: "#00FF00" }, { TemplateID: "breathing-fe5ef9", CSSColor: "#FE5EF9" },
+      { TemplateID: "breathing-ff7f00", CSSColor: "#FF7F00" }, { TemplateID: "breathing-ffff00", CSSColor: "#FFFF00" },
+    ] },
+    { Mode: 0x50, Label: "Static DPI", DefaultTemplateID: "static-dpi-default", SpeedVariants: [], ColorTemplates: [] },
+    { Mode: 0x30, Label: "Neon", DefaultTemplateID: "neon-one", SpeedVariants: [{ TemplateID: "neon-one" }, { TemplateID: "neon-two" }], ColorTemplates: [] },
+    { Mode: 0x40, Label: "Color Breathing", DefaultTemplateID: "color-breathing-one", SpeedVariants: [{ TemplateID: "color-breathing-one" }, { TemplateID: "color-breathing-two" }], ColorTemplates: [] },
+    { Mode: 0x60, Label: "Breathing DPI", DefaultTemplateID: "breathing-dpi-one", SpeedVariants: [{ TemplateID: "breathing-dpi-one" }, { TemplateID: "breathing-dpi-two" }, { TemplateID: "breathing-dpi-three" }], ColorTemplates: [] },
   ],
   Revision: 0,
   Firmware: "",
@@ -508,43 +512,38 @@ describe("App", () => {
     expect(await screen.findByRole("radio", { name: "125 Hz" })).toBeDisabled();
   });
 
-  it("offers only the capture-proven lighting modes and colors, disabling color choices for Off", async () => {
+  it("offers one effect dropdown and only applicable capture-backed controls", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    const modes = await screen.findByRole("radiogroup", { name: "Lighting mode" });
-    expect(modes).toBeInTheDocument();
-    expect(screen.getAllByRole("radio", { name: /Off|Fixed\/Steady|Breathing/ })).toHaveLength(3);
-    expect(screen.getByRole("radio", { name: "Off" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Fixed/Steady" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Breathing" })).toBeInTheDocument();
+    const effect = await screen.findByRole("combobox", { name: "Lighting effect" });
+    expect(effect).toBeInTheDocument();
+    expect(effect.querySelectorAll("option")).toHaveLength(7);
+    expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Fixed" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Breathing DPI" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Lighting color" })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio", { name: "#00FF00" })).toHaveLength(1);
+    expect(screen.queryByRole("slider", { name: /speed/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="color"]')).not.toBeInTheDocument();
 
-    const colors = screen.getByRole("group", { name: "Lighting color" });
-    expect(colors).toBeEnabled();
-    expect(screen.getAllByRole("radio", { name: "Green" })).toHaveLength(1);
-    expect(screen.queryByRole("slider", { name: /brightness|speed/i })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("radio", { name: "Off" }));
-    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x00, TemplateID: "off" }));
-    expect(screen.getByRole("group", { name: "Lighting color" })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("radio", { name: "Breathing" }));
-    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x20, TemplateID: "breathing-green" }));
-    expect(screen.getByRole("radio", { name: "Green" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "#FE5EF9" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "#FF7F00" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "#FFFF00" })).toBeInTheDocument();
-    expect(screen.getAllByRole("radio", { name: /Green|#FE5EF9|#FF7F00|#FFFF00/ })).toHaveLength(4);
+    fireEvent.change(effect, { target: { value: "32" } });
+    await waitFor(() => expect(screen.getAllByRole("radio", { name: /#00FF00|#FE5EF9|#FF7F00|#FFFF00/ })).toHaveLength(4));
+    fireEvent.change(effect, { target: { value: "48" } });
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x30, TemplateID: "neon-one" }));
+    expect(screen.getByRole("slider", { name: "Neon speed" })).toBeInTheDocument();
+    expect(screen.queryByText(/Variant/)).not.toBeInTheDocument();
   });
 
   it("stages a lighting selection and applies it only when explicitly requested", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Breathing" }));
-    await waitFor(() => expect(screen.getByRole("radio", { name: "#FF7F00" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("radio", { name: "#FF7F00" }));
-    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x20, TemplateID: "breathing-ff7f00" }));
+    fireEvent.change(await screen.findByRole("combobox", { name: "Lighting effect" }), { target: { value: "96" } });
+    await waitFor(() => expect(screen.getByRole("slider", { name: "Breathing DPI speed" })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole("slider", { name: "Breathing DPI speed" }), { target: { value: "1" } });
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
     expect(service.ApplyLighting).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Apply lighting" }));
@@ -554,7 +553,7 @@ describe("App", () => {
 
   it("shows a lighting application failure without reporting success", async () => {
     const service = serviceFor(snapshot(), {
-      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x00, TemplateID: "off" }, Applied: null, Options: [], Revision: 1, Firmware: "failed", Error: { Code: "apply_failed" } }),
+      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x10, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 1, Firmware: "failed", Error: { Code: "apply_failed" } }),
     });
     render(<App service={service} />);
 

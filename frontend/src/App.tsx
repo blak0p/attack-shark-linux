@@ -5,10 +5,12 @@ export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
 export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string }; Firmware?: string; Persistence?: string; RetryAvailable?: boolean; ObservedStage?: number | null; ObservedDPI?: number | null };
 export type PollingSnapshot = { Desired: number; Applied: number; Persisted?: number | null; Factory: number; Revision: number; Firmware?: string; Persistence?: string; RetryAvailable?: boolean };
-export type LightingMode = 0x00 | 0x10 | 0x20;
+export type LightingMode = 0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60;
 export type LightingSelection = { Mode: LightingMode; TemplateID: string };
-export type LightingOption = LightingSelection & { Label: string; CSSColor: string };
-export type LightingSnapshot = { Pending: LightingSelection; Applied: LightingSelection | null; Options: LightingOption[]; Revision: number; Firmware: string; Error: { Code: string } };
+export type LightingSpeedVariant = { TemplateID: string };
+export type LightingColorTemplate = { TemplateID: string; CSSColor: string };
+export type LightingEffect = { Mode: LightingMode; Label: string; DefaultTemplateID: string; SpeedVariants: LightingSpeedVariant[]; ColorTemplates: LightingColorTemplate[] };
+export type LightingSnapshot = { Pending: LightingSelection; Applied: LightingSelection | null; Effects: LightingEffect[]; Revision: number; Firmware: string; Error: { Code: string } };
 export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
 export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
 export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
@@ -22,12 +24,6 @@ export type DesktopService = { GetSnapshot(): Promise<Snapshot>; GetPollingSnaps
 const DPI_MIN = 50;
 const DPI_MAX = 26000;
 const DPI_STEP = 50;
-const LIGHTING_MODES: Array<{ value: LightingMode; label: string }> = [
-  { value: 0x00, label: "Off" },
-  { value: 0x10, label: "Fixed/Steady" },
-  { value: 0x20, label: "Breathing" },
-];
-
 const position = (value: number) => Math.round(Math.max(0, Math.min(1, (value - DPI_MIN) / (DPI_MAX - DPI_MIN))) * 1000) / 10;
 const identityLabel = (device: Device) => `VID ${device.ID.VendorID.toString(16).padStart(4, "0").toUpperCase()} · PID ${device.ID.ProductID.toString(16).padStart(4, "0").toUpperCase()} · Serial ${device.ID.Serial || "unavailable"}`;
 const feedbackFor = (code: string) => code === "stale_binding"
@@ -72,6 +68,8 @@ export function App({ service }: { service: DesktopService }) {
   const activeDPI = snapshot.ObservedStage != null ? snapshot.ObservedDPI ?? null : pending.DPI[activeIndex] ?? null;
   const activeColor = activeIndex >= 0 && snapshot.Applied.Colors ? snapshot.Applied.Colors[activeIndex] : null;
   const colorFor = (index: number) => (snapshot.Applied.Colors && snapshot.Applied.Colors[index] ? `rgb(${snapshot.Applied.Colors[index].join(", ")})` : null);
+  const lightingEffect = lighting?.Effects.find((effect) => effect.Mode === lighting.Pending.Mode);
+  const speedIndex = lightingEffect?.SpeedVariants.findIndex((variant) => variant.TemplateID === lighting.Pending.TemplateID) ?? -1;
   const selectDevice = (serial: string) => {
     const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
     if (device) void service.SelectDevice(device.ID).then(setInventory);
@@ -231,39 +229,53 @@ export function App({ service }: { service: DesktopService }) {
 
           {lighting && <section className="lighting-control" aria-labelledby="lighting-title">
             <h3 id="lighting-title">Lighting</h3>
-            <div className="lighting-options" role="radiogroup" aria-label="Lighting mode">
-              {LIGHTING_MODES.map((mode) => (
-                <label className="lighting-option" key={mode.value}>
-                  <input
-                    type="radio"
-                    name="lighting-mode"
-                    checked={lighting.Pending.Mode === mode.value}
-                    disabled={!ready}
-                    onChange={() => {
-                      const option = lighting.Options.find((candidate) => candidate.Mode === mode.value);
-                      if (option) stageLighting({ Mode: option.Mode, TemplateID: option.TemplateID });
-                    }}
-                  />
-                  <span>{mode.label}</span>
-                </label>
-              ))}
-            </div>
-            <fieldset className="lighting-color" disabled={!ready || lighting.Pending.Mode === 0x00}>
+            <label className="lighting-effect-select">
+              <span>Effect</span>
+              <select
+                aria-label="Lighting effect"
+                value={String(lighting.Pending.Mode)}
+                disabled={!ready}
+                onChange={(event) => {
+                  const effect = lighting.Effects.find((candidate) => String(candidate.Mode) === event.target.value);
+                  if (effect) stageLighting({ Mode: effect.Mode, TemplateID: effect.SpeedVariants[0]?.TemplateID ?? effect.ColorTemplates[0]?.TemplateID ?? effect.DefaultTemplateID });
+                }}
+              >
+                {lighting.Effects.map((effect) => <option key={effect.Mode} value={String(effect.Mode)}>{effect.Label}</option>)}
+              </select>
+            </label>
+            {lightingEffect && lightingEffect.SpeedVariants.length > 1 && <fieldset className="lighting-speed" disabled={!ready}>
+              <legend>{lightingEffect.Label} speed</legend>
+              <input
+                type="range"
+                aria-label={`${lightingEffect.Label} speed`}
+                min={0}
+                max={lightingEffect.SpeedVariants.length - 1}
+                step={1}
+                value={speedIndex < 0 ? 0 : speedIndex}
+                onChange={(event) => {
+                  const variant = lightingEffect.SpeedVariants[Number(event.target.value)];
+                  if (variant) stageLighting({ Mode: lightingEffect.Mode, TemplateID: variant.TemplateID });
+                }}
+              />
+            </fieldset>}
+            {lightingEffect && lightingEffect.ColorTemplates.length > 0 && <fieldset className="lighting-colors" disabled={!ready}>
               <legend>Lighting color</legend>
               <div className="lighting-options" role="radiogroup" aria-label="Lighting color">
-                {lighting.Options.filter((option) => option.Mode === lighting.Pending.Mode && option.CSSColor).map((option) => (
-                  <label className="lighting-option" key={option.TemplateID}>
+                {lightingEffect.ColorTemplates.map((color) => (
+                  <label className="lighting-option lighting-color-option" key={color.TemplateID}>
                     <input
                       type="radio"
                       name="lighting-color"
-                      checked={lighting.Pending.TemplateID === option.TemplateID}
-                      onChange={() => stageLighting({ Mode: option.Mode, TemplateID: option.TemplateID })}
+                      aria-label={color.CSSColor}
+                      checked={lighting.Pending.TemplateID === color.TemplateID}
+                      onChange={() => stageLighting({ Mode: lightingEffect.Mode, TemplateID: color.TemplateID })}
                     />
-                    <span>{option.CSSColor === "#00FF00" ? "Green" : option.CSSColor}</span>
+                    <span className="lighting-color-swatch" aria-hidden="true" style={{ backgroundColor: color.CSSColor }} />
+                    <span>{color.CSSColor}</span>
                   </label>
                 ))}
               </div>
-            </fieldset>
+            </fieldset>}
             <button className="apply-lighting-btn" type="button" disabled={!ready} onClick={applyLighting}>Apply lighting</button>
             <div className="lighting-state" role="status" aria-label="Lighting status">
               {lighting.Firmware === "success" ? "Lighting applied" : lighting.Firmware === "failed" ? <span role="alert">Lighting application failed: {feedbackFor(lighting.Error.Code)}</span> : "Lighting selection pending"}

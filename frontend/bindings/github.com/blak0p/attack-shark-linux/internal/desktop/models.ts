@@ -158,7 +158,7 @@ export class Inventory {
 export class LightingSnapshot {
     "Pending": x6$0.LightingSelection;
     "Applied": x6$0.LightingSelection | null;
-    "Options": x6$0.LightingOption[];
+    "Effects": x6$0.LightingEffect[];
     "Revision": number;
     "Firmware": string;
     "Error": Error;
@@ -171,8 +171,8 @@ export class LightingSnapshot {
         if (!("Applied" in $$source)) {
             this["Applied"] = null;
         }
-        if (!("Options" in $$source)) {
-            this["Options"] = [];
+        if (!("Effects" in $$source)) {
+            this["Effects"] = [];
         }
         if (!("Revision" in $$source)) {
             this["Revision"] = 0;
@@ -202,8 +202,8 @@ export class LightingSnapshot {
         if ("Applied" in $$parsedSource) {
             $$parsedSource["Applied"] = $$createField1_0($$parsedSource["Applied"]);
         }
-        if ("Options" in $$parsedSource) {
-            $$parsedSource["Options"] = $$createField2_0($$parsedSource["Options"]);
+        if ("Effects" in $$parsedSource) {
+            $$parsedSource["Effects"] = $$createField2_0($$parsedSource["Effects"]);
         }
         if ("Error" in $$parsedSource) {
             $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
@@ -373,6 +373,6 @@ const $$createType3 = $Create.Nullable($$createType2);
 const $$createType4 = Error.createFrom;
 const $$createType5 = x6$1.LightingSelection.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = x6$0.LightingOption.createFrom;
+const $$createType7 = x6$0.LightingEffect.createFrom;
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = DPIConfig.createFrom;

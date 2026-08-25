@@ -372,12 +372,27 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		t.Error("generated Wails model binding must expose LightingSelection")
 	}
 
-	options, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/x6/models.ts")
+	effects, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/x6/models.ts")
 	if err != nil {
-		t.Fatalf("read generated lighting option model binding: %v", err)
+		t.Fatalf("read generated lighting effect model binding: %v", err)
 	}
-	if !strings.Contains(string(options), "class LightingOption") {
-		t.Error("generated Wails model binding must expose LightingOption")
+	for _, model := range []string{"class LightingEffect", "class LightingSpeedVariant", "class LightingColorTemplate"} {
+		if !strings.Contains(string(effects), model) {
+			t.Errorf("generated Wails model binding must expose %s", model)
+		}
+	}
+	for _, field := range []string{
+		`"DefaultTemplateID": LightingTemplateID`,
+		`"SpeedVariants": LightingSpeedVariant[]`,
+		`"ColorTemplates": LightingColorTemplate[]`,
+		`$$parsedSource["SpeedVariants"] = $$createField3_0($$parsedSource["SpeedVariants"])`,
+		`$$parsedSource["ColorTemplates"] = $$createField4_0($$parsedSource["ColorTemplates"])`,
+		`"TemplateID": LightingTemplateID`,
+		`"CSSColor": string`,
+	} {
+		if !strings.Contains(string(effects), field) {
+			t.Errorf("generated Wails lighting bindings must preserve %s", field)
+		}
 	}
 }
 
