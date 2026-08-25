@@ -83,6 +83,10 @@ export function App({ service }: { service: DesktopService }) {
     const next = { ...pending, ActiveStage: index + 1 };
     void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
   };
+  const stageFeature = (patch: Partial<DPIConfig>) => {
+    const next = { ...pending, ...patch };
+    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
+  };
   const stagePollingRate = (rate: number) => {
     void service.StagePollingRate(rate).then((next) => {
       setPolling(next);
@@ -226,6 +230,41 @@ export function App({ service }: { service: DesktopService }) {
               {polling.RetryAvailable && <button type="button" onClick={retryPollingPersistence}>Retry polling persistence</button>}
             </div>
           </fieldset>}
+
+          <fieldset className="polling-control" disabled={!ready}>
+            <legend>Mouse features</legend>
+            <div className="polling-options">
+              <label className="polling-option">
+                <input
+                  type="checkbox"
+                  name="angle-snap"
+                  checked={pending.AngleControl === true}
+                  onChange={(event) => stageFeature({ AngleControl: event.target.checked })}
+                />
+                <span>Angle snap</span>
+              </label>
+              <label className="polling-option">
+                <input
+                  type="checkbox"
+                  name="ripple-control"
+                  checked={pending.RippleControl === true}
+                  onChange={(event) => stageFeature({ RippleControl: event.target.checked })}
+                />
+                <span>Ripple control</span>
+              </label>
+              <label className="lighting-effect-select">
+                <span>Lift-off distance</span>
+                <select
+                  aria-label="Lift-off distance"
+                  value={String(pending.LiftDistance ?? 1)}
+                  onChange={(event) => stageFeature({ LiftDistance: Number(event.target.value) })}
+                >
+                  <option value="1">1 mm</option>
+                  <option value="0">2 mm</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
 
           {lighting && <section className="lighting-control" aria-labelledby="lighting-title">
             <h3 id="lighting-title">Lighting</h3>

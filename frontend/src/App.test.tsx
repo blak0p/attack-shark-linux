@@ -512,6 +512,60 @@ describe("App", () => {
     expect(await screen.findByRole("radio", { name: "125 Hz" })).toBeDisabled();
   });
 
+  it("renders the angle snap, ripple control and lift-off distance controls", async () => {
+    render(<App service={serviceFor(snapshot())} />);
+
+    await screen.findByRole("group", { name: "Mouse features" });
+    expect(screen.getByRole("checkbox", { name: "Angle snap" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Ripple control" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Lift-off distance" })).toHaveValue("1");
+    expect(screen.getByRole("option", { name: "1 mm" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "2 mm" })).toBeInTheDocument();
+  });
+
+  it("stages the angle snap toggle through StageDPI with the correct field", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Angle snap" }));
+
+    await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ AngleControl: true })));
+    expect(screen.getByRole("checkbox", { name: "Angle snap" })).toBeChecked();
+  });
+
+  it("stages the ripple control toggle through StageDPI with the correct field", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Ripple control" }));
+
+    await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ RippleControl: true })));
+    expect(screen.getByRole("checkbox", { name: "Ripple control" })).toBeChecked();
+  });
+
+  it("stages the lift-off distance through StageDPI with the correct field", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Lift-off distance" }), { target: { value: "0" } });
+
+    await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ LiftDistance: 0 })));
+    expect(screen.getByRole("combobox", { name: "Lift-off distance" })).toHaveValue("0");
+  });
+
+  it("disables the mouse feature controls when no device is selected", async () => {
+    const service = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "selection_required" } }),
+    });
+    render(<App service={service} />);
+
+    await screen.findByRole("group", { name: "Mouse features" });
+    expect(screen.getByRole("checkbox", { name: "Angle snap" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Ripple control" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Lift-off distance" })).toBeDisabled();
+    expect(service.StageDPI).not.toHaveBeenCalled();
+  });
+
   it("offers one effect dropdown and only applicable capture-backed controls", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
