@@ -11,7 +11,7 @@ jobs:
     name: Go build, vet & tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
@@ -43,7 +43,7 @@ jobs:
     name: Frontend tests (vitest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
