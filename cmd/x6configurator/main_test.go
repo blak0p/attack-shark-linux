@@ -343,12 +343,12 @@ func TestWailsBuildTaskDoesNotRecursivelyInvokeWails(t *testing.T) {
 	}
 }
 
-func TestGeneratedWailsBindingsExposePollingOperations(t *testing.T) {
+func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) {
 	service, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service.ts")
 	if err != nil {
 		t.Fatalf("read generated desktop service binding: %v", err)
 	}
-	for _, operation := range []string{"GetPollingSnapshot", "StagePollingRate", "ResetToFactory"} {
+	for _, operation := range []string{"GetPollingSnapshot", "StagePollingRate", "ResetToFactory", "GetLightingSnapshot", "StageLighting", "ApplyLighting"} {
 		if !strings.Contains(string(service), "export function "+operation) {
 			t.Errorf("generated Wails service binding must expose %s", operation)
 		}
@@ -358,8 +358,26 @@ func TestGeneratedWailsBindingsExposePollingOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated desktop model binding: %v", err)
 	}
-	if !strings.Contains(string(models), "class PollingSnapshot") {
-		t.Error("generated Wails model binding must expose PollingSnapshot")
+	for _, model := range []string{"class PollingSnapshot", "class LightingSnapshot"} {
+		if !strings.Contains(string(models), model) {
+			t.Errorf("generated Wails model binding must expose %s", model)
+		}
+	}
+
+	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models.ts")
+	if err != nil {
+		t.Fatalf("read generated lighting selection model binding: %v", err)
+	}
+	if !strings.Contains(string(lightingModels), "class LightingSelection") {
+		t.Error("generated Wails model binding must expose LightingSelection")
+	}
+
+	options, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/x6/models.ts")
+	if err != nil {
+		t.Fatalf("read generated lighting option model binding: %v", err)
+	}
+	if !strings.Contains(string(options), "class LightingOption") {
+		t.Error("generated Wails model binding must expose LightingOption")
 	}
 }
 

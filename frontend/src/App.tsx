@@ -5,19 +5,28 @@ export type Binding = GeneratedBinding;
 export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
 export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string }; Firmware?: string; Persistence?: string; RetryAvailable?: boolean; ObservedStage?: number | null; ObservedDPI?: number | null };
 export type PollingSnapshot = { Desired: number; Applied: number; Persisted?: number | null; Factory: number; Revision: number; Firmware?: string; Persistence?: string; RetryAvailable?: boolean };
+export type LightingMode = 0x00 | 0x10 | 0x20;
+export type LightingSelection = { Mode: LightingMode; TemplateID: string };
+export type LightingOption = LightingSelection & { Label: string; CSSColor: string };
+export type LightingSnapshot = { Pending: LightingSelection; Applied: LightingSelection | null; Options: LightingOption[]; Revision: number; Firmware: string; Error: { Code: string } };
 export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
 export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
 export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
 export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
 export type ConfigurationEvent = { Binding: Binding; Snapshot: Snapshot };
 export type PollingConfigurationEvent = { Binding: Binding; Snapshot: PollingSnapshot };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; GetPollingSnapshot(): Promise<PollingSnapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; StagePollingRate(rate: number): Promise<PollingSnapshot>; ResetToFactory(): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; RetryPollingPersistence(): Promise<PollingSnapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void; OnPollingConfiguration(callback: (event: PollingConfigurationEvent) => void): () => void };
+export type DesktopService = { GetSnapshot(): Promise<Snapshot>; GetPollingSnapshot(): Promise<PollingSnapshot>; GetLightingSnapshot(): Promise<LightingSnapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; StagePollingRate(rate: number): Promise<PollingSnapshot>; StageLighting(selection: LightingSelection): Promise<LightingSnapshot>; ApplyLighting(): Promise<LightingSnapshot>; ResetToFactory(): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; RetryPollingPersistence(): Promise<PollingSnapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void; OnPollingConfiguration(callback: (event: PollingConfigurationEvent) => void): () => void };
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
 const DPI_MIN = 50;
 const DPI_MAX = 26000;
 const DPI_STEP = 50;
+const LIGHTING_MODES: Array<{ value: LightingMode; label: string }> = [
+  { value: 0x00, label: "Off" },
+  { value: 0x10, label: "Fixed/Steady" },
+  { value: 0x20, label: "Breathing" },
+];
 
 const position = (value: number) => Math.round(Math.max(0, Math.min(1, (value - DPI_MIN) / (DPI_MAX - DPI_MIN))) * 1000) / 10;
 const identityLabel = (device: Device) => `VID ${device.ID.VendorID.toString(16).padStart(4, "0").toUpperCase()} · PID ${device.ID.ProductID.toString(16).padStart(4, "0").toUpperCase()} · Serial ${device.ID.Serial || "unavailable"}`;
@@ -28,11 +37,13 @@ const feedbackFor = (code: string) => code === "stale_binding"
 export function App({ service }: { service: DesktopService }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [polling, setPolling] = useState<PollingSnapshot>();
+  const [lighting, setLighting] = useState<LightingSnapshot>();
   const [inventory, setInventory] = useState<Inventory>();
   const selected = useRef<Binding | null>(null);
   const [notice, setNotice] = useState("");
   useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
   useEffect(() => { void service.GetPollingSnapshot().then(setPolling); }, [service]);
+  useEffect(() => { void service.GetLightingSnapshot().then(setLighting); }, [service]);
   useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected; }, [inventory]);
   useEffect(() => {
@@ -85,6 +96,13 @@ export function App({ service }: { service: DesktopService }) {
     .then((next) => { setPolling(next); setNotice("Factory defaults queued. They will apply after one second of inactivity."); });
   const retryPersistence = () => void service.RetryPersistence().then(setSnapshot);
   const retryPollingPersistence = () => void service.RetryPollingPersistence().then(setPolling);
+  const stageLighting = (selection: LightingSelection) => {
+    void service.StageLighting(selection).then((next) => {
+      setLighting(next);
+      setNotice("Lighting selection staged. Apply lighting to send it to the device.");
+    });
+  };
+  const applyLighting = () => void service.ApplyLighting().then((next) => setLighting(next));
 
   return (
     <div className="app">
@@ -210,6 +228,47 @@ export function App({ service }: { service: DesktopService }) {
               {polling.RetryAvailable && <button type="button" onClick={retryPollingPersistence}>Retry polling persistence</button>}
             </div>
           </fieldset>}
+
+          {lighting && <section className="lighting-control" aria-labelledby="lighting-title">
+            <h3 id="lighting-title">Lighting</h3>
+            <div className="lighting-options" role="radiogroup" aria-label="Lighting mode">
+              {LIGHTING_MODES.map((mode) => (
+                <label className="lighting-option" key={mode.value}>
+                  <input
+                    type="radio"
+                    name="lighting-mode"
+                    checked={lighting.Pending.Mode === mode.value}
+                    disabled={!ready}
+                    onChange={() => {
+                      const option = lighting.Options.find((candidate) => candidate.Mode === mode.value);
+                      if (option) stageLighting({ Mode: option.Mode, TemplateID: option.TemplateID });
+                    }}
+                  />
+                  <span>{mode.label}</span>
+                </label>
+              ))}
+            </div>
+            <fieldset className="lighting-color" disabled={!ready || lighting.Pending.Mode === 0x00}>
+              <legend>Lighting color</legend>
+              <div className="lighting-options" role="radiogroup" aria-label="Lighting color">
+                {lighting.Options.filter((option) => option.Mode === lighting.Pending.Mode && option.CSSColor).map((option) => (
+                  <label className="lighting-option" key={option.TemplateID}>
+                    <input
+                      type="radio"
+                      name="lighting-color"
+                      checked={lighting.Pending.TemplateID === option.TemplateID}
+                      onChange={() => stageLighting({ Mode: option.Mode, TemplateID: option.TemplateID })}
+                    />
+                    <span>{option.CSSColor === "#00FF00" ? "Green" : option.CSSColor}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <button className="apply-lighting-btn" type="button" disabled={!ready} onClick={applyLighting}>Apply lighting</button>
+            <div className="lighting-state" role="status" aria-label="Lighting status">
+              {lighting.Firmware === "success" ? "Lighting applied" : lighting.Firmware === "failed" ? <span role="alert">Lighting application failed: {feedbackFor(lighting.Error.Code)}</span> : "Lighting selection pending"}
+            </div>
+          </section>}
 
           <button className="reset-btn" disabled={!ready} onClick={reset}>Reset to factory</button>
         </section>

@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, type ConfigurationEvent, type DesktopService, type PollingConfigurationEvent, type PollingSnapshot, type Snapshot } from "./App";
+import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
@@ -36,16 +36,36 @@ const pollingSnapshot = (overrides: Partial<PollingSnapshot> = {}): PollingSnaps
   ...overrides,
 });
 
+const lightingSnapshot = (overrides: Partial<LightingSnapshot> = {}): LightingSnapshot => ({
+  Pending: { Mode: 0x10, TemplateID: "fixed-green" },
+  Applied: null,
+  Options: [
+    { Mode: 0x00, TemplateID: "off", Label: "Off", CSSColor: "" },
+    { Mode: 0x10, TemplateID: "fixed-green", Label: "Fixed Green", CSSColor: "#00FF00" },
+    { Mode: 0x20, TemplateID: "breathing-green", Label: "Breathing Green", CSSColor: "#00FF00" },
+    { Mode: 0x20, TemplateID: "breathing-fe5ef9", Label: "Breathing #FE5EF9", CSSColor: "#FE5EF9" },
+    { Mode: 0x20, TemplateID: "breathing-ff7f00", Label: "Breathing #FF7F00", CSSColor: "#FF7F00" },
+    { Mode: 0x20, TemplateID: "breathing-ffff00", Label: "Breathing #FFFF00", CSSColor: "#FFFF00" },
+  ],
+  Revision: 0,
+  Firmware: "",
+  Error: { Code: "" },
+  ...overrides,
+});
+
 const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
 
 const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => ({
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
+  GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
 	StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
   StagePollingRate: vi.fn().mockImplementation(async (rate) => pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" })),
+  StageLighting: vi.fn().mockImplementation(async (selection) => lightingSnapshot({ Pending: selection, Revision: 1 })),
+  ApplyLighting: vi.fn().mockResolvedValue(lightingSnapshot({ Applied: lightingSnapshot().Pending, Firmware: "success" })),
   RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
   ResetToFactory: vi.fn().mockResolvedValue(initial),
   RetryPersistence: vi.fn().mockResolvedValue(initial),
@@ -388,7 +408,7 @@ describe("App", () => {
     render(<App service={serviceFor(snapshot())} />);
 
     await screen.findByText("Device available");
-    expect(screen.queryByRole("button", { name: /macro|profile|remap|lighting/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /macro|profile|remap/i })).not.toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
@@ -486,5 +506,61 @@ describe("App", () => {
     });
     render(<App service={unavailable} />);
     expect(await screen.findByRole("radio", { name: "125 Hz" })).toBeDisabled();
+  });
+
+  it("offers only the capture-proven lighting modes and colors, disabling color choices for Off", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    const modes = await screen.findByRole("radiogroup", { name: "Lighting mode" });
+    expect(modes).toBeInTheDocument();
+    expect(screen.getAllByRole("radio", { name: /Off|Fixed\/Steady|Breathing/ })).toHaveLength(3);
+    expect(screen.getByRole("radio", { name: "Off" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Fixed/Steady" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Breathing" })).toBeInTheDocument();
+
+    const colors = screen.getByRole("group", { name: "Lighting color" });
+    expect(colors).toBeEnabled();
+    expect(screen.getAllByRole("radio", { name: "Green" })).toHaveLength(1);
+    expect(screen.queryByRole("slider", { name: /brightness|speed/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Off" }));
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x00, TemplateID: "off" }));
+    expect(screen.getByRole("group", { name: "Lighting color" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Breathing" }));
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x20, TemplateID: "breathing-green" }));
+    expect(screen.getByRole("radio", { name: "Green" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "#FE5EF9" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "#FF7F00" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "#FFFF00" })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio", { name: /Green|#FE5EF9|#FF7F00|#FFFF00/ })).toHaveLength(4);
+  });
+
+  it("stages a lighting selection and applies it only when explicitly requested", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Breathing" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "#FF7F00" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("radio", { name: "#FF7F00" }));
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x20, TemplateID: "breathing-ff7f00" }));
+    expect(service.ApplyLighting).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply lighting" }));
+    await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledOnce());
+    expect(screen.getByRole("status", { name: "Lighting status" })).toHaveTextContent("Lighting applied");
+  });
+
+  it("shows a lighting application failure without reporting success", async () => {
+    const service = serviceFor(snapshot(), {
+      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x00, TemplateID: "off" }, Applied: null, Options: [], Revision: 1, Firmware: "failed", Error: { Code: "apply_failed" } }),
+    });
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Apply lighting" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Lighting application failed: apply failed");
+    expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
   });
 });

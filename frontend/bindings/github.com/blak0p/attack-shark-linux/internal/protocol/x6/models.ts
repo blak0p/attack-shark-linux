@@ -5,6 +5,56 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+export enum LightingMode {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    LightingOff = 0,
+    LightingFixed = 16,
+    LightingBreathing = 32,
+};
+
+export class LightingSelection {
+    "Mode": LightingMode;
+    "TemplateID": LightingTemplateID;
+
+    /** Creates a new LightingSelection instance. */
+    constructor($$source: Partial<LightingSelection> = {}) {
+        if (!("Mode" in $$source)) {
+            this["Mode"] = LightingMode.$zero;
+        }
+        if (!("TemplateID" in $$source)) {
+            this["TemplateID"] = LightingTemplateID.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingSelection instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingSelection {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LightingSelection($$parsedSource as Partial<LightingSelection>);
+    }
+}
+
+export enum LightingTemplateID {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    LightingTemplateOff = "off",
+    LightingTemplateFixedGreen = "fixed-green",
+    LightingTemplateBreathingGreen = "breathing-green",
+    LightingTemplateBreathingFE5EF9 = "breathing-fe5ef9",
+    LightingTemplateBreathingFF7F00 = "breathing-ff7f00",
+    LightingTemplateBreathingFFFF00 = "breathing-ffff00",
+};
+
 /**
  * PollingRate is one of the X6's supported report frequencies in hertz.
  */
