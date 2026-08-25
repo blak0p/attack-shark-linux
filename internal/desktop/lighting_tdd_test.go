@@ -18,8 +18,8 @@ func TestLightingStageUsesPerDevicePendingStateWithoutIO(t *testing.T) {
 	if initial.Pending != (x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen}) || initial.Applied != nil {
 		t.Fatalf("initial lighting snapshot = %#v; want fixed-green pending and no applied state", initial)
 	}
-	staged := service.StageLighting(x6.LightingSelection{Mode: x6.LightingBreathing, TemplateID: x6.LightingTemplateBreathingFF7F00})
-	if staged.Pending.TemplateID != x6.LightingTemplateBreathingFF7F00 || staged.Revision != 1 || command.calls != 0 {
+	staged := service.StageLighting(x6.LightingSelection{Mode: x6.LightingBreathingDPI, TemplateID: x6.LightingTemplateBreathingDPIThree})
+	if staged.Pending.TemplateID != x6.LightingTemplateBreathingDPIThree || staged.Revision != 1 || command.calls != 0 {
 		t.Fatalf("staged lighting = %#v, writes=%d; want pending revision and zero I/O", staged, command.calls)
 	}
 }
@@ -27,7 +27,7 @@ func TestLightingStageUsesPerDevicePendingStateWithoutIO(t *testing.T) {
 func TestLightingApplyWritesOnceAndCommitsOnlyAfterAcknowledgement(t *testing.T) {
 	command := &lightingCommandFake{}
 	service := newLightingService(t, command)
-	selection := x6.LightingSelection{Mode: x6.LightingBreathing, TemplateID: x6.LightingTemplateBreathingFE5EF9}
+	selection := x6.LightingSelection{Mode: x6.LightingColorBreathing, TemplateID: x6.LightingTemplateColorBreathingOne}
 	service.StageLighting(selection)
 
 	got := service.ApplyLighting()
@@ -40,7 +40,7 @@ func TestLightingApplyFailureAndRevisionChangeDoNotCommit(t *testing.T) {
 	t.Run("failure remains visible", func(t *testing.T) {
 		command := &lightingCommandFake{err: errors.New("ack timeout")}
 		service := newLightingService(t, command)
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingOff, TemplateID: x6.LightingTemplateOff})
+		service.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
 
 		got := service.ApplyLighting()
 		if command.calls != 1 || got.Applied != nil || got.Firmware != "failed" || got.Error.Code != ApplyFailed {
@@ -51,11 +51,11 @@ func TestLightingApplyFailureAndRevisionChangeDoNotCommit(t *testing.T) {
 	t.Run("changed revision cannot commit", func(t *testing.T) {
 		command := &lightingCommandFake{started: make(chan struct{}), release: make(chan struct{})}
 		service := newLightingService(t, command)
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingOff, TemplateID: x6.LightingTemplateOff})
+		service.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
 		result := make(chan LightingSnapshot, 1)
 		go func() { result <- service.ApplyLighting() }()
 		<-command.started
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen})
+		service.StageLighting(x6.LightingSelection{Mode: x6.LightingBreathingDPI, TemplateID: x6.LightingTemplateBreathingDPIOne})
 		close(command.release)
 		got := <-result
 		if command.calls != 1 || got.Applied != nil || got.Error.Code != ApplyFailed {

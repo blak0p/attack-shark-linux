@@ -9,24 +9,14 @@ import { Create as $Create } from "@wailsio/runtime";
 // @ts-ignore: Unused imports
 import * as x6$0 from "../protocol/x6/models.js";
 
-export type LightingMode = x6$0.LightingMode;
-
-export class LightingOption {
-    "Mode": LightingMode;
+export class LightingColorTemplate {
     "TemplateID": LightingTemplateID;
-    "Label": string;
     "CSSColor": string;
 
-    /** Creates a new LightingOption instance. */
-    constructor($$source: Partial<LightingOption> = {}) {
-        if (!("Mode" in $$source)) {
-            this["Mode"] = x6$0.LightingMode.$zero;
-        }
+    /** Creates a new LightingColorTemplate instance. */
+    constructor($$source: Partial<LightingColorTemplate> = {}) {
         if (!("TemplateID" in $$source)) {
             this["TemplateID"] = x6$0.LightingTemplateID.$zero;
-        }
-        if (!("Label" in $$source)) {
-            this["Label"] = "";
         }
         if (!("CSSColor" in $$source)) {
             this["CSSColor"] = "";
@@ -36,16 +26,84 @@ export class LightingOption {
     }
 
     /**
-     * Creates a new LightingOption instance from a string or object.
+     * Creates a new LightingColorTemplate instance from a string or object.
      */
-    static createFrom($$source: any = {}): LightingOption {
+    static createFrom($$source: any = {}): LightingColorTemplate {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new LightingOption($$parsedSource as Partial<LightingOption>);
+        return new LightingColorTemplate($$parsedSource as Partial<LightingColorTemplate>);
     }
 }
 
+export class LightingEffect {
+    "Mode": LightingMode;
+    "Label": string;
+    "DefaultTemplateID": LightingTemplateID;
+    "SpeedVariants": LightingSpeedVariant[];
+    "ColorTemplates": LightingColorTemplate[];
+
+    /** Creates a new LightingEffect instance. */
+    constructor($$source: Partial<LightingEffect> = {}) {
+        if (!("Mode" in $$source)) {
+            this["Mode"] = x6$0.LightingMode.$zero;
+        }
+        if (!("Label" in $$source)) {
+            this["Label"] = "";
+        }
+        if (!("DefaultTemplateID" in $$source)) {
+            this["DefaultTemplateID"] = x6$0.LightingTemplateID.$zero;
+        }
+        if (!("SpeedVariants" in $$source)) {
+            this["SpeedVariants"] = [];
+        }
+        if (!("ColorTemplates" in $$source)) {
+            this["ColorTemplates"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingEffect instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingEffect {
+        const $$createField3_0 = $$createType1;
+        const $$createField4_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("SpeedVariants" in $$parsedSource) {
+            $$parsedSource["SpeedVariants"] = $$createField3_0($$parsedSource["SpeedVariants"]);
+        }
+        if ("ColorTemplates" in $$parsedSource) {
+            $$parsedSource["ColorTemplates"] = $$createField4_0($$parsedSource["ColorTemplates"]);
+        }
+        return new LightingEffect($$parsedSource as Partial<LightingEffect>);
+    }
+}
+
+export type LightingMode = x6$0.LightingMode;
+
 export const LightingSelection = x6$0.LightingSelection;
 export type LightingSelection = x6$0.LightingSelection;
+
+export class LightingSpeedVariant {
+    "TemplateID": LightingTemplateID;
+
+    /** Creates a new LightingSpeedVariant instance. */
+    constructor($$source: Partial<LightingSpeedVariant> = {}) {
+        if (!("TemplateID" in $$source)) {
+            this["TemplateID"] = x6$0.LightingTemplateID.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingSpeedVariant instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingSpeedVariant {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LightingSpeedVariant($$parsedSource as Partial<LightingSpeedVariant>);
+    }
+}
 
 export type LightingTemplateID = x6$0.LightingTemplateID;
 
@@ -53,3 +111,9 @@ export type LightingTemplateID = x6$0.LightingTemplateID;
  * PollingRate is the typed X6 polling-rate selection.
  */
 export type PollingRate = x6$0.PollingRate;
+
+// Private type creation functions
+const $$createType0 = LightingSpeedVariant.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = LightingColorTemplate.createFrom;
+const $$createType3 = $Create.Array($$createType2);

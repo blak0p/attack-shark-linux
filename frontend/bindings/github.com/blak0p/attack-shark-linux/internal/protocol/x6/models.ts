@@ -14,6 +14,10 @@ export enum LightingMode {
     LightingOff = 0,
     LightingFixed = 16,
     LightingBreathing = 32,
+    LightingNeon = 48,
+    LightingColorBreathing = 64,
+    LightingStaticDPI = 80,
+    LightingBreathingDPI = 96,
 };
 
 export class LightingSelection {
@@ -53,6 +57,14 @@ export enum LightingTemplateID {
     LightingTemplateBreathingFE5EF9 = "breathing-fe5ef9",
     LightingTemplateBreathingFF7F00 = "breathing-ff7f00",
     LightingTemplateBreathingFFFF00 = "breathing-ffff00",
+    LightingTemplateStaticDPIDefault = "static-dpi-default",
+    LightingTemplateNeonOne = "neon-one",
+    LightingTemplateNeonTwo = "neon-two",
+    LightingTemplateColorBreathingOne = "color-breathing-one",
+    LightingTemplateColorBreathingTwo = "color-breathing-two",
+    LightingTemplateBreathingDPIOne = "breathing-dpi-one",
+    LightingTemplateBreathingDPITwo = "breathing-dpi-two",
+    LightingTemplateBreathingDPIThree = "breathing-dpi-three",
 };
 
 /**
