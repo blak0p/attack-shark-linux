@@ -1,23 +1,15 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Binding as GeneratedBinding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
-
-export type Binding = GeneratedBinding;
-export type DPIConfig = { DPI: number[]; ActiveStage: number; StageMask: number; LiftDistance: number; Colors?: number[][]; AngleControl?: boolean; RippleControl?: boolean };
-export type Snapshot = { Connection: string; Battery?: number | null; Applied: DPIConfig; Pending: DPIConfig; Factory: DPIConfig; Revision: number; Error: { Code: string }; Firmware?: string; Persistence?: string; RetryAvailable?: boolean; ObservedStage?: number | null; ObservedDPI?: number | null };
-export type PollingSnapshot = { Desired: number; Applied: number; Persisted?: number | null; Factory: number; Revision: number; Firmware?: string; Persistence?: string; RetryAvailable?: boolean };
-export type LightingMode = 0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60;
-export type LightingSelection = { Mode: LightingMode; TemplateID: string };
-export type LightingSpeedVariant = { TemplateID: string };
-export type LightingColorTemplate = { TemplateID: string; CSSColor: string };
-export type LightingEffect = { Mode: LightingMode; Label: string; DefaultTemplateID: string; SpeedVariants: LightingSpeedVariant[]; ColorTemplates: LightingColorTemplate[] };
-export type LightingSnapshot = { Pending: LightingSelection; Applied: LightingSelection | null; Effects: LightingEffect[]; Revision: number; Firmware: string; Error: { Code: string } };
-export type DeviceID = { VendorID: number; ProductID: number; Serial: string };
-export type Device = { ID: DeviceID; Profile?: string; Path: string; Eligible: boolean; Warning?: string; Connection?: string };
-export type Inventory = { Devices: Device[]; Selected: Binding | null; Error: { Code: string } };
-export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: number | null; ActiveStage?: number | null };
-export type ConfigurationEvent = { Binding: Binding; Snapshot: Snapshot };
-export type PollingConfigurationEvent = { Binding: Binding; Snapshot: PollingSnapshot };
-export type DesktopService = { GetSnapshot(): Promise<Snapshot>; GetPollingSnapshot(): Promise<PollingSnapshot>; GetLightingSnapshot(): Promise<LightingSnapshot>; RefreshStatus(): Promise<Snapshot>; RefreshInventory(): Promise<Inventory>; SelectDevice(id: DeviceID): Promise<Inventory>; StageDPI(config: DPIConfig): Promise<Snapshot>; StagePollingRate(rate: number): Promise<PollingSnapshot>; StageLighting(selection: LightingSelection): Promise<LightingSnapshot>; ApplyLighting(): Promise<LightingSnapshot>; ResetToFactory(): Promise<Snapshot>; RetryPersistence(): Promise<Snapshot>; RetryPollingPersistence(): Promise<PollingSnapshot>; OnStatusEvent(callback: (event: StatusEvent) => void): () => void; OnConfiguration(callback: (event: ConfigurationEvent) => void): () => void; OnPollingConfiguration(callback: (event: PollingConfigurationEvent) => void): () => void };
+import type { CSSProperties } from "react";
+import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
+import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
+import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
+import { WorkspaceView } from "./components/workspace/WorkspaceView";
+import { TopBar } from "./components/workspace/TopBar";
+import { DpiPanel } from "./components/panels/DpiPanel";
+import { PollingPanel } from "./components/panels/PollingPanel";
+import { MouseFeaturesPanel } from "./components/panels/MouseFeaturesPanel";
+import { LightingPanel } from "./components/panels/LightingPanel";
+import { ResetPanel } from "./components/panels/ResetPanel";
+export type { ConfigurationEvent, DesktopService, LightingSnapshot, PollingConfigurationEvent, PollingSnapshot, Snapshot } from "./desktop-contract";
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -25,41 +17,25 @@ const DPI_MIN = 50;
 const DPI_MAX = 26000;
 const DPI_STEP = 50;
 const position = (value: number) => Math.round(Math.max(0, Math.min(1, (value - DPI_MIN) / (DPI_MAX - DPI_MIN))) * 1000) / 10;
-const identityLabel = (device: Device) => `VID ${device.ID.VendorID.toString(16).padStart(4, "0").toUpperCase()} · PID ${device.ID.ProductID.toString(16).padStart(4, "0").toUpperCase()} · Serial ${device.ID.Serial || "unavailable"}`;
+const identityLabel = (device: Device) => `Serial ${device.ID.Serial || "unavailable"}`;
 const feedbackFor = (code: string) => code === "stale_binding"
   ? "Device connection changed. Refresh the device list and select the mouse again before saving."
   : code.replaceAll("_", " ");
+const SWATCH_COLORS = ["#00FF00", "#FE5EF9", "#FF7F00", "#FFFF00"];
+type LightingSlot = { label: string; color?: string; templateID?: string; disabled: boolean };
+const lightingSlots = (effect: LightingEffect | undefined, appliedColors?: number[][]): LightingSlot[] => {
+  if (!effect) return Array.from({ length: 5 }, (_, index) => ({ label: `Unavailable color ${index + 1}`, disabled: true }));
+  const interactive = effect.ColorTemplates.slice(0, 4).map((template) => ({ label: template.CSSColor, color: template.CSSColor, templateID: template.TemplateID, disabled: false }));
+  const fallback = (index: number): LightingSlot => ({ label: `Unavailable color ${index + 1}`, color: SWATCH_COLORS[index], disabled: true });
+  return [...interactive, ...Array.from({ length: 4 - interactive.length }, (_, index) => fallback(interactive.length + index)), { label: "Effect controlled", color: appliedColors?.length ? `rgb(${appliedColors[0].join(", ")})` : undefined, disabled: true }];
+};
+const speedFill = (index: number, count: number) => count > 1 ? `${Math.round((index / (count - 1)) * 100)}%` : "0%";
 
 export function App({ service }: { service: DesktopService }) {
-  const [snapshot, setSnapshot] = useState<Snapshot>();
-  const [polling, setPolling] = useState<PollingSnapshot>();
-  const [lighting, setLighting] = useState<LightingSnapshot>();
-  const [inventory, setInventory] = useState<Inventory>();
-  const selected = useRef<Binding | null>(null);
-  const [notice, setNotice] = useState("");
-  useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
-  useEffect(() => { void service.GetPollingSnapshot().then(setPolling); }, [service]);
-  useEffect(() => { void service.GetLightingSnapshot().then(setLighting); }, [service]);
-  useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
-  useEffect(() => { selected.current = inventory?.Selected; }, [inventory]);
-  useEffect(() => {
-    const unsubscribe = service.OnStatusEvent((event) => {
-      setSnapshot((current) => (current && receivesEvent(selected.current, event) ? applyStatusEvent(current, event) : current));
-    });
-    return unsubscribe;
-  }, [service]);
-	  useEffect(() => service.OnConfiguration((event) => {
-	  if (receivesEvent(selected.current, event.Binding)) {
-	      setSnapshot(event.Snapshot);
-	      void service.GetPollingSnapshot().then(setPolling);
-	    }
-		}), [service]);
-	useEffect(() => service.OnPollingConfiguration((event) => {
-		if (receivesEvent(selected.current, event.Binding)) setPolling(event.Snapshot);
-	}), [service]);
+  const { model, actions } = useDesktopWorkspace(service);
+  const { snapshot, polling, lighting, inventory, ready, notice } = model;
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
-  const ready = inventory?.Selected != null;
   const connected = ready;
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
   const pending = snapshot.Pending;
@@ -69,59 +45,16 @@ export function App({ service }: { service: DesktopService }) {
   const activeColor = activeIndex >= 0 && snapshot.Applied.Colors ? snapshot.Applied.Colors[activeIndex] : null;
   const colorFor = (index: number) => (snapshot.Applied.Colors && snapshot.Applied.Colors[index] ? `rgb(${snapshot.Applied.Colors[index].join(", ")})` : null);
   const lightingEffect = lighting?.Effects.find((effect) => effect.Mode === lighting.Pending.Mode);
-  const speedIndex = lightingEffect?.SpeedVariants.findIndex((variant) => variant.TemplateID === lighting.Pending.TemplateID) ?? -1;
-  const selectDevice = (serial: string) => {
-    const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
-    if (device) void service.SelectDevice(device.ID).then(setInventory);
-  };
-
-  const stage = (index: number, value: number) => {
-    const next = { ...pending, DPI: pending.DPI.map((dpi, i) => (i === index ? value : dpi)) };
-    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
-  };
-  const selectStage = (index: number) => {
-    const next = { ...pending, ActiveStage: index + 1 };
-    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
-  };
-  const stageFeature = (patch: Partial<DPIConfig>) => {
-    const next = { ...pending, ...patch };
-    void service.StageDPI(next).then((snap) => { setSnapshot(snap); setNotice("Synchronization queued. It will apply after one second of inactivity."); });
-  };
-  const stagePollingRate = (rate: number) => {
-    void service.StagePollingRate(rate).then((next) => {
-      setPolling(next);
-      setNotice("Polling synchronization queued. It will apply after one second of inactivity.");
-    });
-  };
-  const reset = () => void service.ResetToFactory()
-    .then((snap) => { setSnapshot(snap); return service.GetPollingSnapshot(); })
-    .then((next) => { setPolling(next); setNotice("Factory defaults queued. They will apply after one second of inactivity."); });
-  const retryPersistence = () => void service.RetryPersistence().then(setSnapshot);
-  const retryPollingPersistence = () => void service.RetryPollingPersistence().then(setPolling);
-  const stageLighting = (selection: LightingSelection) => {
-    void service.StageLighting(selection).then((next) => {
-      setLighting(next);
-      setNotice("Lighting selection staged. Apply lighting to send it to the device.");
-    });
-  };
-  const applyLighting = () => void service.ApplyLighting().then((next) => setLighting(next));
+  const speedIndex = Math.max(0, lightingEffect?.SpeedVariants.findIndex((variant) => variant.TemplateID === lighting.Pending.TemplateID) ?? 0);
+  const slots = lightingSlots(lightingEffect, snapshot.Applied.Colors);
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="nav-item active">DPI</div>
-      </aside>
-
-      <main className="main">
-        <div className="top-bar">
-          <div className="brand">
-            <p className="eyebrow">Attack Shark X6</p>
-            <h1>Device control</h1>
-          </div>
+    <WorkspaceShell>
+        <TopBar>
 	          {inventory && inventory.Devices.filter((device) => device.Eligible).length > 1 && (
             <label>
               <span>Mouse device</span>
-              <select aria-label="Mouse device" value={inventory.Selected?.ID.Serial ?? ""} onChange={(event) => selectDevice(event.target.value)}>
+              <select aria-label="Mouse device" value={inventory.Selected?.ID.Serial ?? ""} onChange={(event) => actions.selectDevice(event.target.value)}>
                 <option value="" disabled>Select a mouse</option>
                 {inventory.Devices.filter((device) => device.Eligible).map((device) => (
                   <option key={device.ID.Serial} value={device.ID.Serial}>{device.ID.Serial}</option>
@@ -138,7 +71,7 @@ export function App({ service }: { service: DesktopService }) {
               </>}
             </div>)}
           </div>}
-          <div aria-live="polite" className={`status ${connected ? "online" : "offline"}`}>
+          <div id="device" aria-live="polite" className={`status ${connected ? "online" : "offline"}`}>
             <strong>{connected ? "Device available" : "Device unavailable"}</strong>
             <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
             {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
@@ -146,10 +79,10 @@ export function App({ service }: { service: DesktopService }) {
           {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
           {snapshot.Firmware && <span role="status" aria-label={snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}>{snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}</span>}
           {snapshot.Persistence && <span role="status">{snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}</span>}
-          {snapshot.RetryAvailable && <button type="button" onClick={retryPersistence}>Retry local persistence</button>}
-        </div>
+          {snapshot.RetryAvailable && <button type="button" onClick={actions.retryPersistence}>Retry local persistence</button>}
+        </TopBar>
 
-        <section className="panel" aria-labelledby="dpi-title">
+        <WorkspaceView id="performance" title="Performance"><DpiPanel>
           <div className="panel-header">
             <div>
               <h2 className="panel-title" id="dpi-title">DPI & Performance</h2>
@@ -170,7 +103,7 @@ export function App({ service }: { service: DesktopService }) {
                   aria-pressed={index === activeIndex}
                   aria-label={`Stage ${index + 1}${index === activeIndex ? ", active" : ""}`}
                   disabled={!ready}
-                  onClick={() => selectStage(index)}
+                  onClick={() => actions.selectStage(index)}
                   style={{ "--dot-color": colorFor(index) ?? "#3b82f6" } as CSSProperties}
                 >
                   <span>{index + 1}</span>
@@ -196,7 +129,7 @@ export function App({ service }: { service: DesktopService }) {
                           step={DPI_STEP}
                           value={dpi}
                           disabled={!ready}
-                          onChange={(event) => stage(index, Number(event.target.value))}
+                          onChange={(event) => actions.stageDPI(index, Number(event.target.value))}
                           style={{ "--fill": `${position(dpi)}%`, "--stage-color": colorFor(index) ?? "#3b82f6" } as CSSProperties}
                         />
                       </div>
@@ -205,7 +138,7 @@ export function App({ service }: { service: DesktopService }) {
             </div>
           </div>
 
-          {polling && <fieldset className="polling-control" disabled={!ready}>
+          {polling && <PollingPanel><fieldset className="polling-control" disabled={!ready}>
             <legend>Polling rate</legend>
             <p className="polling-guidance">Higher rates favor responsiveness; lower rates favor battery life.</p>
             <div className="polling-options" role="radiogroup" aria-label="Polling rate">
@@ -216,22 +149,21 @@ export function App({ service }: { service: DesktopService }) {
                     name="polling-rate"
                     value={rate}
                     checked={polling.Desired === rate}
-                    onChange={() => stagePollingRate(rate)}
+                    onChange={() => actions.stagePollingRate(rate)}
                   />
                   <span>{rate} Hz</span>
                 </label>
               ))}
             </div>
             <div className="polling-state" role="status" aria-label="Polling status">
-              <span>Desired polling rate: {polling.Desired} Hz</span>
-	              {polling.Firmware === "pending" ? <span>Polling change queued</span> : polling.Firmware === "failed" ? <span>Polling change failed</span> : <span>Applied polling rate: {polling.Applied} Hz</span>}
-              {polling.Persistence === "success" && polling.Persisted != null ? <span>Polling preference saved: {polling.Persisted} Hz</span>
-                : polling.Persistence === "failed" ? <span>Polling preference was not saved.</span> : null}
-              {polling.RetryAvailable && <button type="button" onClick={retryPollingPersistence}>Retry polling persistence</button>}
+              {polling.Firmware === "pending" ? <><span className="pending-spinner" aria-hidden="true" />Applying…</> : polling.Firmware === "failed" ? <>Polling change failed</> : <>Applied {polling.Applied} Hz</>}
+              {polling.Persistence === "failed" && <span>Polling preference was not saved.</span>}
+              {polling.RetryAvailable && <button type="button" onClick={actions.retryPollingPersistence}>Retry polling persistence</button>}
             </div>
-          </fieldset>}
+          </fieldset></PollingPanel>}
+        </DpiPanel></WorkspaceView>
 
-          <fieldset className="polling-control" disabled={!ready}>
+        <WorkspaceView id="controls" title="Controls"><MouseFeaturesPanel><fieldset className="polling-control" disabled={!ready}>
             <legend>Mouse features</legend>
             <div className="polling-options">
               <label className="polling-option">
@@ -239,7 +171,7 @@ export function App({ service }: { service: DesktopService }) {
                   type="checkbox"
                   name="angle-snap"
                   checked={pending.AngleControl === true}
-                  onChange={(event) => stageFeature({ AngleControl: event.target.checked })}
+                  onChange={(event) => actions.stageFeature({ AngleControl: event.target.checked })}
                 />
                 <span>Angle snap</span>
               </label>
@@ -248,7 +180,7 @@ export function App({ service }: { service: DesktopService }) {
                   type="checkbox"
                   name="ripple-control"
                   checked={pending.RippleControl === true}
-                  onChange={(event) => stageFeature({ RippleControl: event.target.checked })}
+                  onChange={(event) => actions.stageFeature({ RippleControl: event.target.checked })}
                 />
                 <span>Ripple control</span>
               </label>
@@ -257,16 +189,16 @@ export function App({ service }: { service: DesktopService }) {
                 <select
                   aria-label="Lift-off distance"
                   value={String(pending.LiftDistance ?? 1)}
-                  onChange={(event) => stageFeature({ LiftDistance: Number(event.target.value) })}
+                  onChange={(event) => actions.stageFeature({ LiftDistance: Number(event.target.value) })}
                 >
                   <option value="1">1 mm</option>
                   <option value="0">2 mm</option>
                 </select>
               </label>
             </div>
-          </fieldset>
+          </fieldset></MouseFeaturesPanel></WorkspaceView>
 
-          {lighting && <section className="lighting-control" aria-labelledby="lighting-title">
+        <WorkspaceView id="lighting" title="Lighting">{lighting && <LightingPanel>
             <h3 id="lighting-title">Lighting</h3>
             <label className="lighting-effect-select">
               <span>Effect</span>
@@ -276,7 +208,7 @@ export function App({ service }: { service: DesktopService }) {
                 disabled={!ready}
                 onChange={(event) => {
                   const effect = lighting.Effects.find((candidate) => String(candidate.Mode) === event.target.value);
-                  if (effect) stageLighting({ Mode: effect.Mode, TemplateID: effect.SpeedVariants[0]?.TemplateID ?? effect.ColorTemplates[0]?.TemplateID ?? effect.DefaultTemplateID });
+                  if (effect) actions.stageLighting({ Mode: effect.Mode, TemplateID: effect.DefaultTemplateID });
                 }}
               >
                 {lighting.Effects.map((effect) => <option key={effect.Mode} value={String(effect.Mode)}>{effect.Label}</option>)}
@@ -290,60 +222,41 @@ export function App({ service }: { service: DesktopService }) {
                 min={0}
                 max={lightingEffect.SpeedVariants.length - 1}
                 step={1}
-                value={speedIndex < 0 ? 0 : speedIndex}
+                value={speedIndex}
+                style={{ "--fill": speedFill(speedIndex, lightingEffect.SpeedVariants.length) } as CSSProperties}
                 onChange={(event) => {
                   const variant = lightingEffect.SpeedVariants[Number(event.target.value)];
-                  if (variant) stageLighting({ Mode: lightingEffect.Mode, TemplateID: variant.TemplateID });
+                  if (variant) actions.stageLighting({ Mode: lightingEffect.Mode, TemplateID: variant.TemplateID });
                 }}
               />
             </fieldset>}
-            {lightingEffect && lightingEffect.ColorTemplates.length > 0 && <fieldset className="lighting-colors" disabled={!ready}>
+            <fieldset className="lighting-colors" disabled={!ready}>
               <legend>Lighting color</legend>
               <div className="lighting-options" role="radiogroup" aria-label="Lighting color">
-                {lightingEffect.ColorTemplates.map((color) => (
-                  <label className="lighting-option lighting-color-option" key={color.TemplateID}>
+                {slots.map((slot, index) => (
+                  <label className="lighting-option lighting-color-option" key={`${slot.label}-${index}`}>
                     <input
                       type="radio"
                       name="lighting-color"
-                      aria-label={color.CSSColor}
-                      checked={lighting.Pending.TemplateID === color.TemplateID}
-                      onChange={() => stageLighting({ Mode: lightingEffect.Mode, TemplateID: color.TemplateID })}
+                      aria-label={slot.label}
+                      checked={slot.templateID != null && lighting?.Pending.TemplateID === slot.templateID}
+                      disabled={slot.disabled}
+                      onChange={() => slot.templateID != null && lightingEffect && actions.stageLighting({ Mode: lightingEffect.Mode, TemplateID: slot.templateID })}
                     />
-                    <span className="lighting-color-swatch" aria-hidden="true" style={{ backgroundColor: color.CSSColor }} />
-                    <span>{color.CSSColor}</span>
+                    <span className={`lighting-color-swatch${slot.disabled ? " is-disabled" : ""}`} aria-hidden="true" style={slot.color ? { backgroundColor: slot.color } : undefined} />
                   </label>
                 ))}
               </div>
-            </fieldset>}
-            <button className="apply-lighting-btn" type="button" disabled={!ready} onClick={applyLighting}>Apply lighting</button>
+            </fieldset>
+            <button className="apply-lighting-btn" type="button" disabled={!ready} onClick={actions.applyLighting}>Apply lighting</button>
             <div className="lighting-state" role="status" aria-label="Lighting status">
               {lighting.Firmware === "success" ? "Lighting applied" : lighting.Firmware === "failed" ? <span role="alert">Lighting application failed: {feedbackFor(lighting.Error.Code)}</span> : "Lighting selection pending"}
             </div>
-          </section>}
+          </LightingPanel>}</WorkspaceView>
 
-          <button className="reset-btn" disabled={!ready} onClick={reset}>Reset to factory</button>
-        </section>
+        <WorkspaceView id="device" title="Device"><ResetPanel><button className="reset-btn" disabled={!ready} onClick={actions.reset}>Reset to factory</button></ResetPanel></WorkspaceView>
 
         <p aria-live="polite" className="notice">{notice}</p>
-      </main>
-    </div>
+    </WorkspaceShell>
   );
-}
-
-// applyStatusEvent merges one dongle-pushed status delta into the snapshot.
-// Battery heartbeats and DPI stage button presses arrive as separate events,
-// so only the fields the report carried are written over the current state.
-function applyStatusEvent(current: Snapshot, event: StatusEvent): Snapshot {
-  const next: Snapshot = { ...current, Applied: { ...current.Applied }, Pending: { ...current.Pending } };
-  if (event.Connection !== undefined) next.Connection = event.Connection;
-  if (event.Battery != null) next.Battery = event.Battery;
-  if (event.ActiveStage != null) {
-    next.ObservedStage = event.ActiveStage;
-    next.ObservedDPI = ((next.Applied.StageMask >> (event.ActiveStage - 1)) & 1) ? next.Applied.DPI[event.ActiveStage - 1] : null;
-  }
-  return next;
-}
-
-function receivesEvent(selected: Binding | null | undefined, event: StatusEvent): boolean {
-  return !selected || !event.ID || (selected.ID.VendorID === event.ID.VendorID && selected.ID.ProductID === event.ID.ProductID && selected.ID.Serial === event.ID.Serial && selected.Path === event.Path && selected.InventoryRevision === event.InventoryRevision);
 }

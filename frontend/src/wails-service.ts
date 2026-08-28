@@ -1,6 +1,6 @@
 import { Events } from "@wailsio/runtime";
 import * as bindings from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
-import type { DesktopService } from "./App";
+import type { DesktopService } from "./desktop-contract";
 
 export const desktopService: DesktopService = {
   GetSnapshot: bindings.GetSnapshot,

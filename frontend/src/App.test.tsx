@@ -352,7 +352,7 @@ describe("App", () => {
     expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
   });
 
-  it("shows full eligible identity and actionable stale-binding recovery feedback", async () => {
+  it("shows compact serial identity without exposing raw USB IDs", async () => {
     const alpha = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Path: "/dev/hidraw0", Profile: "attack-shark-x6", Eligible: true };
     const unavailable = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "" }, Path: "/dev/hidraw2", Profile: "attack-shark-x6", Eligible: false, Warning: "ambiguous identity", Connection: "dongle" };
     const service = serviceFor(snapshot({ Error: { Code: "stale_binding" } }), {
@@ -360,7 +360,8 @@ describe("App", () => {
     });
     render(<App service={service} />);
 
-    expect(await screen.findByText("VID 1D57 · PID FA60 · Serial alpha")).toBeInTheDocument();
+    expect(await screen.findByText("Serial alpha")).toBeInTheDocument();
+    expect(screen.queryByText(/VID 1D57|PID FA60/i)).not.toBeInTheDocument();
     expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
     expect(screen.getByText("ambiguous identity")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Device connection changed. Refresh the device list and select the mouse again before saving.");
@@ -374,7 +375,7 @@ describe("App", () => {
     render(<App service={service} />);
 
     expect(await screen.findByText("Receiver detected, configuration unavailable.")).toBeInTheDocument();
-    expect(screen.getByText("VID 1D57 · PID FA60 · Serial unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Serial unavailable")).toBeInTheDocument();
     expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
     expect(screen.getAllByText("ambiguous identity")).toHaveLength(2);
 	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeDisabled();
@@ -443,12 +444,11 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "500 Hz" }));
 
     await waitFor(() => expect(service.StagePollingRate).toHaveBeenCalledWith(500));
-    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling change queued");
-    expect(screen.getByText("Desired polling rate: 500 Hz")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applying…");
+    expect(screen.getByRole("status", { name: "Polling status" }).querySelector("[aria-hidden='true']")).toBeInTheDocument();
 
 	await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success" }) }));
-	expect(screen.getByText("Applied polling rate: 500 Hz")).toBeInTheDocument();
-    expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz");
   });
 
 	it("renders polling failure and persistence failure completion events", async () => {
@@ -460,10 +460,10 @@ describe("App", () => {
 		await screen.findByRole("radiogroup", { name: "Polling rate" });
 
 		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 1000, Firmware: "failed", Persistence: "" }) }));
-		expect(screen.getByText("Polling change failed")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling change failed");
 
 		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 250, Firmware: "success", Persistence: "failed", RetryAvailable: true }) }));
-		expect(screen.getByText("Polling preference was not saved.")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling preference was not saved.");
 	});
 
 	it("retries failed polling persistence and refreshes the existing polling status", async () => {
@@ -479,7 +479,7 @@ describe("App", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Retry polling persistence" }));
 
 		await waitFor(() => expect(service.RetryPollingPersistence).toHaveBeenCalledOnce());
-		await waitFor(() => expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument());
+	await waitFor(() => expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz"));
 	});
 
 	it("shows acknowledged persistence for an eligible serial-less X6 binding", async () => {
@@ -490,8 +490,7 @@ describe("App", () => {
 		});
 		render(<App service={service} />);
 
-		expect(await screen.findByText("Applied polling rate: 500 Hz")).toBeInTheDocument();
-		expect(screen.getByText("Polling preference saved: 500 Hz")).toBeInTheDocument();
+		expect(await screen.findByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz");
 		expect(screen.queryByText(/session-only device/i)).not.toBeInTheDocument();
 	});
 
@@ -590,6 +589,54 @@ describe("App", () => {
     expect(screen.queryByText(/Variant/)).not.toBeInTheDocument();
   });
 
+  it("renders exactly five effect-aware lighting slots and disables unsupported fallbacks", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    const group = await screen.findByRole("group", { name: "Lighting color" });
+    expect(group.querySelectorAll("input[type='radio']")).toHaveLength(5);
+    expect(screen.getByRole("radio", { name: "#00FF00" })).toBeEnabled();
+    expect(screen.getAllByRole("radio").filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(4);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Lighting effect" }), { target: { value: "32" } });
+    await waitFor(() => expect(group.querySelectorAll("input[type='radio']")).toHaveLength(5));
+    expect([...group.querySelectorAll("input[type='radio']")].filter((radio) => !(radio as HTMLInputElement).disabled)).toHaveLength(4);
+  });
+
+  it("keeps all five slots disabled for every non-color effect and an unknown pending mode", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    const group = await screen.findByRole("group", { name: "Lighting color" });
+    for (const mode of [0, 48, 64, 80, 96]) {
+      fireEvent.change(screen.getByRole("combobox", { name: "Lighting effect" }), { target: { value: String(mode) } });
+      await waitFor(() => expect([...group.querySelectorAll("input[type='radio']")].every((radio) => (radio as HTMLInputElement).disabled)).toBe(true));
+    }
+
+    cleanup();
+    const unknown = serviceFor(snapshot(), {
+      GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot({ Pending: { Mode: 0x70 as 0x10, TemplateID: "unknown" } })),
+    });
+    render(<App service={unknown} />);
+    const unknownGroup = await screen.findByRole("group", { name: "Lighting color" });
+    expect(unknownGroup.querySelectorAll("input[type='radio']")).toHaveLength(5);
+    expect([...unknownGroup.querySelectorAll("input[type='radio']")].every((radio) => (radio as HTMLInputElement).disabled)).toBe(true);
+    expect(unknown.StageLighting).not.toHaveBeenCalled();
+  });
+
+  it("uses a bounded speed index and percentage fill without staging unknown templates", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Lighting effect" }), { target: { value: "96" } });
+    const slider = await screen.findByRole("slider", { name: "Breathing DPI speed" }) as HTMLInputElement;
+    expect(slider.min).toBe("0");
+    expect(slider.max).toBe("2");
+    expect(slider.style.getPropertyValue("--fill")).toBe("0%");
+    fireEvent.change(slider, { target: { value: "2" } });
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-three" }));
+  });
+
   it("stages a lighting selection and applies it only when explicitly requested", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
@@ -615,5 +662,30 @@ describe("App", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Lighting application failed: apply failed");
     expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
+  });
+
+  it("keeps the complete control surface mounted when workspace navigation changes", async () => {
+    render(<App service={serviceFor(snapshot())} />);
+
+    await screen.findByRole("slider", { name: "Stage 1 DPI" });
+    fireEvent.click(screen.getByRole("link", { name: "Lighting" }));
+    expect(screen.getByRole("slider", { name: "Stage 1 DPI" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "1000 Hz" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Angle snap" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Lighting effect" })).toBeInTheDocument();
+    expect(document.getElementById("device")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset to factory" })).toBeInTheDocument();
+  });
+
+  it("groups the mounted control surface into four navigable workspace views", async () => {
+    render(<App service={serviceFor(snapshot())} />);
+
+    await screen.findByRole("slider", { name: "Stage 1 DPI" });
+    expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
+    fireEvent.click(screen.getByRole("link", { name: "Device" }));
+
+    expect(screen.getByRole("region", { name: "Device" })).toHaveAttribute("data-active", "true");
+    expect(document.getElementById("workspace-view-performance")).toHaveAttribute("data-active", "false");
+    expect(screen.getByRole("button", { name: "Reset to factory" })).toBeInTheDocument();
   });
 });
