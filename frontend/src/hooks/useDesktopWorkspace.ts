@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import type { Binding, DesktopService, DPIConfig, LightingSelection, Snapshot, WorkspaceActions, WorkspaceModel } from "../desktop-contract";
 
-const syncNotice = "Synchronization queued. It will apply after one second of inactivity.";
+const dpiStagedNotice = "DPI change staged. Apply DPI to send it to the device.";
+const pollingStagedNotice = "Polling change staged. Apply polling to send it to the device.";
 
 export function useDesktopWorkspace(service: DesktopService): { model: WorkspaceModel; actions: WorkspaceActions } {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [polling, setPolling] = useState<WorkspaceModel["polling"]>();
-  const [lighting, setLighting] = useState<WorkspaceModel["lighting"]>();
+	const [lighting, setLighting] = useState<WorkspaceModel["lighting"]>();
+	const [remap, setRemap] = useState<WorkspaceModel["remap"]>();
   const [inventory, setInventory] = useState<WorkspaceModel["inventory"]>();
   const [notice, setNotice] = useState("");
+  const [resetConfirmation, setResetConfirmation] = useState(false);
   const selected = useRef<Binding | null>(null);
 
   useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
   useEffect(() => { void service.GetPollingSnapshot().then(setPolling); }, [service]);
-  useEffect(() => { void service.GetLightingSnapshot().then(setLighting); }, [service]);
+	useEffect(() => { void service.GetLightingSnapshot().then(setLighting); }, [service]);
+	useEffect(() => { void service.GetRemapSnapshot().then(setRemap); }, [service]);
   useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected ?? null; }, [inventory]);
   useEffect(() => service.OnStatusEvent((event) => {
@@ -28,10 +32,13 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   useEffect(() => service.OnPollingConfiguration((event) => {
     if (receivesEvent(selected.current, event.Binding)) setPolling(event.Snapshot);
   }), [service]);
+	useEffect(() => service.OnRemapConfiguration((event) => {
+		if (receivesEvent(selected.current, event.Binding)) setRemap(event.Snapshot);
+	}), [service]);
 
   const stageConfig = (next: DPIConfig) => void service.StageDPI(next).then((updated) => {
     setSnapshot(updated);
-    setNotice(syncNotice);
+    setNotice(dpiStagedNotice);
   });
   const actions: WorkspaceActions = {
     selectDevice: (serial) => {
@@ -41,26 +48,36 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     stageDPI: (index, value) => snapshot && stageConfig({ ...snapshot.Pending, DPI: snapshot.Pending.DPI.map((dpi, current) => current === index ? value : dpi) }),
     selectStage: (index) => snapshot && stageConfig({ ...snapshot.Pending, ActiveStage: index + 1 }),
     stageFeature: (patch) => snapshot && stageConfig({ ...snapshot.Pending, ...patch }),
+		applyDPI: () => void service.ApplyDPI().then((updated) => { setSnapshot(updated); setNotice(updated.Firmware === "failed" ? "DPI application failed." : "DPI applied."); }),
     stagePollingRate: (rate) => void service.StagePollingRate(rate).then((updated) => {
       setPolling(updated);
-      setNotice("Polling synchronization queued. It will apply after one second of inactivity.");
+      setNotice(pollingStagedNotice);
     }),
-    stageLighting: (selection) => void service.StageLighting(selection).then((updated) => {
+		applyPollingRate: () => void service.ApplyPollingRate().then((updated) => { setPolling(updated); setNotice(updated.Firmware === "failed" ? "Polling application failed." : "Polling applied."); }),
+		stageLighting: (selection) => void service.StageLighting(selection).then((updated) => {
       setLighting(updated);
       setNotice("Lighting selection staged. Apply lighting to send it to the device.");
-    }),
-    applyLighting: () => void service.ApplyLighting().then(setLighting),
-    reset: () => void service.ResetToFactory().then((updated) => {
-      setSnapshot(updated);
-      return service.GetPollingSnapshot();
-    }).then((updated) => {
-      setPolling(updated);
-      setNotice("Factory defaults queued. They will apply after one second of inactivity.");
-    }),
+		}),
+		stageRemap: (button, action) => setRemap((current) => current ? { ...current, Pending: { ...current.Pending, Buttons: current.Pending.Buttons.map((item) => item.Button === button ? { ...item, Action: action, PreservedDefault: "" } : item) } } : current),
+		applyRemap: () => remap && void service.ApplyRemap(remap.Pending).then((updated) => { setRemap(updated); setNotice("Button remapping applied."); }),
+		discardRemap: () => setRemap((current) => current ? { ...current, Pending: current.Applied } : current),
+		applyLighting: () => void service.ApplyLighting().then(setLighting),
+		requestReset: () => setResetConfirmation(true),
+		cancelReset: () => setResetConfirmation(false),
+		confirmReset: () => void service.ResetToFactory().then((result) => {
+		  setResetConfirmation(false);
+		  if (result.Cleanup.State !== "success") {
+				setNotice(`Factory reset failed: ${result.Error.Code}.`);
+				return;
+			}
+		  setNotice("Factory reset completed.");
+		  void service.GetSnapshot().then(setSnapshot);
+		  void service.GetPollingSnapshot().then(setPolling);
+		}),
     retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
     retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
   };
-  return { model: { snapshot, polling, lighting, inventory, ready: inventory?.Selected != null, notice }, actions };
+		return { model: { snapshot, polling, lighting, remap, inventory, ready: inventory?.Selected != null, notice, resetConfirmation }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {

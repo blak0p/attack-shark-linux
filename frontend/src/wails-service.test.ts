@@ -4,11 +4,16 @@ const bindings = vi.hoisted(() => ({
   GetSnapshot: vi.fn(),
   RefreshStatus: vi.fn(),
   StageDPI: vi.fn(),
+  ApplyDPI: vi.fn(),
   GetPollingSnapshot: vi.fn(),
   StagePollingRate: vi.fn(),
+  ApplyPollingRate: vi.fn(),
   GetLightingSnapshot: vi.fn(),
   StageLighting: vi.fn(),
-  ApplyLighting: vi.fn(),
+	ApplyLighting: vi.fn(),
+	GetRemapSnapshot: vi.fn(),
+	ApplyRemap: vi.fn(),
+	RetryRemapPersistence: vi.fn(),
   RetryPollingPersistence: vi.fn(),
   ResetToFactory: vi.fn(),
   RetryPersistence: vi.fn(),
@@ -18,7 +23,7 @@ const bindings = vi.hoisted(() => ({
 
 const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
 
-vi.mock("../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
+vi.mock("../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
 vi.mock("@wailsio/runtime", () => runtime);
 
 import { desktopService } from "./wails-service";
@@ -50,7 +55,18 @@ describe("desktopService", () => {
     expect(bindings.ResetToFactory).toHaveBeenCalledOnce();
   });
 
-  it("forwards lighting reads, staging, and explicit application to generated Wails bindings", () => {
+  it("forwards explicit DPI and polling confirmation to generated Wails bindings", () => {
+    expect((desktopService as unknown as { ApplyDPI: unknown }).ApplyDPI).toBe(bindings.ApplyDPI);
+    expect((desktopService as unknown as { ApplyPollingRate: unknown }).ApplyPollingRate).toBe(bindings.ApplyPollingRate);
+
+    (desktopService as unknown as { ApplyDPI(): void }).ApplyDPI();
+    (desktopService as unknown as { ApplyPollingRate(): void }).ApplyPollingRate();
+
+    expect(bindings.ApplyDPI).toHaveBeenCalledOnce();
+    expect(bindings.ApplyPollingRate).toHaveBeenCalledOnce();
+  });
+
+	it("forwards lighting reads, staging, and explicit application to generated Wails bindings", () => {
     const selection = { Mode: 0x20, TemplateID: "breathing-ff7f00" };
 
     expect(desktopService.GetLightingSnapshot).toBe(bindings.GetLightingSnapshot);
@@ -61,7 +77,12 @@ describe("desktopService", () => {
 
     expect(bindings.StageLighting).toHaveBeenCalledWith(selection);
     expect(bindings.ApplyLighting).toHaveBeenCalledOnce();
-  });
+	});
+
+	it("forwards remap reads and explicit application to generated Wails bindings", () => {
+		expect(desktopService.GetRemapSnapshot).toBe(bindings.GetRemapSnapshot);
+		expect(desktopService.ApplyRemap).toBe(bindings.ApplyRemap);
+	});
 
   it("subscribes to device-scoped status events and returns the Wails unsubscribe function", () => {
     const callback = vi.fn();
@@ -92,6 +113,12 @@ describe("desktopService", () => {
     runtime.Events.On.mock.calls.at(-1)[1]({ data: { Snapshot: { Firmware: "success", Persistence: "failed" } } });
     expect(callback).toHaveBeenCalledWith({ Snapshot: { Firmware: "success", Persistence: "failed" } });
   });
+
+	it("subscribes to explicit remap completion snapshots", () => {
+		const callback = vi.fn();
+		desktopService.OnRemapConfiguration(callback);
+		expect(runtime.Events.On).toHaveBeenCalledWith("mouse:remap-configuration", expect.any(Function));
+	});
 
   it("delegates generated inventory bindings and subscribes to device-scoped status events", () => {
     const callback = vi.fn();

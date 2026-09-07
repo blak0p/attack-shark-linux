@@ -41,9 +41,14 @@ func TestHidrawSendAndAwaitBindingAdmitsOnlyKnownReportPairs(t *testing.T) {
 	}{
 		{name: "polling report", payload: []byte{0x06, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}},
 		{name: "lighting report", payload: []byte{0x05, 0x0f, 0x01, 0x00, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xaf}},
+		{name: "remap report", payload: append([]byte{0x08}, make([]byte, 58)...), wantError: false},
+		{name: "remap ID with short length", payload: append([]byte{0x08}, make([]byte, 57)...), wantError: true},
+		{name: "wrong ID with remap length", payload: append([]byte{0x09}, make([]byte, 58)...), wantError: true},
 		{name: "wrong report ID", payload: []byte{0x05, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}, wantError: true},
 		{name: "lighting ID with wrong length", payload: []byte{0x05, 0x0f, 0x01, 0x00, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01}, wantError: true},
 		{name: "DPI ID with polling length", payload: []byte{0x04, 0x09, 0x01, 0x01, 0xfe, 0, 0, 0, 0}, wantError: true},
+		{name: "legacy DPI 52-byte report", payload: append([]byte{0x04}, make([]byte, 51)...), wantError: true},
+		{name: "documented DPI 56-byte report", payload: append([]byte{0x04}, make([]byte, 55)...)},
 	}
 
 	for _, tt := range tests {

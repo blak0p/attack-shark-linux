@@ -40,9 +40,9 @@ func TestDecodeStatusReportRejectsAckAndUnknownReports(t *testing.T) {
 	}
 }
 
-func TestDPIReportContractIs52BytesAndAcceptsOnlyMatchingACK(t *testing.T) {
-	if DPIReportLength != 52 {
-		t.Fatalf("DPIReportLength = %d, want 52", DPIReportLength)
+func TestDPIReportContractIs56BytesAndAcceptsOnlyMatchingACK(t *testing.T) {
+	if DPIReportLength != 56 {
+		t.Fatalf("DPIReportLength = %d, want 56", DPIReportLength)
 	}
 	if !MatchesDPIACK([]byte{0x03, 0x10, 0x50, 0x00, 0x04}) {
 		t.Fatal("MatchesDPIACK() rejected documented acknowledgement")
@@ -57,7 +57,7 @@ func TestPureProtocolEncodesCompleteDPIAndDecodesOnlyBatteryReports(t *testing.T
 	config.DPI[0] = 1600
 	report, err := EncodeDPIReport(config)
 	if err != nil || len(report) != DPIReportLength || report[8] != 31 {
-		t.Fatalf("EncodeDPIReport() = % x, %v; want a complete 52-byte report with 1600 DPI", report, err)
+		t.Fatalf("EncodeDPIReport() = % x, %v; want a complete 56-byte report with 1600 DPI", report, err)
 	}
 
 	battery, available := DecodeBatteryStatus([]byte{0x03, 0x10, 0x40, 0x00, 8})
@@ -66,5 +66,25 @@ func TestPureProtocolEncodesCompleteDPIAndDecodesOnlyBatteryReports(t *testing.T
 	}
 	if _, available := DecodeBatteryStatus([]byte{0x03, 0x10, 0x50, 0x00, 8}); available {
 		t.Fatal("DecodeBatteryStatus() accepted a non-battery report")
+	}
+}
+
+func TestDocumentedResetDPIConfigEncodesExactPaddedBaseline(t *testing.T) {
+	report, err := EncodeDPIReport(DocumentedResetDPIConfig())
+	if err != nil {
+		t.Fatalf("EncodeDPIReport(DocumentedResetDPIConfig()) error = %v", err)
+	}
+	want := []byte{
+		0x04, 0x38, 0x01, 0x00, 0x00, 0x3f, 0x00, 0x01,
+		0x0f, 0x17, 0x1f, 0x3f, 0x6f, 0x07, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+		0x04,
+		0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff,
+		0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0xff,
+		0xff, 0x40, 0x00, 0xff, 0xff, 0xff,
+		0x01, 0x0e, 0x74, 0x00, 0x00, 0x00, 0x00,
+	}
+	if string(report) != string(want) {
+		t.Fatalf("documented reset report = % x, want % x", report, want)
 	}
 }

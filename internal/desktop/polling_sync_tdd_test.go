@@ -55,6 +55,10 @@ func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *te
 	service.RefreshInventory(context.Background())
 	service.StagePollingRate(x6.PollingRate500)
 	scheduler.Advance(syncDebounceDelay)
+	if command.calls != 0 {
+		t.Fatalf("scheduler writes = %d, want 0 before explicit apply", command.calls)
+	}
+	service.ApplyPollingRate(context.Background())
 
 	failed := service.GetPollingSnapshot()
 	if command.calls != 1 || failed.Applied != x6.PollingRate500 || failed.Firmware != "success" || failed.Persistence != "failed" || !failed.RetryAvailable {
@@ -65,12 +69,12 @@ func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *te
 	}
 }
 
-func TestResetToFactoryStagesPollingDefault(t *testing.T) {
+func TestResetToFactoryWithoutRunnerDoesNotStagePolling(t *testing.T) {
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
 	service.StagePollingRate(x6.PollingRate125)
-	service.ResetToFactory()
-	if got := service.GetPollingSnapshot().Desired; got != x6.PollingRate1000 {
-		t.Fatalf("polling desired after ResetToFactory() = %d, want factory 1000", got)
+	result := service.ResetToFactory(context.Background())
+	if result.Error.Code != SelectionRequired || !result.RetryAvailable {
+		t.Fatalf("ResetToFactory() = %#v, want retryable selection failure", result)
 	}
 }
 
@@ -106,6 +110,7 @@ func TestPollingApplyAndPersistenceCompletionEmitSnapshots(t *testing.T) {
 	service.RefreshInventory(context.Background())
 	service.StagePollingRate(x6.PollingRate500)
 	scheduler.Advance(syncDebounceDelay)
+	service.ApplyPollingRate(context.Background())
 
 	if len(events.events) != 1 {
 		t.Fatalf("polling completion events = %#v; want one apply completion", events.events)
@@ -137,6 +142,7 @@ func TestPollingApplyFailureEmitsFailureSnapshot(t *testing.T) {
 	service.RefreshInventory(context.Background())
 	service.StagePollingRate(x6.PollingRate250)
 	scheduler.Advance(syncDebounceDelay)
+	service.ApplyPollingRate(context.Background())
 
 	if len(events.events) != 1 || events.events[0].event != "mouse:polling-configuration" {
 		t.Fatalf("polling completion events = %#v; want one polling failure event", events.events)

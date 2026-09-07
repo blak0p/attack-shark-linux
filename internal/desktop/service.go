@@ -63,6 +63,7 @@ type PollingSnapshot struct {
 	Persisted        *x6.PollingRate
 	Factory          x6.PollingRate
 	Revision         uint64
+	Error            Error
 	Firmware         string
 	Persistence      string
 	RetryAvailable   bool
@@ -74,6 +75,14 @@ type LightingSnapshot struct {
 	Revision uint64
 	Firmware string
 	Error    Error
+}
+type RemapSnapshot struct {
+	Pending, Applied, Factory x6.RemapConfig
+	Actions                   []x6.RemapAction
+	Revision                  uint64
+	Firmware, Persistence     string
+	RetryAvailable            bool
+	Error                     Error
 }
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
@@ -94,6 +103,20 @@ type DevicePersistence interface {
 type PollingPersistence interface {
 	Load(Binding) (x6.DeviceConfig, error)
 	Save(Binding, x6.DeviceConfig) error
+}
+
+type resetRunner interface {
+	Run(context.Context) (ResetResult, error)
+}
+type RemapPersistence interface {
+	Load(Binding) (x6.DeviceConfig, error)
+	Save(Binding, x6.DeviceConfig) error
+}
+
+// RemapConfigurationEvent is an immutable completion snapshot for one binding.
+type RemapConfigurationEvent struct {
+	Binding  Binding
+	Snapshot RemapSnapshot
 }
 
 // StatusListener runs the always-on status listener until its context is
@@ -146,9 +169,11 @@ type deviceState struct {
 }
 type pollingState struct {
 	mu                        sync.Mutex
+	applyMu                   sync.Mutex
 	desired, applied, factory x6.PollingRate
 	persisted, retry          *x6.PollingRate
 	revision                  uint64
+	err                       Error
 	firmware, persistence     string
 }
 type lightingState struct {
@@ -159,6 +184,15 @@ type lightingState struct {
 	revision uint64
 	firmware string
 	err      Error
+}
+type remapState struct {
+	mu                        sync.Mutex
+	applyMu                   sync.Mutex
+	pending, applied, factory x6.RemapConfig
+	retry                     *x6.RemapConfig
+	revision                  uint64
+	firmware, persistence     string
+	err                       Error
 }
 
 type Service struct {
@@ -179,6 +213,11 @@ type Service struct {
 	pollingSync        *PollingSyncCoordinator
 	pollingPersistence PollingPersistence
 	lightingStates     map[DeviceID]*lightingState
+	remapStates        map[DeviceID]*remapState
+	legacyRemap        *remapState
+	remapPersistence   RemapPersistence
+	operationMu        sync.Mutex
+	reset              resetRunner
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -190,7 +229,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), lightingStates: make(map[DeviceID]*lightingState)}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -214,6 +253,14 @@ func (s *Service) AttachInventory(inventory *mouse.TargetedService) *Service {
 	s.inventoryDevices = nil
 	s.sync = NewSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyBound)
 	s.pollingSync = NewPollingSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyPollingBound)
+	return s
+}
+
+// AttachResetRunner wires the reset orchestration shared by desktop and CLI entrypoints.
+func (s *Service) AttachResetRunner(runner resetRunner) *Service {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reset = runner
 	return s
 }
 
@@ -547,14 +594,6 @@ func (s *Service) StageDPI(config DPIConfig) Snapshot {
 	state.revision++
 	state.err = Error{}
 	state.firmware, state.persistence, state.retry = "pending", "", nil
-	if binding, ok := s.selectedBinding(); ok {
-		s.mu.Lock()
-		sync := s.sync
-		s.mu.Unlock()
-		if sync != nil {
-			_ = sync.ScheduleAt(binding, state.revision, next)
-		}
-	}
 	return snapshotLocked(state)
 }
 
@@ -627,6 +666,138 @@ func (s *Service) ApplyLighting() LightingSnapshot {
 	return lightingSnapshotLocked(state)
 }
 
+// GetRemapSnapshot reports local remap truth; the device has no remap readback.
+func (s *Service) GetRemapSnapshot() RemapSnapshot { return remapSnapshotOf(s.currentRemapState()) }
+
+// ApplyRemap validates and writes one complete draft. Applied state advances
+// only after the targeted command receives its ACK.
+func (s *Service) ApplyRemap(config x6.RemapConfig) RemapSnapshot {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	binding, ok := s.selectedBinding()
+	state := s.currentRemapState()
+	if !ok {
+		return s.failRemap(state, SelectionRequired)
+	}
+	if err := x6.NewRemapOperation().Validate(config); err != nil {
+		return s.failRemap(state, InvalidConfiguration)
+	}
+	state.mu.Lock()
+	if remapConfigsEqual(state.applied, config) && state.firmware == "success" {
+		retry := state.retry != nil
+		snapshot := remapSnapshotLocked(state)
+		state.mu.Unlock()
+		if retry {
+			return s.RetryRemapPersistence()
+		}
+		return snapshot
+	}
+	state.pending = cloneRemapConfig(config)
+	state.revision++
+	revision := state.revision
+	state.firmware, state.persistence, state.retry, state.err = "pending", "", nil, Error{}
+	state.mu.Unlock()
+	if err := s.applyRemapBound(binding, revision, config); err != nil {
+		return remapSnapshotOf(state)
+	}
+	return remapSnapshotOf(state)
+}
+
+func (s *Service) applyRemapBound(binding Binding, revision uint64, pending x6.RemapConfig) error {
+	state := s.currentRemapState()
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	if !s.bindingCurrent(binding) {
+		s.failRemap(state, StaleBinding)
+		return mouse.ErrStaleBinding
+	}
+	s.mu.Lock()
+	inventory, persistence := s.inventory, s.remapPersistence
+	s.mu.Unlock()
+	if inventory == nil {
+		s.failRemap(state, StaleBinding)
+		return mouse.ErrStaleBinding
+	}
+	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewRemapOperation(), pending); err != nil {
+		if errors.Is(err, mouse.ErrStaleBinding) || errors.Is(err, mouse.ErrRevisionChanged) {
+			s.failRemap(state, StaleBinding)
+			return err
+		}
+		s.failRemap(state, errorCode(err, false))
+		return err
+	}
+	state.mu.Lock()
+	if state.revision != revision || !s.bindingCurrent(binding) {
+		state.mu.Unlock()
+		s.failRemap(state, StaleBinding)
+		return mouse.ErrRevisionChanged
+	}
+	state.applied, state.firmware, state.err = cloneRemapConfig(pending), "success", Error{}
+	state.mu.Unlock()
+	if binding.SessionOnly || persistence == nil {
+		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
+		return nil
+	}
+	if err := persistence.Save(binding, x6.DeviceConfig{Remap: &pending}); err != nil {
+		state.mu.Lock()
+		retry := cloneRemapConfig(pending)
+		state.retry, state.persistence, state.err = &retry, "failed", Error{Code: PersistenceFailed}
+		state.mu.Unlock()
+		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
+		return nil
+	}
+	state.mu.Lock()
+	state.persistence = "success"
+	state.mu.Unlock()
+	s.emitRemapConfiguration(binding, remapSnapshotOf(state))
+	return nil
+}
+
+func (s *Service) RetryRemapPersistence() RemapSnapshot {
+	binding, ok := s.selectedBinding()
+	state := s.currentRemapState()
+	if !ok {
+		return s.failRemap(state, SelectionRequired)
+	}
+	s.mu.Lock()
+	persistence := s.remapPersistence
+	s.mu.Unlock()
+	state.mu.Lock()
+	if state.retry == nil {
+		snapshot := remapSnapshotLocked(state)
+		state.mu.Unlock()
+		return snapshot
+	}
+	retry := cloneRemapConfig(*state.retry)
+	state.mu.Unlock()
+	if persistence == nil || binding.SessionOnly {
+		return remapSnapshotOf(state)
+	}
+	if err := persistence.Save(binding, x6.DeviceConfig{Remap: &retry}); err != nil {
+		return s.failRemap(state, PersistenceFailed)
+	}
+	state.mu.Lock()
+	state.retry, state.persistence, state.err = nil, "success", Error{}
+	state.mu.Unlock()
+	return remapSnapshotOf(state)
+}
+
+func (s *Service) emitRemapConfiguration(binding Binding, snapshot RemapSnapshot) {
+	s.mu.Lock()
+	sink := s.events
+	s.mu.Unlock()
+	if sink != nil {
+		sink.Emit("mouse:remap-configuration", RemapConfigurationEvent{Binding: binding, Snapshot: snapshot})
+	}
+}
+
+func (s *Service) failRemap(state *remapState, code ErrorCode) RemapSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.firmware, state.err = "failed", Error{Code: code}
+	return remapSnapshotLocked(state)
+}
+
 func (s *Service) failLighting(state *lightingState, code ErrorCode) LightingSnapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -645,14 +816,6 @@ func (s *Service) StagePollingRate(rate x6.PollingRate) PollingSnapshot {
 	state.desired = rate
 	state.revision++
 	state.firmware, state.persistence, state.retry = "pending", "", nil
-	if binding, ok := s.selectedBinding(); ok {
-		s.mu.Lock()
-		sync := s.pollingSync
-		s.mu.Unlock()
-		if sync != nil {
-			_ = sync.ScheduleAt(binding, state.revision, rate)
-		}
-	}
 	return pollingSnapshotLocked(state)
 }
 
@@ -687,16 +850,67 @@ func (s *Service) RetryPollingPersistence() PollingSnapshot {
 	return snapshot
 }
 
-// ResetToFactory stages both configuration lanes through their normal debounce
-// and acknowledgement lifecycle.
-func (s *Service) ResetToFactory() Snapshot {
+// ApplyPollingRate writes the selected pending polling rate after explicit user confirmation.
+func (s *Service) ApplyPollingRate(ctx context.Context) PollingSnapshot {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	binding, ok := s.selectedBinding()
+	state := s.currentPollingState()
+	if !ok {
+		return failPolling(state, SelectionRequired)
+	}
+	state.mu.Lock()
+	revision, rate := state.revision, state.desired
+	state.mu.Unlock()
+	if err := s.applyPolling(ctx, binding, revision, rate); err != nil {
+		if errors.Is(err, mouse.ErrStaleBinding) {
+			return failPolling(state, SelectionRequired)
+		}
+		return pollingSnapshotOf(state)
+	}
+	return pollingSnapshotOf(state)
+}
+
+// ResetToFactory delegates one explicitly confirmed reset to the shared runner.
+func (s *Service) ResetToFactory(ctx context.Context) ResetResult {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
+	s.mu.Lock()
+	runner := s.reset
+	s.mu.Unlock()
+	if runner == nil {
+		return ResetResult{Error: Error{Code: SelectionRequired}, RetryAvailable: true}
+	}
+	result, err := runner.Run(ctx)
+	if err == nil && result.Cleanup.State == "success" {
+		s.reconcileFactoryReset()
+	}
+	return result
+}
+
+func (s *Service) reconcileFactoryReset() {
 	state := s.currentState()
 	state.mu.Lock()
-	factory := state.factory
+	factory := x6.DocumentedResetDPIConfig()
+	state.applied, state.pending = factory, factory
+	state.revision++
+	state.firmware, state.persistence, state.retry, state.err = "success", "success", nil, Error{}
 	state.mu.Unlock()
-	s.StageDPI(ToDTO(factory))
-	s.StagePollingRate(x6.PollingRate1000)
-	return s.GetSnapshot()
+
+	polling := s.currentPollingState()
+	polling.mu.Lock()
+	polling.desired, polling.applied, polling.persisted, polling.retry = x6.PollingRate1000, x6.PollingRate1000, nil, nil
+	polling.revision++
+	polling.firmware, polling.persistence = "success", "success"
+	polling.mu.Unlock()
+
+	remap := s.currentRemapState()
+	remap.mu.Lock()
+	defaults := x6.DefaultRemapConfig()
+	remap.pending, remap.applied, remap.retry = cloneRemapConfig(defaults), cloneRemapConfig(defaults), nil
+	remap.revision++
+	remap.firmware, remap.persistence, remap.err = "success", "success", Error{}
+	remap.mu.Unlock()
 }
 
 func (s *Service) RetryPersistence() Snapshot {
@@ -727,6 +941,8 @@ func (s *Service) RetryPersistence() Snapshot {
 	return s.GetSnapshot()
 }
 func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	state := s.currentState()
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
@@ -749,7 +965,12 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 			s.mu.Unlock()
 			if !binding.SessionOnly && persistence != nil {
 				if err := persistence.Save(binding, pending); err != nil {
-					return s.applyFailure(&x6.ServiceError{Kind: x6.PersistFailure, Err: err})
+					state.mu.Lock()
+					retry := pending
+					state.applied, state.firmware, state.persistence, state.retry, state.err = pending, "success", "failed", &retry, Error{Code: PersistenceFailed}
+					snapshot := snapshotLocked(state)
+					state.mu.Unlock()
+					return snapshot
 				}
 			}
 			s.cancelSync(binding)
@@ -760,7 +981,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.applied = pending
-	state.err = Error{}
+	state.firmware, state.persistence, state.err = "success", "success", Error{}
 	return snapshotLocked(state)
 }
 
@@ -832,6 +1053,32 @@ func (s *Service) currentLightingState() *lightingState {
 	if state == nil {
 		state = newLightingState()
 		s.lightingStates[binding.ID] = state
+	}
+	return state
+}
+
+func newRemapState(applied, factory x6.RemapConfig) *remapState {
+	return &remapState{applied: cloneRemapConfig(applied), pending: cloneRemapConfig(applied), factory: cloneRemapConfig(factory)}
+}
+
+func (s *Service) currentRemapState() *remapState {
+	binding, ok := s.selectedBinding()
+	if !ok {
+		return s.legacyRemap
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.remapStates[binding.ID]
+	if state == nil {
+		factory := x6.DefaultRemapConfig()
+		applied := factory
+		if s.remapPersistence != nil && !binding.SessionOnly {
+			if persisted, err := s.remapPersistence.Load(binding); err == nil && persisted.Remap != nil {
+				applied = cloneRemapConfig(*persisted.Remap)
+			}
+		}
+		state = newRemapState(applied, factory)
+		s.remapStates[binding.ID] = state
 	}
 	return state
 }
@@ -915,10 +1162,16 @@ func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConf
 func pollingPersistenceAllowed(binding Binding) bool { return !binding.SessionOnly }
 
 func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.PollingRate) error {
+	return s.applyPolling(context.Background(), binding, revision, rate)
+}
+
+func (s *Service) applyPolling(ctx context.Context, binding Binding, revision uint64, rate x6.PollingRate) error {
 	if !s.bindingCurrent(binding) {
 		return mouse.ErrStaleBinding
 	}
 	state := s.currentPollingState()
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
 	completed := false
 	defer func() {
 		if completed {
@@ -937,7 +1190,7 @@ func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.Po
 	if inventory == nil {
 		return mouse.ErrStaleBinding
 	}
-	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewPollingOperation(), rate); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewPollingOperation(), rate); err != nil {
 		state.mu.Lock()
 		state.firmware = "failed"
 		state.mu.Unlock()
@@ -1018,7 +1271,14 @@ func pollingSnapshotOf(state *pollingState) PollingSnapshot {
 }
 
 func pollingSnapshotLocked(state *pollingState) PollingSnapshot {
-	return PollingSnapshot{Desired: state.desired, Applied: state.applied, Persisted: state.persisted, Factory: state.factory, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil}
+	return PollingSnapshot{Desired: state.desired, Applied: state.applied, Persisted: state.persisted, Factory: state.factory, Revision: state.revision, Error: state.err, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil}
+}
+
+func failPolling(state *pollingState, code ErrorCode) PollingSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.err = Error{Code: code}
+	return pollingSnapshotLocked(state)
 }
 
 func newLightingState() *lightingState {
@@ -1038,6 +1298,33 @@ func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
 		applied = &copy
 	}
 	return LightingSnapshot{Pending: state.pending, Applied: applied, Effects: x6.LightingEffects(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
+}
+
+func remapSnapshotOf(state *remapState) RemapSnapshot {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return remapSnapshotLocked(state)
+}
+
+func remapSnapshotLocked(state *remapState) RemapSnapshot {
+	actions := []x6.RemapAction{x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire}
+	return RemapSnapshot{Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
+}
+
+func cloneRemapConfig(config x6.RemapConfig) x6.RemapConfig {
+	return x6.RemapConfig{Buttons: append([]x6.RemapButton(nil), config.Buttons...)}
+}
+
+func remapConfigsEqual(left, right x6.RemapConfig) bool {
+	if len(left.Buttons) != len(right.Buttons) {
+		return false
+	}
+	for index := range left.Buttons {
+		if left.Buttons[index] != right.Buttons[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func mappedDPI(config x6.DPIConfig, stage int) *int {

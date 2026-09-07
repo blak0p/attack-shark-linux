@@ -29,7 +29,7 @@ func TestApplyAndPersistRequiresMatchingACKBeforeSaving(t *testing.T) {
 	if err := NewCommandService(command).ApplyAndPersist(context.Background(), config, store); err != nil {
 		t.Fatalf("ApplyAndPersist() error = %v", err)
 	}
-	if command.calls != 1 || len(command.sent) != 52 || !store.saved || !command.acknowledgedBeforeSave {
+	if command.calls != 1 || len(command.sent) != 56 || !store.saved || !command.acknowledgedBeforeSave {
 		t.Fatalf("apply calls=%d report=%d saved=%t ack-before-save=%t", command.calls, len(command.sent), store.saved, command.acknowledgedBeforeSave)
 	}
 }

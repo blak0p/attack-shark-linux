@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useDesktopWorkspace } from "./useDesktopWorkspace";
-import type { DesktopService, PollingConfigurationEvent, StatusEvent } from "../desktop-contract";
+import type { DesktopService, PollingConfigurationEvent, RemapConfigurationEvent, StatusEvent } from "../desktop-contract";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -11,34 +11,41 @@ const dpi = { DPI: [800, 1200], ActiveStage: 1, StageMask: 3, LiftDistance: 1 };
 const snapshot = (overrides = {}) => ({ Connection: "dongle", Battery: 84, Applied: dpi, Pending: dpi, Factory: dpi, Revision: 0, Error: { Code: "" }, ...overrides });
 const polling = (overrides = {}) => ({ Desired: 1000, Applied: 1000, Factory: 1000, Revision: 0, ...overrides });
 const lighting = (overrides = {}) => ({ Pending: { Mode: 0x10 as const, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 0, Firmware: "", Error: { Code: "" }, ...overrides });
+const remap = (overrides = {}) => ({ Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] }, Actions: ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire"] as const, Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" }, ...overrides });
 
 function serviceFor(overrides: Partial<DesktopService> = {}) {
   const statusListeners: Array<(event: StatusEvent) => void> = [];
   const configurationListeners: Array<(event: { Binding: typeof binding; Snapshot: ReturnType<typeof snapshot> }) => void> = [];
   const pollingListeners: Array<(event: PollingConfigurationEvent) => void> = [];
+  const remapListeners: Array<(event: RemapConfigurationEvent) => void> = [];
   const unsubscribeStatus = vi.fn();
   const unsubscribeConfiguration = vi.fn();
-  const unsubscribePolling = vi.fn();
+  const unsubscribePolling = vi.fn(); const unsubscribeRemap = vi.fn();
   const service: DesktopService = {
     GetSnapshot: vi.fn().mockResolvedValue(snapshot()),
     GetPollingSnapshot: vi.fn().mockResolvedValue(polling()),
-    GetLightingSnapshot: vi.fn().mockResolvedValue(lighting()),
+		GetLightingSnapshot: vi.fn().mockResolvedValue(lighting()),
+		GetRemapSnapshot: vi.fn().mockResolvedValue(remap()),
     RefreshStatus: vi.fn().mockResolvedValue(snapshot()),
     RefreshInventory: vi.fn().mockResolvedValue({ Devices: [binding], Selected: binding, Error: { Code: "" } }),
     SelectDevice: vi.fn().mockResolvedValue({ Devices: [binding], Selected: binding, Error: { Code: "" } }),
     StageDPI: vi.fn().mockImplementation(async (next) => snapshot({ Pending: next })),
+    ApplyDPI: vi.fn().mockResolvedValue(snapshot({ Firmware: "success" })),
     StagePollingRate: vi.fn().mockImplementation(async (rate) => polling({ Desired: rate })),
-    StageLighting: vi.fn().mockResolvedValue(lighting()),
-    ApplyLighting: vi.fn().mockResolvedValue(lighting()),
-    ResetToFactory: vi.fn().mockResolvedValue(snapshot()),
+    ApplyPollingRate: vi.fn().mockResolvedValue(polling({ Firmware: "success" })),
+		StageLighting: vi.fn().mockResolvedValue(lighting()),
+		ApplyLighting: vi.fn().mockResolvedValue(lighting()),
+		RetryRemapPersistence: vi.fn().mockResolvedValue(remap()),
+    ResetToFactory: vi.fn().mockResolvedValue({ Lanes: [], Cleanup: { Lane: "cleanup", State: "success", Code: "" }, Error: { Code: "" }, RetryAvailable: false }),
     RetryPersistence: vi.fn().mockResolvedValue(snapshot()),
     RetryPollingPersistence: vi.fn().mockResolvedValue(polling()),
     OnStatusEvent: vi.fn().mockImplementation((callback) => { statusListeners.push(callback); return unsubscribeStatus; }),
     OnConfiguration: vi.fn().mockImplementation((callback) => { configurationListeners.push(callback); return unsubscribeConfiguration; }),
     OnPollingConfiguration: vi.fn().mockImplementation((callback) => { pollingListeners.push(callback); return unsubscribePolling; }),
+		OnRemapConfiguration: vi.fn().mockImplementation((callback) => { remapListeners.push(callback); return unsubscribeRemap; }),
     ...overrides,
   };
-  return { service, statusListeners, configurationListeners, pollingListeners, unsubscribeStatus, unsubscribeConfiguration, unsubscribePolling };
+  return { service, statusListeners, configurationListeners, pollingListeners, remapListeners, unsubscribeStatus, unsubscribeConfiguration, unsubscribePolling, unsubscribeRemap };
 }
 
 describe("useDesktopWorkspace", () => {
@@ -59,12 +66,13 @@ describe("useDesktopWorkspace", () => {
 
     await act(async () => result.current.actions.stageDPI(0, 1600));
     expect(harness.service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: [1600, 1200] }));
-    expect(result.current.model.notice).toBe("Synchronization queued. It will apply after one second of inactivity.");
+    expect(result.current.model.notice).toBe("DPI change staged. Apply DPI to send it to the device.");
 
     unmount();
     expect(harness.unsubscribeStatus).toHaveBeenCalledOnce();
     expect(harness.unsubscribeConfiguration).toHaveBeenCalledOnce();
     expect(harness.unsubscribePolling).toHaveBeenCalledOnce();
+		expect(harness.unsubscribeRemap).toHaveBeenCalledOnce();
   });
 
   it("reports exact polling and lighting notices for their distinct actions", async () => {
@@ -73,8 +81,19 @@ describe("useDesktopWorkspace", () => {
     await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
 
     await act(async () => result.current.actions.stagePollingRate(500));
-    expect(result.current.model.notice).toBe("Polling synchronization queued. It will apply after one second of inactivity.");
+    expect(result.current.model.notice).toBe("Polling change staged. Apply polling to send it to the device.");
     await act(async () => result.current.actions.stageLighting({ Mode: 0x10, TemplateID: "fixed-green" }));
     expect(result.current.model.notice).toBe("Lighting selection staged. Apply lighting to send it to the device.");
+  });
+
+  it("keeps DPI edits staged until explicit confirmation", async () => {
+    const harness = serviceFor();
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
+
+    await act(async () => result.current.actions.stageDPI(0, 1600));
+
+    expect(result.current.model.notice).toBe("DPI change staged. Apply DPI to send it to the device.");
+    expect(harness.service.ApplyDPI).not.toHaveBeenCalled();
   });
 });

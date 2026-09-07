@@ -78,7 +78,7 @@ func (f *fakeHidrawCommand) lastBinding() mouse.Binding {
 	return f.binding
 }
 
-func TestAutomaticSaveAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *testing.T) {
+func TestExplicitApplyAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *testing.T) {
 	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &fakeHidrawCommand{}
@@ -102,9 +102,13 @@ func TestAutomaticSaveAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *tes
 	next.DPI[0] = 1600
 	service.StageDPI(next)
 	scheduler.Advance(syncDebounceDelay)
+	if command.callCount() != 0 {
+		t.Fatalf("scheduler writes = %d, want 0 before explicit apply", command.callCount())
+	}
+	service.ApplyDPI(context.Background())
 	failed := service.GetSnapshot()
 	if command.callCount() != 1 || failed.Applied.DPI[0] != 1600 || failed.Firmware != "success" || failed.Persistence != "failed" || !failed.RetryAvailable {
-		t.Fatalf("automatic result = %#v, writes=%d; want acknowledged firmware success and retryable persistence failure", failed, command.callCount())
+		t.Fatalf("explicit result = %#v, writes=%d; want acknowledged firmware success and retryable persistence failure", failed, command.callCount())
 	}
 	retried := service.RetryPersistence()
 	persistenceMu.Lock()
@@ -189,8 +193,9 @@ func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
 	first.DPI[0] = 1600
 	service.StageDPI(first)
 	scheduler.Advance(syncDebounceDelay)
+	service.ApplyDPI(context.Background())
 	if command.callCount() != 1 {
-		t.Fatalf("initial automatic writes = %d, want 1", command.callCount())
+		t.Fatalf("initial explicit writes = %d, want 1", command.callCount())
 	}
 
 	refreshed := service.RefreshInventory(context.Background()).Selected
@@ -198,9 +203,10 @@ func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
 	second.DPI[1] = 2400
 	service.StageDPI(second)
 	scheduler.Advance(syncDebounceDelay)
+	service.ApplyDPI(context.Background())
 	got := service.GetSnapshot()
 	if command.callCount() != 2 || got.Applied.DPI[1] != 2400 || got.Firmware != "success" {
-		t.Fatalf("post-reconnect snapshot = %#v, writes=%d; want acknowledged automatic save", got, command.callCount())
+		t.Fatalf("post-reconnect snapshot = %#v, writes=%d; want acknowledged explicit save", got, command.callCount())
 	}
 	persistenceMu.Lock()
 	if saved := persisted[refreshed.ID]; saved.DPI[1] != 2400 {
@@ -209,7 +215,7 @@ func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
 	}
 	if saveCalls != 2 {
 		persistenceMu.Unlock()
-		t.Fatalf("reconnect persistence saves = %d, want one per acknowledged automatic write", saveCalls)
+		t.Fatalf("reconnect persistence saves = %d, want one per acknowledged explicit write", saveCalls)
 	}
 	persistenceMu.Unlock()
 
@@ -515,7 +521,7 @@ func TestSeriallessDuplicateSkipsMigrationAndPersistence(t *testing.T) {
 	}
 }
 
-func TestSeriallessExplicitAndDebouncedApplySaveOnlyAfterACK(t *testing.T) {
+func TestSeriallessExplicitAppliesSaveOnlyAfterACK(t *testing.T) {
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 	if err != nil {
 		t.Fatal(err)
@@ -542,9 +548,10 @@ func TestSeriallessExplicitAndDebouncedApplySaveOnlyAfterACK(t *testing.T) {
 	debounced.DPI[0] = 2400
 	service.StageDPI(ToDTO(debounced))
 	scheduler.Advance(syncDebounceDelay)
+	service.ApplyDPI(context.Background())
 
 	if len(events) != 4 || events[0] != "ack" || events[1] != "save" || events[2] != "ack" || events[3] != "save" {
-		t.Fatalf("events = %#v; want ACK before save for explicit and debounced applies", events)
+		t.Fatalf("events = %#v; want ACK before save for both explicit applies", events)
 	}
 }
 
