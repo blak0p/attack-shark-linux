@@ -106,8 +106,8 @@ func TestAppliedStateIsSavedOnlyAfterAcknowledgementAndRestoredOnRestart(t *test
 		t.Fatalf("ApplyAndPersist() error = %v", err)
 	}
 	restarted, err := store.LoadApplied()
-	if err != nil || restarted.DPI[0] != 1600 || len(command.report) != 52 {
-		t.Fatalf("restarted state = %#v, %v; report length = %d", restarted, err, len(command.report))
+	if err != nil || restarted.DPI[0] != 1600 || len(command.report) != 56 {
+		t.Fatalf("restarted state = %#v, %v; report length = %d; want documented 56-byte baseline", restarted, err, len(command.report))
 	}
 }
 

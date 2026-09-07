@@ -179,3 +179,12 @@ Still to decode (next phases): report `0x05` (sleep/key response), `0x06`
   each model needs its own builder.
 - Battery/status: passive interrupt reads; the app keeps the canonical config
   state after each write.
+
+## Emergency reset ordering
+
+`x6configurator reset` runs before Wails and therefore needs no display or
+window. It selects exactly one validated X6 target, cancels pending desktop
+writes, then sends the documented 56-byte `0x04` DPI baseline, polling `0x06`
+at 1000 Hz, and default `0x08` remapping in that order. Each lane requires its
+own ACK; a failure stops later lanes. The state namespace is deleted only after
+all three acknowledgements succeed.

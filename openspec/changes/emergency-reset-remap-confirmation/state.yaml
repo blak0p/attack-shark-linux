@@ -1,0 +1,33 @@
+schema: gentle-ai.sdd-preproposal/v1
+revision: 1
+change: emergency-reset-remap-confirmation
+exploration:
+  reference: openspec/changes/emergency-reset-remap-confirmation/exploration.md
+  outcome: completed
+research:
+  selected: true
+  request:
+    questions:
+      - "Source-backed evidence for explicit user confirmation before HID configuration writes."
+      - "Source-backed evidence for Wails service/runtime test boundaries that prove reset cancellation and restart behavior."
+    requested_source_classes:
+      - documentation
+      - open-web
+  admission:
+    capability: gentle-ai.sdd-research-capability/v1
+    outcome: denied
+    declared_grants: []
+    observed_exact_grants: []
+  outcome: blocked
+  references:
+    openspec: openspec/changes/emergency-reset-remap-confirmation/research.md
+    engram: null
+product_decisions:
+  status: pending
+  confirmed: []
+proposal_ready: false
+recovery:
+  retained_selected_intent: true
+  canonical_desired_content: "Collect admitted documentation and open-web evidence for explicit user confirmation before HID configuration writes and for Wails service/runtime test boundaries proving reset cancellation and restart behavior."
+  blocked_reason: "The runtime capability declaration supplied no exact grants for documentation or open-web."
+  continuation: "Provide gentle-ai.sdd-research-capability/v1 with exact requested grants, then rerun this selected research phase."

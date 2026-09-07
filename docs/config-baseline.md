@@ -78,3 +78,12 @@ The app numbering **does not match 1:1** the wire group index beyond button 3
 - Deep sleep 10 min → `(10+0.5)×16 = 0xa8` → bytes `03 a8 01`.
 - Polling reset and legacy profile default: 1000 Hz. Durable polling data is
   stored per serial-bearing device only after acknowledgement.
+
+## Emergency recovery
+
+The headless `x6configurator reset` command applies the documented DPI,
+polling, and remap defaults synchronously through the validated hidraw target.
+It preserves all local state on discovery, write, or ACK failure. Only after
+every lane acknowledges does it atomically replace the application state
+directory with a fresh `0700` directory, preventing the next startup from
+restoring prior configuration.

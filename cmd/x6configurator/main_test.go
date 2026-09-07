@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
+	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"github.com/blak0p/attack-shark-linux/internal/x6"
@@ -111,6 +112,31 @@ func TestNewDesktopServiceUsesDurableAppliedState(t *testing.T) {
 	snapshot := service.GetSnapshot()
 	if snapshot.Pending.DPI[0] != 800 || snapshot.Applied.DPI[0] != 800 {
 		t.Fatalf("initial snapshot = %#v, want the default persisted DPI configuration", snapshot)
+	}
+}
+
+func TestComposeEmergencyResetBuildsOneRunnerForTheService(t *testing.T) {
+	dataDir := t.TempDir()
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := &targetedCommandFake{}
+	inventory := mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{
+		VendorID: 0x1D57, ProductID: 0xFA60, Serial: "reset-device", Path: "/dev/hidraw0",
+	}}}, command)
+	service := desktop.Compose(nil, nil, configstore.New(
+		filepath.Join(dataDir, "applied-dpi.json"),
+		filepath.Join(dataDir, "factory-defaults.json"),
+	)).AttachInventory(inventory)
+	service.RefreshInventory(context.Background())
+
+	result, err := composeEmergencyReset(dataDir, inventory, service).Run(context.Background())
+	if err != nil || result.Cleanup.State != "success" {
+		t.Fatalf("reset result = %#v, %v; want successful cleanup", result, err)
+	}
+	if calls, _ := command.observations(); calls != 3 {
+		t.Fatalf("reset commands = %d; want exactly one runner's three lanes", calls)
 	}
 }
 
@@ -354,13 +380,21 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		}
 	}
 
-	models, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
-	if err != nil {
-		t.Fatalf("read generated desktop model binding: %v", err)
-	}
-	for _, model := range []string{"class PollingSnapshot", "class LightingSnapshot"} {
-		if !strings.Contains(string(models), model) {
-			t.Errorf("generated Wails model binding must expose %s", model)
+	for _, path := range []string{
+		"../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts",
+		"frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts",
+	} {
+		models, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read generated desktop model binding %q: %v", path, err)
+		}
+		for _, model := range []string{"class PollingSnapshot", "class LightingSnapshot"} {
+			if !strings.Contains(string(models), model) {
+				t.Errorf("generated Wails model binding %q must expose %s", path, model)
+			}
+		}
+		if !strings.Contains(string(models), `"Error": Error`) {
+			t.Errorf("generated Wails polling binding %q must expose the typed Error field", path)
 		}
 	}
 

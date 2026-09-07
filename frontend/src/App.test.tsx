@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type Snapshot } from "./App";
+import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 
 afterEach(cleanup);
@@ -31,6 +31,7 @@ const pollingSnapshot = (overrides: Partial<PollingSnapshot> = {}): PollingSnaps
   Persisted: 1000,
   Factory: 1000,
   Revision: 0,
+  Error: { Code: "" },
   Firmware: "success",
   Persistence: "success",
   ...overrides,
@@ -57,25 +58,37 @@ const lightingSnapshot = (overrides: Partial<LightingSnapshot> = {}): LightingSn
   ...overrides,
 });
 
+const remapSnapshot = (overrides: Partial<RemapSnapshot> = {}): RemapSnapshot => ({
+  Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] },
+  Actions: ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire"], Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" },
+  ...overrides,
+});
+
 const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
 
 const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => ({
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
-  GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
+	GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
+	GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot()),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
 	StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
-  StagePollingRate: vi.fn().mockImplementation(async (rate) => pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" })),
-  StageLighting: vi.fn().mockImplementation(async (selection) => lightingSnapshot({ Pending: selection, Revision: 1 })),
-  ApplyLighting: vi.fn().mockResolvedValue(lightingSnapshot({ Applied: lightingSnapshot().Pending, Firmware: "success" })),
+  ApplyDPI: vi.fn().mockResolvedValue(initial),
+   StagePollingRate: vi.fn().mockImplementation(async (rate) => pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" })),
+  ApplyPollingRate: vi.fn().mockResolvedValue(pollingSnapshot()),
+	StageLighting: vi.fn().mockImplementation(async (selection) => lightingSnapshot({ Pending: selection, Revision: 1 })),
+	StageRemap: vi.fn().mockResolvedValue(remapSnapshot()),
+	ApplyLighting: vi.fn().mockResolvedValue(lightingSnapshot({ Applied: lightingSnapshot().Pending, Firmware: "success" })),
+	RetryRemapPersistence: vi.fn().mockResolvedValue(remapSnapshot()),
   RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
-  ResetToFactory: vi.fn().mockResolvedValue(initial),
+  ResetToFactory: vi.fn().mockResolvedValue({ Lanes: [], Cleanup: { Lane: "cleanup", State: "success", Code: "" }, Error: { Code: "" }, RetryAvailable: false }),
   RetryPersistence: vi.fn().mockResolvedValue(initial),
   OnStatusEvent: vi.fn().mockReturnValue(() => {}),
 	OnConfiguration: vi.fn().mockReturnValue(() => {}),
 	OnPollingConfiguration: vi.fn().mockReturnValue(() => {}),
+	OnRemapConfiguration: vi.fn().mockReturnValue(() => {}),
   ...overrides,
 });
 
@@ -174,20 +187,34 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Stage 1" }));
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ ActiveStage: 1 })));
-	expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
+	expect(screen.getByText("DPI change staged. Apply DPI to send it to the device.")).toBeInTheDocument();
   });
 
-  it("stages factory defaults across configuration lanes on Reset", async () => {
+  it("requires confirmation before factory reset and reports a reset failure", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Reset to factory/ }));
 
+    expect(service.ResetToFactory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm factory reset" }));
+
     await waitFor(() => expect(service.ResetToFactory).toHaveBeenCalledOnce());
-	expect(screen.getByText("Factory defaults queued. They will apply after one second of inactivity.")).toBeInTheDocument();
+    expect(screen.getByText("Factory reset completed.")).toBeInTheDocument();
   });
 
-  it("queues a DPI edit for automatic synchronization without an explicit Save control", async () => {
+  it("cancels a displayed factory reset without calling the desktop service", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Reset to factory/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel factory reset" }));
+
+    expect(service.ResetToFactory).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Confirm factory reset" })).not.toBeInTheDocument();
+  });
+
+  it("stages a DPI edit until the explicit Apply DPI action", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
@@ -195,8 +222,8 @@ describe("App", () => {
     fireEvent.change(input, { target: { value: "1600" } });
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: expect.arrayContaining([1600]) })));
-	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Synchronization queued. It will apply after one second of inactivity.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply DPI" })).toBeInTheDocument();
+    expect(screen.getByText("DPI change staged. Apply DPI to send it to the device.")).toBeInTheDocument();
   });
 
   it("renders distinct firmware and persistence outcomes with a persistence-only retry", async () => {
@@ -413,7 +440,7 @@ describe("App", () => {
     render(<App service={serviceFor(snapshot())} />);
 
     await screen.findByText("Device available");
-    expect(screen.queryByRole("button", { name: /macro|profile|remap/i })).not.toBeInTheDocument();
+	 expect(screen.queryByRole("button", { name: /macro|profile/i })).not.toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
@@ -494,13 +521,14 @@ describe("App", () => {
 		expect(screen.queryByText(/session-only device/i)).not.toBeInTheDocument();
 	});
 
-  it("disables polling controls when no device is selected and resets through the combined factory API", async () => {
+  it("disables polling controls when no device is selected and confirms the combined factory API", async () => {
     const service = serviceFor(snapshot(), {
-      ResetToFactory: vi.fn().mockResolvedValue(snapshot()),
+      ResetToFactory: vi.fn().mockResolvedValue({ Lanes: [], Cleanup: { Lane: "cleanup", State: "success", Code: "" }, Error: { Code: "" }, RetryAvailable: false }),
     });
     render(<App service={service} />);
     await screen.findByRole("radiogroup", { name: "Polling rate" });
     fireEvent.click(screen.getByRole("button", { name: /Reset to factory/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm factory reset" }));
     await waitFor(() => expect(service.ResetToFactory).toHaveBeenCalledOnce());
 
     cleanup();

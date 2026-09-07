@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -43,9 +42,39 @@ func (s x6InventorySource) ProfileValid(ctx context.Context, candidate transport
 }
 
 func main() {
+	exitCode := runCLI(os.Args[1:], cliDependencies{
+		startWails: startWails,
+		reset:      emergencyReset,
+	})
+	if exitCode != exitSuccess {
+		os.Exit(exitCode)
+	}
+}
+
+// emergencyReset deliberately builds no Wails application or window. It uses the
+// same validated hidraw inventory/command boundary as desktop applies.
+func emergencyReset(ctx context.Context) error {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatalf("locate user configuration directory: %v", err)
+		return err
+	}
+	dataDir = filepath.Join(dataDir, "attack-shark-linux")
+	backend := hidlinux.NewHidrawBackend()
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		return err
+	}
+	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend}, backend)
+	store := configstore.New(filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"))
+	service := desktop.Compose(nil, nil, store).AttachInventory(inventory)
+	_, err = composeEmergencyReset(dataDir, inventory, service).Run(ctx)
+	return err
+}
+
+func startWails() error {
+	dataDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
 	}
 
 	backend := hidlinux.NewHidrawBackend()
@@ -76,8 +105,9 @@ func main() {
 	window.Center()
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 func newDesktopService(dataDir string) *desktop.Service {
@@ -127,7 +157,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.DPIConfig = config
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 2, combined)
+		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, combined)
 	}
 	loadPolling := func(binding mouse.Binding) (x6.DeviceConfig, error) {
 		config := x6.DefaultDeviceConfig()
@@ -140,7 +170,19 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.PollingRate = config.PollingRate
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 2, combined)
+		if config.Remap != nil {
+			combined.Remap = config.Remap
+		}
+		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, combined)
 	}
-	return desktop.Compose(status, writer, store).AttachInventory(inventory).AttachMigrator(migrate).AttachDevicePersistence(loadDevice, saveDevice).AttachPollingPersistence(loadPolling, savePolling)
+	service := desktop.Compose(status, writer, store).
+		AttachInventory(inventory).
+		AttachMigrator(migrate).
+		AttachDevicePersistence(loadDevice, saveDevice).
+		AttachPollingPersistence(loadPolling, savePolling)
+	return service.AttachResetRunner(composeEmergencyReset(dataDir, inventory, service))
+}
+
+func composeEmergencyReset(dataDir string, inventory *mouse.TargetedService, service *desktop.Service) *desktop.EmergencyReset {
+	return desktop.NewEmergencyReset(inventory, service, configstore.NewStatePurger(dataDir))
 }

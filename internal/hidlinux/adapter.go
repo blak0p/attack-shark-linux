@@ -24,7 +24,7 @@ const (
 	// when it starts immediately after one was consumed. A shorter deadline
 	// races the report cadence and fails with status_read_failed.
 	statusReadDeadline   = 3 * time.Second
-	dpiReportLength      = 52
+	dpiReportLength      = 56
 	setReportRequestType = 0x21
 	setReportRequest     = 0x09
 	dpiReportValue       = 0x0304

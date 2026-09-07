@@ -3,7 +3,7 @@ package x6
 
 import "fmt"
 
-const DPIReportLength = 52
+const DPIReportLength = 56
 
 type DPIConfig struct {
 	AngleControl, RippleControl bool
@@ -20,6 +20,9 @@ func DefaultDPIConfig() DPIConfig {
 	// 0xff/0xff00/0xff0000/0xffff/0xffff00/0xff00ff/0x40ff/0xffffff.
 	return DPIConfig{StageMask: 0x3f, LiftDistance: 1, DPI: [8]int{800, 1200, 1600, 3200, 5600, 26000, 50, 50}, ActiveStage: 4, Colors: [8][3]byte{{0xff, 0, 0}, {0, 0xff, 0}, {0, 0, 0xff}, {0xff, 0xff, 0}, {0, 0xff, 0xff}, {0xff, 0, 0xff}, {0xff, 0x40, 0}, {0xff, 0xff, 0xff}}}
 }
+
+// DocumentedResetDPIConfig returns the documented factory baseline for report 0x04.
+func DocumentedResetDPIConfig() DPIConfig { return DefaultDPIConfig() }
 
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
 	if config.StageMask == 0 || config.LiftDistance > 1 || config.ActiveStage < 1 || config.ActiveStage > 8 {

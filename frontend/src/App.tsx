@@ -8,8 +8,9 @@ import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
 import { MouseFeaturesPanel } from "./components/panels/MouseFeaturesPanel";
 import { LightingPanel } from "./components/panels/LightingPanel";
+import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
-export type { ConfigurationEvent, DesktopService, LightingSnapshot, PollingConfigurationEvent, PollingSnapshot, Snapshot } from "./desktop-contract";
+export type { ConfigurationEvent, DesktopService, LightingSnapshot, PollingConfigurationEvent, PollingSnapshot, RemapSnapshot, Snapshot } from "./desktop-contract";
 
 // Protocol-derived bounds: the official Windows app caps its DPI slider at
 // 520 (= DPI/50), matching the PAW3395 sensor's 26000 max (docs/app-x6.md).
@@ -33,7 +34,7 @@ const speedFill = (index: number, count: number) => count > 1 ? `${Math.round((i
 
 export function App({ service }: { service: DesktopService }) {
   const { model, actions } = useDesktopWorkspace(service);
-  const { snapshot, polling, lighting, inventory, ready, notice } = model;
+		const { snapshot, polling, lighting, remap, inventory, ready, notice, resetConfirmation } = model;
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
   const connected = ready;
@@ -75,7 +76,8 @@ export function App({ service }: { service: DesktopService }) {
             <strong>{connected ? "Device available" : "Device unavailable"}</strong>
             <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
             {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
-          </div>
+	          </div>
+					<button type="button" disabled={!ready} onClick={actions.applyDPI}>Apply DPI</button>
           {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
           {snapshot.Firmware && <span role="status" aria-label={snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}>{snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}</span>}
           {snapshot.Persistence && <span role="status">{snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}</span>}
@@ -155,15 +157,16 @@ export function App({ service }: { service: DesktopService }) {
                 </label>
               ))}
             </div>
-            <div className="polling-state" role="status" aria-label="Polling status">
+	            <div className="polling-state" role="status" aria-label="Polling status">
               {polling.Firmware === "pending" ? <><span className="pending-spinner" aria-hidden="true" />Applying…</> : polling.Firmware === "failed" ? <>Polling change failed</> : <>Applied {polling.Applied} Hz</>}
               {polling.Persistence === "failed" && <span>Polling preference was not saved.</span>}
               {polling.RetryAvailable && <button type="button" onClick={actions.retryPollingPersistence}>Retry polling persistence</button>}
-            </div>
+	            </div>
+					<button type="button" disabled={!ready} onClick={actions.applyPollingRate}>Apply polling</button>
           </fieldset></PollingPanel>}
         </DpiPanel></WorkspaceView>
 
-        <WorkspaceView id="controls" title="Controls"><MouseFeaturesPanel><fieldset className="polling-control" disabled={!ready}>
+		<WorkspaceView id="controls" title="Controls"><MouseFeaturesPanel><fieldset className="polling-control" disabled={!ready}>
             <legend>Mouse features</legend>
             <div className="polling-options">
               <label className="polling-option">
@@ -196,7 +199,7 @@ export function App({ service }: { service: DesktopService }) {
                 </select>
               </label>
             </div>
-          </fieldset></MouseFeaturesPanel></WorkspaceView>
+		  </fieldset>{remap && <ButtonRemapPanel remap={remap} ready={ready} onStage={actions.stageRemap} onApply={actions.applyRemap} onDiscard={actions.discardRemap} />}</MouseFeaturesPanel></WorkspaceView>
 
         <WorkspaceView id="lighting" title="Lighting">{lighting && <LightingPanel>
             <h3 id="lighting-title">Lighting</h3>
@@ -254,7 +257,7 @@ export function App({ service }: { service: DesktopService }) {
             </div>
           </LightingPanel>}</WorkspaceView>
 
-        <WorkspaceView id="device" title="Device"><ResetPanel><button className="reset-btn" disabled={!ready} onClick={actions.reset}>Reset to factory</button></ResetPanel></WorkspaceView>
+        <WorkspaceView id="device" title="Device"><ResetPanel confirmation={resetConfirmation} onConfirm={actions.confirmReset} onCancel={actions.cancelReset}><button className="reset-btn" disabled={!ready} onClick={actions.requestReset}>Reset to factory</button></ResetPanel></WorkspaceView>
 
         <p aria-live="polite" className="notice">{notice}</p>
     </WorkspaceShell>
