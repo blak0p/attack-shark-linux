@@ -48,6 +48,12 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
   return { service, statusListeners, configurationListeners, pollingListeners, remapListeners, unsubscribeStatus, unsubscribeConfiguration, unsubscribePolling, unsubscribeRemap };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 describe("useDesktopWorkspace", () => {
   it("loads all workspace data, filters mismatched events, stages actions, and cleans up subscriptions", async () => {
     const harness = serviceFor();
@@ -66,7 +72,8 @@ describe("useDesktopWorkspace", () => {
 
     await act(async () => result.current.actions.stageDPI(0, 1600));
     expect(harness.service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: [1600, 1200] }));
-    expect(result.current.model.notice).toBe("DPI change staged. Apply DPI to send it to the device.");
+    expect(harness.service.ApplyDPI).toHaveBeenCalledOnce();
+    expect(result.current.model.notice).toBe("DPI applied.");
 
     unmount();
     expect(harness.unsubscribeStatus).toHaveBeenCalledOnce();
@@ -81,19 +88,53 @@ describe("useDesktopWorkspace", () => {
     await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
 
     await act(async () => result.current.actions.stagePollingRate(500));
-    expect(result.current.model.notice).toBe("Polling change staged. Apply polling to send it to the device.");
+        await waitFor(() => expect(harness.service.ApplyPollingRate).toHaveBeenCalledOnce());
+    expect(harness.service.ApplyPollingRate).toHaveBeenCalledOnce();
+    expect(result.current.model.notice).toBe("Polling applied.");
     await act(async () => result.current.actions.stageLighting({ Mode: 0x10, TemplateID: "fixed-green" }));
-    expect(result.current.model.notice).toBe("Lighting selection staged. Apply lighting to send it to the device.");
+    expect(harness.service.ApplyLighting).toHaveBeenCalledOnce();
   });
 
-  it("keeps DPI edits staged until explicit confirmation", async () => {
+  it("keeps the blocking state until every overlapping automatic apply settles", async () => {
+  const dpiStage = deferred<ReturnType<typeof snapshot>>();
+  const dpiApply = deferred<ReturnType<typeof snapshot>>();
+  const pollingApply = deferred<ReturnType<typeof polling>>();
+  const harness = serviceFor({
+    StageDPI: vi.fn().mockReturnValue(dpiStage.promise),
+    ApplyDPI: vi.fn().mockReturnValue(dpiApply.promise),
+    ApplyPollingRate: vi.fn().mockReturnValue(pollingApply.promise),
+  });
+  const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+  await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
+
+  await act(async () => {
+    result.current.actions.stageDPI(0, 1600);
+    result.current.actions.stagePollingRate(500);
+    await Promise.resolve();
+  });
+  expect(result.current.model.automaticApplyBusy).toBe(true);
+
+  await waitFor(() => expect(harness.service.ApplyPollingRate).toHaveBeenCalledOnce());
+
+      await act(async () => pollingApply.resolve(polling({ Desired: 500, Applied: 500 })));
+  expect(result.current.model.automaticApplyBusy).toBe(true);
+
+  await act(async () => dpiStage.resolve(snapshot({ Pending: { ...dpi, DPI: [1600, 1200] } })));
+  expect(harness.service.ApplyDPI).toHaveBeenCalledOnce();
+  expect(result.current.model.automaticApplyBusy).toBe(true);
+
+  await act(async () => dpiApply.resolve(snapshot({ Firmware: "success" })));
+  expect(result.current.model.automaticApplyBusy).toBe(false);
+});
+
+it("applies DPI edits directly after staging", async () => {
     const harness = serviceFor();
     const { result } = renderHook(() => useDesktopWorkspace(harness.service));
     await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
 
     await act(async () => result.current.actions.stageDPI(0, 1600));
 
-    expect(result.current.model.notice).toBe("DPI change staged. Apply DPI to send it to the device.");
-    expect(harness.service.ApplyDPI).not.toHaveBeenCalled();
+    expect(result.current.model.notice).toBe("DPI applied.");
+    expect(harness.service.ApplyDPI).toHaveBeenCalledOnce();
   });
 });

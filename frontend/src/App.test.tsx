@@ -66,7 +66,12 @@ const remapSnapshot = (overrides: Partial<RemapSnapshot> = {}): RemapSnapshot =>
 
 const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
 
-const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => ({
+const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => {
+  let pendingDPI = initial.Pending;
+  let desiredPolling = pollingSnapshot().Desired;
+  let pendingLighting = lightingSnapshot().Pending;
+
+  return {
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
 	GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
@@ -74,13 +79,13 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
-	StageDPI: vi.fn().mockImplementation(async (next) => ({ ...initial, Pending: next, Revision: initial.Revision + 1 })),
-  ApplyDPI: vi.fn().mockResolvedValue(initial),
-   StagePollingRate: vi.fn().mockImplementation(async (rate) => pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" })),
-  ApplyPollingRate: vi.fn().mockResolvedValue(pollingSnapshot()),
-	StageLighting: vi.fn().mockImplementation(async (selection) => lightingSnapshot({ Pending: selection, Revision: 1 })),
+	StageDPI: vi.fn().mockImplementation(async (next) => { pendingDPI = next; return { ...initial, Pending: next, Revision: initial.Revision + 1 }; }),
+  ApplyDPI: vi.fn().mockImplementation(async () => ({ ...initial, Applied: pendingDPI, Pending: pendingDPI, Firmware: "success" })),
+   StagePollingRate: vi.fn().mockImplementation(async (rate) => { desiredPolling = rate; return pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" }); }),
+  ApplyPollingRate: vi.fn().mockImplementation(async () => pollingSnapshot({ Desired: desiredPolling, Applied: desiredPolling, Firmware: "success", Persistence: "success" })),
+	StageLighting: vi.fn().mockImplementation(async (selection) => { pendingLighting = selection; return lightingSnapshot({ Pending: selection, Revision: 1 }); }),
 	StageRemap: vi.fn().mockResolvedValue(remapSnapshot()),
-	ApplyLighting: vi.fn().mockResolvedValue(lightingSnapshot({ Applied: lightingSnapshot().Pending, Firmware: "success" })),
+	ApplyLighting: vi.fn().mockImplementation(async () => lightingSnapshot({ Pending: pendingLighting, Applied: pendingLighting, Firmware: "success" })),
 	RetryRemapPersistence: vi.fn().mockResolvedValue(remapSnapshot()),
   RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
   ResetToFactory: vi.fn().mockResolvedValue({ Lanes: [], Cleanup: { Lane: "cleanup", State: "success", Code: "" }, Error: { Code: "" }, RetryAvailable: false }),
@@ -90,7 +95,14 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
 	OnPollingConfiguration: vi.fn().mockReturnValue(() => {}),
 	OnRemapConfiguration: vi.fn().mockReturnValue(() => {}),
   ...overrides,
-});
+  };
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
 
 const chooseLightingEffect = async (label: string) => {
   const combobox = await screen.findByRole("combobox", { name: "Lighting effect" });
@@ -186,17 +198,45 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Stage 1" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("switches the active stage by staging a config change without applying it", async () => {
+  it("applies an active stage change directly to the device", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Stage 1" }));
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ ActiveStage: 1 })));
-	expect(screen.getByText("DPI change staged. Apply DPI to send it to the device.")).toBeInTheDocument();
+	await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
+	expect(screen.getByText("DPI applied.")).toBeInTheDocument();
   });
 
-  it("requires confirmation before factory reset and reports a reset failure", async () => {
+  it("blocks the full workspace until overlapping automatic configuration applies settle", async () => {
+  const dpiStage = deferred<Snapshot>();
+  const dpiApply = deferred<Snapshot>();
+  const service = serviceFor(snapshot(), {
+    StageDPI: vi.fn().mockReturnValue(dpiStage.promise),
+    ApplyDPI: vi.fn().mockReturnValue(dpiApply.promise),
+  });
+  render(<App service={service} />);
+
+  fireEvent.change(await screen.findByRole("slider", { name: "Stage 1 DPI" }), { target: { value: "1600" } });
+  await waitFor(() => expect(service.StageDPI).toHaveBeenCalledOnce());
+  expect(screen.getByText("Applying configuration…")).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Applying configuration…" })).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Applying configuration…" })).toHaveAttribute("aria-live", "polite");
+  expect(screen.getByRole("main").closest(".workspace-shell")).toHaveAttribute("aria-busy", "true");
+  expect(document.querySelector(".workspace-shell-content")).toHaveAttribute("inert");
+
+  await act(async () => dpiStage.resolve(snapshot({ Pending: { ...configuration(), DPI: [1600, ...configuration().DPI.slice(1)] } })));
+  await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
+  expect(screen.getByText("Applying configuration…")).toBeInTheDocument();
+
+  await act(async () => dpiApply.resolve(snapshot({ Firmware: "success" })));
+  await waitFor(() => expect(screen.queryByText("Applying configuration…")).not.toBeInTheDocument());
+  expect(screen.getByRole("main").closest(".workspace-shell")).toHaveAttribute("aria-busy", "false");
+  expect(document.querySelector(".workspace-shell-content")).not.toHaveAttribute("inert");
+});
+
+it("requires confirmation before factory reset and reports a reset failure", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
@@ -220,7 +260,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Confirm factory reset" })).not.toBeInTheDocument();
   });
 
-  it("stages a DPI edit until the explicit Apply DPI action", async () => {
+  it("applies a DPI edit directly without a dedicated Apply button", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
@@ -228,8 +268,9 @@ describe("App", () => {
     fireEvent.change(input, { target: { value: "1600" } });
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: expect.arrayContaining([1600]) })));
-    expect(screen.getByRole("button", { name: "Apply DPI" })).toBeInTheDocument();
-    expect(screen.getByText("DPI change staged. Apply DPI to send it to the device.")).toBeInTheDocument();
+    await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: "Apply DPI" })).not.toBeInTheDocument();
+    expect(screen.getByText("DPI applied.")).toBeInTheDocument();
   });
 
   it("renders distinct firmware and persistence outcomes with a persistence-only retry", async () => {
@@ -466,7 +507,7 @@ describe("App", () => {
     expect(screen.queryByText(/live.*polling|polling.*live/i)).not.toBeInTheDocument();
   });
 
-  it("refreshes pending polling feedback from a debounced completion event without remounting", async () => {
+  it("applies polling changes directly and refreshes completion events without remounting", async () => {
 	const listeners: Array<(event: PollingConfigurationEvent) => void> = [];
     const service = serviceFor(snapshot(), {
       StagePollingRate: vi.fn().mockResolvedValue(pollingSnapshot({ Desired: 500, Applied: 1000, Firmware: "pending", Persistence: "" })),
@@ -477,8 +518,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "500 Hz" }));
 
     await waitFor(() => expect(service.StagePollingRate).toHaveBeenCalledWith(500));
-    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applying…");
-    expect(screen.getByRole("status", { name: "Polling status" }).querySelector("[aria-hidden='true']")).toBeInTheDocument();
+    await waitFor(() => expect(service.ApplyPollingRate).toHaveBeenCalledOnce());
 
 	await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success" }) }));
     expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz");
@@ -675,7 +715,7 @@ describe("App", () => {
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-three" }));
   });
 
-  it("stages a lighting selection and applies it only when explicitly requested", async () => {
+  it("applies lighting selections directly without a dedicated Apply button", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
@@ -683,10 +723,8 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("slider", { name: "Breathing DPI speed" })).toBeInTheDocument());
     fireEvent.change(screen.getByRole("slider", { name: "Breathing DPI speed" }), { target: { value: "1" } });
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
-    expect(service.ApplyLighting).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Apply lighting" }));
-    await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledOnce());
+    await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Apply lighting" })).not.toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Lighting status" })).toHaveTextContent("Lighting applied");
   });
 
@@ -696,7 +734,7 @@ describe("App", () => {
     });
     render(<App service={service} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Apply lighting" }));
+    await chooseLightingEffect("Fixed");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Lighting application failed: apply failed");
     expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
