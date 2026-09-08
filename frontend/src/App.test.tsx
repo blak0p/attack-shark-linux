@@ -92,6 +92,12 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   ...overrides,
 });
 
+const chooseLightingEffect = async (label: string) => {
+  const combobox = await screen.findByRole("combobox", { name: "Lighting effect" });
+  if (combobox.getAttribute("aria-expanded") !== "true") fireEvent.click(combobox);
+  fireEvent.click(await screen.findByRole("option", { name: label }));
+};
+
 describe("App", () => {
   it("shows available connection and supplied battery information", async () => {
     render(<App service={serviceFor(snapshot())} />);
@@ -599,19 +605,22 @@ describe("App", () => {
 
     const effect = await screen.findByRole("combobox", { name: "Lighting effect" });
     expect(effect).toBeInTheDocument();
-    expect(effect.querySelectorAll("option")).toHaveLength(7);
+    expect(effect).not.toBeInstanceOf(HTMLSelectElement);
+    fireEvent.click(effect);
+    expect(screen.getByRole("listbox").querySelectorAll('[role="option"]')).toHaveLength(7);
     expect(screen.getByRole("option", { name: "Off" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Fixed" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Breathing DPI" })).toBeInTheDocument();
+    fireEvent.click(effect);
     expect(screen.getByRole("group", { name: "Lighting color" })).toBeInTheDocument();
     expect(screen.getAllByRole("radio", { name: "#00FF00" })).toHaveLength(1);
     expect(screen.queryByRole("slider", { name: /speed/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(document.querySelector('input[type="color"]')).not.toBeInTheDocument();
 
-    fireEvent.change(effect, { target: { value: "32" } });
+    await chooseLightingEffect("Breathing");
     await waitFor(() => expect(screen.getAllByRole("radio", { name: /#00FF00|#FE5EF9|#FF7F00|#FFFF00/ })).toHaveLength(4));
-    fireEvent.change(effect, { target: { value: "48" } });
+    await chooseLightingEffect("Neon");
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x30, TemplateID: "neon-one" }));
     expect(screen.getByRole("slider", { name: "Neon speed" })).toBeInTheDocument();
     expect(screen.queryByText(/Variant/)).not.toBeInTheDocument();
@@ -626,7 +635,7 @@ describe("App", () => {
     expect(screen.getByRole("radio", { name: "#00FF00" })).toBeEnabled();
     expect(screen.getAllByRole("radio").filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(4);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Lighting effect" }), { target: { value: "32" } });
+    await chooseLightingEffect("Breathing");
     await waitFor(() => expect(group.querySelectorAll("input[type='radio']")).toHaveLength(5));
     expect([...group.querySelectorAll("input[type='radio']")].filter((radio) => !(radio as HTMLInputElement).disabled)).toHaveLength(4);
   });
@@ -637,7 +646,8 @@ describe("App", () => {
 
     const group = await screen.findByRole("group", { name: "Lighting color" });
     for (const mode of [0, 48, 64, 80, 96]) {
-      fireEvent.change(screen.getByRole("combobox", { name: "Lighting effect" }), { target: { value: String(mode) } });
+      const labels = new Map([[0, "Off"], [48, "Neon"], [64, "Color Breathing"], [80, "Static DPI"], [96, "Breathing DPI"]]);
+      await chooseLightingEffect(labels.get(mode)!);
       await waitFor(() => expect([...group.querySelectorAll("input[type='radio']")].every((radio) => (radio as HTMLInputElement).disabled)).toBe(true));
     }
 
@@ -656,7 +666,7 @@ describe("App", () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    fireEvent.change(await screen.findByRole("combobox", { name: "Lighting effect" }), { target: { value: "96" } });
+    await chooseLightingEffect("Breathing DPI");
     const slider = await screen.findByRole("slider", { name: "Breathing DPI speed" }) as HTMLInputElement;
     expect(slider.min).toBe("0");
     expect(slider.max).toBe("2");
@@ -669,7 +679,7 @@ describe("App", () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    fireEvent.change(await screen.findByRole("combobox", { name: "Lighting effect" }), { target: { value: "96" } });
+    await chooseLightingEffect("Breathing DPI");
     await waitFor(() => expect(screen.getByRole("slider", { name: "Breathing DPI speed" })).toBeInTheDocument());
     fireEvent.change(screen.getByRole("slider", { name: "Breathing DPI speed" }), { target: { value: "1" } });
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
