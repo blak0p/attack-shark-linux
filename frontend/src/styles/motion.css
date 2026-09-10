@@ -1,1 +1,101 @@
-.workspace-rail { transition:width var(--motion-deliberate) var(--ease-standard), padding var(--motion-deliberate) var(--ease-standard); }.workspace-rail a, button, select, .polling-option, .lighting-option { transition:background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); } button:not(:disabled):active { transform:translateY(1px); } .pending-spinner { display:inline-block; width:.8rem; height:.8rem; border:2px solid var(--border-strong); border-top-color:var(--accent-primary); border-radius:50%; animation:pending-spin 700ms linear infinite; } @keyframes view-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } } @keyframes pending-spin { to { transform:rotate(1turn); } } @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:1ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; transition-duration:1ms!important; } .pending-spinner { animation:none; } }
+.workspace-rail {
+  transition: width var(--motion-deliberate) var(--ease-standard),
+    padding var(--motion-deliberate) var(--ease-standard);
+}
+
+.workspace-rail a,
+button,
+select,
+.polling-option,
+.lighting-option {
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.polling-option:has(input:not(:disabled)):hover,
+.lighting-option:has(input:not(:disabled)):hover {
+  transform: translateY(-1px);
+}
+
+.workspace-view {
+  animation: view-enter var(--motion-standard) var(--ease-standard) both;
+}
+
+.status,
+.inventory-device,
+.configuration-state,
+[role="status"],
+.notice {
+  animation: feedback-enter var(--motion-fast) var(--ease-standard) both;
+}
+
+.pending-spinner {
+  display: inline-block;
+  width: .8rem;
+  height: .8rem;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: pending-spin var(--motion-deliberate) linear infinite;
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes feedback-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-.25rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pending-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .workspace-view,
+  .status,
+  .inventory-device,
+  .configuration-state,
+  [role="status"],
+  .notice,
+  button:not(:disabled):active,
+  .polling-option:active,
+  .lighting-option:active {
+    transform: none !important;
+  }
+}
