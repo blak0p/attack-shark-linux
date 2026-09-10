@@ -8,6 +8,7 @@ import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
 import { MouseFeaturesPanel } from "./components/panels/MouseFeaturesPanel";
 import { LightingPanel } from "./components/panels/LightingPanel";
+import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
 import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
 export type { ConfigurationEvent, DesktopService, LightingSnapshot, PollingConfigurationEvent, PollingSnapshot, RemapSnapshot, Snapshot } from "./desktop-contract";
@@ -205,17 +206,12 @@ export function App({ service }: { service: DesktopService }) {
             <h3 id="lighting-title">Lighting</h3>
             <label className="lighting-effect-select">
               <span>Effect</span>
-              <select
-                aria-label="Lighting effect"
-                value={String(lighting.Pending.Mode)}
+              <LightingEffectSelect
+                effects={lighting.Effects}
+                value={lighting.Pending.Mode}
                 disabled={!ready}
-                onChange={(event) => {
-                  const effect = lighting.Effects.find((candidate) => String(candidate.Mode) === event.target.value);
-                  if (effect) actions.stageLighting({ Mode: effect.Mode, TemplateID: effect.DefaultTemplateID });
-                }}
-              >
-                {lighting.Effects.map((effect) => <option key={effect.Mode} value={String(effect.Mode)}>{effect.Label}</option>)}
-              </select>
+                onChange={(effect) => actions.stageLighting({ Mode: effect.Mode, TemplateID: effect.DefaultTemplateID })}
+              />
             </label>
             {lightingEffect && lightingEffect.SpeedVariants.length > 1 && <fieldset className="lighting-speed" disabled={!ready}>
               <legend>{lightingEffect.Label} speed</legend>
