@@ -317,6 +317,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     render(<App service={service} />);
 
     await screen.findByText("Device available");
+    await act(async () => {});
     await act(async () => listeners[0]({
       Binding: { ...selectedDevice, ID: { ...selectedDevice.ID, Serial: "bravo" }, Path: "/dev/hidraw1" },
       Snapshot: snapshot({ Applied: { ...configuration(), Colors: [[12, 34, 56], ...configuration().Colors!.slice(1)] } }),
