@@ -35,7 +35,7 @@ const speedFill = (index: number, count: number) => count > 1 ? `${Math.round((i
 
 export function App({ service }: { service: DesktopService }) {
   const { model, actions } = useDesktopWorkspace(service);
-		const { snapshot, polling, lighting, remap, inventory, ready, notice, resetConfirmation } = model;
+		const { snapshot, polling, lighting, remap, inventory, ready, notice, resetConfirmation, automaticApplyBusy } = model;
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
   const connected = ready;
@@ -51,7 +51,7 @@ export function App({ service }: { service: DesktopService }) {
   const slots = lightingSlots(lightingEffect, snapshot.Applied.Colors);
 
   return (
-    <WorkspaceShell>
+    <WorkspaceShell busy={automaticApplyBusy}>
         <TopBar>
 	          {inventory && inventory.Devices.filter((device) => device.Eligible).length > 1 && (
             <label>
@@ -78,7 +78,7 @@ export function App({ service }: { service: DesktopService }) {
             <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
             {errorCode && <span role="alert">{feedbackFor(errorCode)}</span>}
 	          </div>
-					<button type="button" disabled={!ready} onClick={actions.applyDPI}>Apply DPI</button>
+
           {inventory && !ready && <p className="configuration-state" role="status">Receiver detected, configuration unavailable.</p>}
           {snapshot.Firmware && <span role="status" aria-label={snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}>{snapshot.Firmware === "success" ? "Firmware applied" : snapshot.Firmware === "pending" ? "Firmware synchronization queued" : "Firmware synchronization failed"}</span>}
           {snapshot.Persistence && <span role="status">{snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}</span>}
@@ -163,7 +163,7 @@ export function App({ service }: { service: DesktopService }) {
               {polling.Persistence === "failed" && <span>Polling preference was not saved.</span>}
               {polling.RetryAvailable && <button type="button" onClick={actions.retryPollingPersistence}>Retry polling persistence</button>}
 	            </div>
-					<button type="button" disabled={!ready} onClick={actions.applyPollingRate}>Apply polling</button>
+
           </fieldset></PollingPanel>}
         </DpiPanel></WorkspaceView>
 
@@ -247,7 +247,7 @@ export function App({ service }: { service: DesktopService }) {
                 ))}
               </div>
             </fieldset>
-            <button className="apply-lighting-btn" type="button" disabled={!ready} onClick={actions.applyLighting}>Apply lighting</button>
+
             <div className="lighting-state" role="status" aria-label="Lighting status">
               {lighting.Firmware === "success" ? "Lighting applied" : lighting.Firmware === "failed" ? <span role="alert">Lighting application failed: {feedbackFor(lighting.Error.Code)}</span> : "Lighting selection pending"}
             </div>
