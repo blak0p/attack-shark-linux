@@ -1,5 +1,22 @@
 import type { ReactNode } from "react";
 
-export function TopBar({ children }: { children: ReactNode }) {
-  return <header className="top-bar"><div className="brand"><p className="eyebrow">Attack Shark X6</p><h1>Device control</h1></div>{children}</header>;
+export function TopBar({
+  title = "Mouse configuration",
+  subtitle = "Attack Shark X6",
+  children,
+}: {
+  title?: string;
+  subtitle?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="titlebar top-bar">
+      <div className="appname brand">
+        <span className="app-icon" aria-hidden="true">✦</span>
+        {title}
+        {subtitle && <small>{subtitle}</small>}
+      </div>
+      {children}
+    </header>
+  );
 }

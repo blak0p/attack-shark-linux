@@ -39,22 +39,28 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("button", { name: "Reset control" })).toBeInTheDocument();
   });
 
-  it("offers keyboard-operable rails that retain their controlled content when collapsed", () => {
+  it("renders the GNOME navigation rail with 5 section items and glyphs", () => {
     render(<WorkspaceShell><WorkspaceView id="performance" title="Performance"><button>Primary control</button></WorkspaceView></WorkspaceShell>);
-    const toggle = screen.getByRole("button", { name: "Toggle navigation rail" });
-    toggle.focus();
-    fireEvent.keyDown(toggle, { key: "Enter" });
 
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(toggle).toHaveAttribute("aria-controls", "workspace-navigation-rail");
     expect(screen.getByRole("link", { name: "Performance" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Lighting" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Controls" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Button remapping" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Device" })).toBeInTheDocument();
+    expect(screen.getByText("◉")).toBeInTheDocument();
+    expect(screen.getByText("☼")).toBeInTheDocument();
+    expect(screen.getByText("⌁")).toBeInTheDocument();
+    expect(screen.getByText("↺")).toBeInTheDocument();
+    expect(screen.getByText("▣")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Primary control" })).toBeInTheDocument();
   });
 
-  it("keeps only the navigation rail and never renders a utility tools rail", () => {
+  it("renders the GNOME titlebar and connection card without utility tools rails", () => {
     render(<WorkspaceShell><WorkspaceView id="performance" title="Performance"><button>Primary control</button></WorkspaceView></WorkspaceShell>);
 
-    expect(screen.getByRole("button", { name: "Toggle navigation rail" })).toBeInTheDocument();
+    expect(screen.getByText("✦")).toBeInTheDocument();
+    expect(screen.getByText("Mouse configuration")).toBeInTheDocument();
+    expect(screen.getByText("Device available")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Toggle utility rail/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Workspace tools/i)).not.toBeInTheDocument();
   });
