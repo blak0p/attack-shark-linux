@@ -10,6 +10,8 @@ const binding = { ID: { VendorID: 0x1d57, ProductID: 0xfa60, Serial: "alpha" }, 
 const dpi = { DPI: [800, 1200], ActiveStage: 1, StageMask: 3, LiftDistance: 1 };
 const snapshot = (overrides = {}) => ({ Connection: "dongle", Battery: 84, Applied: dpi, Pending: dpi, Factory: dpi, Revision: 0, Error: { Code: "" }, ...overrides });
 const polling = (overrides = {}) => ({ Desired: 1000, Applied: 1000, Factory: 1000, Revision: 0, ...overrides });
+const debounce = (overrides = {}) => ({ Desired: 8, Applied: 8, Factory: 8, Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" }, ...overrides });
+const normalSleep = (overrides = {}) => ({ Pending: 0.5, Applied: 0.5, Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" }, ...overrides });
 const lighting = (overrides = {}) => ({ Pending: { Mode: 0x10 as const, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 0, Firmware: "", Error: { Code: "" }, ...overrides });
 const remap = (overrides = {}) => ({ Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] }, Actions: ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire"] as const, Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" }, ...overrides });
 
@@ -24,7 +26,9 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
   const service: DesktopService = {
     GetSnapshot: vi.fn().mockResolvedValue(snapshot()),
     GetPollingSnapshot: vi.fn().mockResolvedValue(polling()),
+    GetDebounceSnapshot: vi.fn().mockResolvedValue(debounce()),
 		GetLightingSnapshot: vi.fn().mockResolvedValue(lighting()),
+    GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleep()),
 		GetRemapSnapshot: vi.fn().mockResolvedValue(remap()),
     RefreshStatus: vi.fn().mockResolvedValue(snapshot()),
     RefreshInventory: vi.fn().mockResolvedValue({ Devices: [binding], Selected: binding, Error: { Code: "" } }),
@@ -33,6 +37,12 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
     ApplyDPI: vi.fn().mockResolvedValue(snapshot({ Firmware: "success" })),
     StagePollingRate: vi.fn().mockImplementation(async (rate) => polling({ Desired: rate })),
     ApplyPollingRate: vi.fn().mockResolvedValue(polling({ Firmware: "success" })),
+    StageDebounce: vi.fn().mockImplementation(async (value) => debounce({ Desired: value })),
+    ApplyDebounce: vi.fn().mockResolvedValue(debounce({ Firmware: "success" })),
+    RetryDebouncePersistence: vi.fn().mockResolvedValue(debounce()),
+    StageNormalSleep: vi.fn().mockImplementation(async (value) => normalSleep({ Pending: value })),
+    ApplyNormalSleep: vi.fn().mockResolvedValue(normalSleep({ Firmware: "success" })),
+    RetryNormalSleepPersistence: vi.fn().mockResolvedValue(normalSleep()),
 		StageLighting: vi.fn().mockResolvedValue(lighting()),
 		ApplyLighting: vi.fn().mockResolvedValue(lighting()),
 		RetryRemapPersistence: vi.fn().mockResolvedValue(remap()),
@@ -60,9 +70,9 @@ describe("useDesktopWorkspace", () => {
     const { result, unmount } = renderHook(() => useDesktopWorkspace(harness.service));
 
     await waitFor(() => expect(result.current.model.snapshot?.Battery).toBe(84));
-    expect(harness.service.RefreshStatus).toHaveBeenCalledOnce();
-    expect(harness.service.GetPollingSnapshot).toHaveBeenCalledOnce();
-    expect(harness.service.GetLightingSnapshot).toHaveBeenCalledOnce();
+    expect(harness.service.RefreshStatus).toHaveBeenCalledTimes(2);
+    expect(harness.service.GetPollingSnapshot).toHaveBeenCalledTimes(2);
+    expect(harness.service.GetLightingSnapshot).toHaveBeenCalledTimes(2);
     expect(harness.service.RefreshInventory).toHaveBeenCalledOnce();
 
     await act(async () => harness.statusListeners[0]({ ...binding, Battery: 90 }));
@@ -80,6 +90,21 @@ describe("useDesktopWorkspace", () => {
     expect(harness.unsubscribeConfiguration).toHaveBeenCalledOnce();
     expect(harness.unsubscribePolling).toHaveBeenCalledOnce();
 		expect(harness.unsubscribeRemap).toHaveBeenCalledOnce();
+  });
+
+  it("hydrates both settings, applies them independently, and refreshes both after a configuration event", async () => {
+    const configurationListeners: Array<(event: { Binding: typeof binding; Snapshot: ReturnType<typeof snapshot> }) => void> = [];
+    const harness = serviceFor({ OnConfiguration: vi.fn().mockImplementation((callback) => { configurationListeners.push(callback); return vi.fn(); }) });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.debounce?.Applied).toBe(8));
+
+    await act(async () => result.current.actions.stageDebounce(12));
+    await act(async () => result.current.actions.stageNormalSleep(15.5));
+    expect(harness.service.ApplyDebounce).toHaveBeenCalledOnce();
+    expect(harness.service.ApplyNormalSleep).toHaveBeenCalledOnce();
+    await act(async () => configurationListeners[0]({ Binding: binding, Snapshot: snapshot() }));
+    expect(harness.service.GetDebounceSnapshot).toHaveBeenCalled();
+    expect(harness.service.GetNormalSleepSnapshot).toHaveBeenCalled();
   });
 
   it("reports exact polling and lighting notices for their distinct actions", async () => {

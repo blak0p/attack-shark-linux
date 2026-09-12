@@ -6,7 +6,15 @@ const bindings = vi.hoisted(() => ({
   StageDPI: vi.fn(),
   ApplyDPI: vi.fn(),
   GetPollingSnapshot: vi.fn(),
+  GetDebounceSnapshot: vi.fn(),
+  GetNormalSleepSnapshot: vi.fn(),
   StagePollingRate: vi.fn(),
+  StageDebounce: vi.fn(),
+  ApplyDebounce: vi.fn(),
+  RetryDebouncePersistence: vi.fn(),
+  StageNormalSleep: vi.fn(),
+  ApplyNormalSleep: vi.fn(),
+  RetryNormalSleepPersistence: vi.fn(),
   ApplyPollingRate: vi.fn(),
   GetLightingSnapshot: vi.fn(),
   StageLighting: vi.fn(),
@@ -38,6 +46,23 @@ describe("desktopService", () => {
     expect(desktopService.RetryPersistence).toBe(bindings.RetryPersistence);
     desktopService.StageDPI(config);
     expect(bindings.StageDPI).toHaveBeenCalledWith(config);
+  });
+
+  it("forwards key response time and normal sleep operations to generated Wails bindings", () => {
+    expect(desktopService.GetDebounceSnapshot).toBe(bindings.GetDebounceSnapshot);
+    expect(desktopService.GetNormalSleepSnapshot).toBe(bindings.GetNormalSleepSnapshot);
+    desktopService.StageDebounce(12);
+    desktopService.ApplyDebounce();
+    desktopService.RetryDebouncePersistence();
+    desktopService.StageNormalSleep(30.5);
+    desktopService.ApplyNormalSleep();
+    desktopService.RetryNormalSleepPersistence();
+    expect(bindings.StageDebounce).toHaveBeenCalledWith(12);
+    expect(bindings.ApplyDebounce).toHaveBeenCalledOnce();
+    expect(bindings.RetryDebouncePersistence).toHaveBeenCalledOnce();
+    expect(bindings.StageNormalSleep).toHaveBeenCalledWith(30.5);
+    expect(bindings.ApplyNormalSleep).toHaveBeenCalledOnce();
+    expect(bindings.RetryNormalSleepPersistence).toHaveBeenCalledOnce();
   });
 
   it("forwards polling selections and factory reset to generated Wails bindings", () => {

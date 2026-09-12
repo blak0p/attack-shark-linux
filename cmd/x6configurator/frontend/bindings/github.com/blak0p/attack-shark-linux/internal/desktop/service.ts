@@ -25,6 +25,14 @@ export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
     });
 }
 
+export function ApplyDebounce(): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(2092901873).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
+}
+
+export function ApplyNormalSleep(): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(4245697592).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+}
+
 /**
  * ApplyLighting writes the staged catalog vector through one validated binding.
  */
@@ -109,6 +117,10 @@ export function AttachResetRunner(runner: $models.resetRunner): $CancellableProm
  * GetLightingSnapshot reports staged and acknowledged lighting state without
  * claiming a live hardware read.
  */
+export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(847781341).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
+}
+
 export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1849424142).then(($result: any) => {
         return $$createType1($result);
@@ -119,6 +131,10 @@ export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnaps
  * GetPollingSnapshot reports desired, acknowledged, and persistence state; it
  * deliberately does not claim a live hardware observation.
  */
+export function GetNormalSleepSnapshot(): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(690718744).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+}
+
 export function GetPollingSnapshot(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1825488429).then(($result: any) => {
         return $$createType2($result);
@@ -172,6 +188,14 @@ export function ResetToFactory(): $CancellablePromise<$models.ResetResult> {
     });
 }
 
+export function RetryDebouncePersistence(): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(2757981562).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
+}
+
+export function RetryNormalSleepPersistence(): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(3832391481).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+}
+
 export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(808566931).then(($result: any) => {
         return $$createType0($result);
@@ -208,10 +232,18 @@ export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models
 /**
  * StageLighting updates only the selected device's pending state.
  */
+export function StageDebounce(responseTimeMs: number): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(3641231323, responseTimeMs).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
+}
+
 export function StageLighting(selection: x6$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1205871004, selection).then(($result: any) => {
         return $$createType1($result);
     });
+}
+
+export function StageNormalSleep(minutes: number): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(1234567502, minutes).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
 }
 
 export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {

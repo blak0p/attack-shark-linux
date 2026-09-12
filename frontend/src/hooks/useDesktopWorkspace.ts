@@ -7,7 +7,9 @@ const pollingAppliedNotice = "Polling applied.";
 export function useDesktopWorkspace(service: DesktopService): { model: WorkspaceModel; actions: WorkspaceActions } {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [polling, setPolling] = useState<WorkspaceModel["polling"]>();
+  const [debounce, setDebounce] = useState<WorkspaceModel["debounce"]>();
 	const [lighting, setLighting] = useState<WorkspaceModel["lighting"]>();
+  const [normalSleep, setNormalSleep] = useState<WorkspaceModel["normalSleep"]>();
 	const [remap, setRemap] = useState<WorkspaceModel["remap"]>();
   const [inventory, setInventory] = useState<WorkspaceModel["inventory"]>();
   const [notice, setNotice] = useState("");
@@ -15,11 +17,17 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const [automaticApplyRequests, setAutomaticApplyRequests] = useState(0);
   const selected = useRef<Binding | null>(null);
 
-  useEffect(() => { void service.RefreshStatus().then(setSnapshot); }, [service]);
-  useEffect(() => { void service.GetPollingSnapshot().then(setPolling); }, [service]);
-	useEffect(() => { void service.GetLightingSnapshot().then(setLighting); }, [service]);
-	useEffect(() => { void service.GetRemapSnapshot().then(setRemap); }, [service]);
-  useEffect(() => { void service.RefreshInventory().then(setInventory); }, [service]);
+  const refreshSelectedDeviceSnapshots = () => {
+    void service.RefreshStatus().then(setSnapshot);
+    void service.GetPollingSnapshot().then(setPolling);
+    void service.GetDebounceSnapshot().then(setDebounce);
+    void service.GetLightingSnapshot().then(setLighting);
+    void service.GetNormalSleepSnapshot().then(setNormalSleep);
+    void service.GetRemapSnapshot().then(setRemap);
+  };
+
+  useEffect(() => { refreshSelectedDeviceSnapshots(); }, [service]);
+  useEffect(() => { void service.RefreshInventory().then((next) => { setInventory(next); refreshSelectedDeviceSnapshots(); }); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected ?? null; }, [inventory]);
   useEffect(() => service.OnStatusEvent((event) => {
     setSnapshot((current) => current && receivesEvent(selected.current, event) ? applyStatusEvent(current, event) : current);
@@ -28,6 +36,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     if (receivesEvent(selected.current, event.Binding)) {
       setSnapshot(event.Snapshot);
       void service.GetPollingSnapshot().then(setPolling);
+      void service.GetDebounceSnapshot().then(setDebounce);
+      void service.GetNormalSleepSnapshot().then(setNormalSleep);
     }
   }), [service]);
   useEffect(() => service.OnPollingConfiguration((event) => {
@@ -53,7 +63,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const actions: WorkspaceActions = {
     selectDevice: (serial) => {
       const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
-      if (device) void service.SelectDevice(device.ID).then(setInventory);
+      if (device) void service.SelectDevice(device.ID).then((next) => { setInventory(next); refreshSelectedDeviceSnapshots(); });
     },
     stageDPI: (index, value) => snapshot && stageConfig({ ...snapshot.Pending, DPI: snapshot.Pending.DPI.map((dpi, current) => current === index ? value : dpi) }),
     selectStage: (index) => snapshot && stageConfig({ ...snapshot.Pending, ActiveStage: index + 1 }),
@@ -67,6 +77,22 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         return updated;
       });
     })),
+    stageDebounce: (responseTimeMs) => void runAutomaticApply(() => service.StageDebounce(responseTimeMs).then((staged) => {
+      setDebounce(staged);
+      if (staged.Error.Code) return staged;
+      return service.ApplyDebounce().then((updated) => {
+        setDebounce(updated);
+        setNotice(updated.Firmware === "failed" ? "Key response time application failed." : "Key response time applied.");
+        return updated;
+      });
+    })),
+    retryDebouncePersistence: () => void service.RetryDebouncePersistence().then(setDebounce),
+    stageNormalSleep: (minutes) => void runAutomaticApply(() => service.StageNormalSleep(minutes).then((staged) => {
+      setNormalSleep(staged);
+      if (staged.Error.Code) return staged;
+      return service.ApplyNormalSleep().then((updated) => { setNormalSleep(updated); return updated; });
+    })),
+    retryNormalSleepPersistence: () => void service.RetryNormalSleepPersistence().then(setNormalSleep),
 		stageLighting: (selection) => void runAutomaticApply(() => service.StageLighting(selection).then((staged) => {
       setLighting(staged);
       if (staged.Error?.Code) return staged;
@@ -93,7 +119,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
     retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
   };
-		return { model: { snapshot, polling, lighting, remap, inventory, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
+		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {

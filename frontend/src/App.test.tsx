@@ -37,7 +37,10 @@ const pollingSnapshot = (overrides: Partial<PollingSnapshot> = {}): PollingSnaps
   ...overrides,
 });
 
-const lightingSnapshot = (overrides: Partial<LightingSnapshot> = {}): LightingSnapshot => ({
+const debounceSnapshot = (overrides = {}) => ({ Desired: 8, Applied: 8, Persisted: 8, Factory: 8, Revision: 0, Firmware: "success", Persistence: "success", RetryAvailable: false, Error: { Code: "" }, ...overrides });
+    const normalSleepSnapshot = (overrides = {}) => ({ Pending: 0.5, Applied: 0.5, Persisted: 0.5, Revision: 0, Firmware: "success", Persistence: "success", RetryAvailable: false, Error: { Code: "" }, ...overrides });
+
+    const lightingSnapshot = (overrides: Partial<LightingSnapshot> = {}): LightingSnapshot => ({
   Pending: { Mode: 0x10, TemplateID: "fixed-green" },
   Applied: null,
   Effects: [
@@ -74,7 +77,9 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   return {
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
+      GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot()),
 	GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
+      GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleepSnapshot()),
 	GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot()),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
@@ -83,6 +88,12 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   ApplyDPI: vi.fn().mockImplementation(async () => ({ ...initial, Applied: pendingDPI, Pending: pendingDPI, Firmware: "success" })),
    StagePollingRate: vi.fn().mockImplementation(async (rate) => { desiredPolling = rate; return pollingSnapshot({ Desired: rate, Firmware: "pending", Persistence: "" }); }),
   ApplyPollingRate: vi.fn().mockImplementation(async () => pollingSnapshot({ Desired: desiredPolling, Applied: desiredPolling, Firmware: "success", Persistence: "success" })),
+      StageDebounce: vi.fn().mockImplementation(async (value) => debounceSnapshot({ Desired: value, Firmware: "pending" })),
+      ApplyDebounce: vi.fn().mockResolvedValue(debounceSnapshot({ Firmware: "success" })),
+      RetryDebouncePersistence: vi.fn().mockResolvedValue(debounceSnapshot()),
+      StageNormalSleep: vi.fn().mockImplementation(async (value) => normalSleepSnapshot({ Pending: value, Firmware: "pending" })),
+      ApplyNormalSleep: vi.fn().mockResolvedValue(normalSleepSnapshot({ Firmware: "success" })),
+      RetryNormalSleepPersistence: vi.fn().mockResolvedValue(normalSleepSnapshot()),
 	StageLighting: vi.fn().mockImplementation(async (selection) => { pendingLighting = selection; return lightingSnapshot({ Pending: selection, Revision: 1 }); }),
 	StageRemap: vi.fn().mockResolvedValue(remapSnapshot()),
 	ApplyLighting: vi.fn().mockImplementation(async () => lightingSnapshot({ Pending: pendingLighting, Applied: pendingLighting, Firmware: "success" })),
