@@ -189,8 +189,12 @@ describe("App", () => {
   it("colors each stage slider with its real stage color", async () => {
     render(<App service={serviceFor(snapshot())} />);
 
-    const slider = (await screen.findByRole("slider", { name: "Stage 1 DPI" })) as HTMLInputElement;
-    expect(slider.style.getPropertyValue("--stage-color")).toBe("rgb(255, 0, 0)");
+    const slider = (await screen.findByRole("slider", { name: "Stage 4 DPI" })) as HTMLInputElement;
+    expect(slider.style.getPropertyValue("--stage-color")).toBe("rgb(0, 255, 255)");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage 1" }));
+    const slider1 = (await screen.findByRole("slider", { name: "Stage 1 DPI" })) as HTMLInputElement;
+    expect(slider1.style.getPropertyValue("--stage-color")).toBe("rgb(255, 0, 0)");
   });
 
   it("colors each stage dot with its real stage color", async () => {
@@ -223,7 +227,7 @@ describe("App", () => {
   it("blocks the full workspace until overlapping automatic configuration applies settle", async () => {
   const dpiStage = deferred<Snapshot>();
   const dpiApply = deferred<Snapshot>();
-  const service = serviceFor(snapshot(), {
+  const service = serviceFor(snapshot({ Pending: { ...configuration(), ActiveStage: 1 }, Applied: { ...configuration(), ActiveStage: 1 } }), {
     StageDPI: vi.fn().mockReturnValue(dpiStage.promise),
     ApplyDPI: vi.fn().mockReturnValue(dpiApply.promise),
   });
@@ -272,7 +276,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
   });
 
   it("applies a DPI edit directly without a dedicated Apply button", async () => {
-    const service = serviceFor(snapshot());
+    const service = serviceFor(snapshot({ Pending: { ...configuration(), ActiveStage: 1 }, Applied: { ...configuration(), ActiveStage: 1 } }));
     render(<App service={service} />);
 
     const input = await screen.findByRole("slider", { name: "Stage 1 DPI" });
@@ -304,9 +308,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
   it("refreshes acknowledged colors without replacing editable pending controls", async () => {
     const listeners: Array<(event: ConfigurationEvent) => void> = [];
     const acknowledgedColors = [[12, 34, 56], [23, 45, 67], [34, 56, 78], [45, 67, 89], [56, 78, 90], [67, 89, 101], [78, 90, 112], [89, 101, 123]];
-    const acknowledged = { ...configuration(), Colors: acknowledgedColors };
-    const pending = configuration(1600);
-    const service = serviceFor(snapshot(), {
+    const acknowledged = { ...configuration(), Colors: acknowledgedColors, ActiveStage: 1 };
+    const pending = { ...configuration(1600), ActiveStage: 1 };
+    const service = serviceFor(snapshot({ Applied: { ...configuration(), ActiveStage: 1 }, Pending: { ...configuration(), ActiveStage: 1 } }), {
       OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
     });
     render(<App service={service} />);
@@ -316,13 +320,13 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 
     expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).value).toBe("1600");
     expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(12, 34, 56)");
-    expect((screen.getByRole("button", { name: "Stage 1" }) as HTMLElement).style.getPropertyValue("--dot-color")).toBe("rgb(12, 34, 56)");
-    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(45, 67, 89)");
+    expect((screen.getByRole("button", { name: "Stage 1, active" }) as HTMLElement).style.getPropertyValue("--dot-color")).toBe("rgb(12, 34, 56)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(12, 34, 56)");
   });
 
   it("ignores acknowledged color events from a mismatched binding", async () => {
     const listeners: Array<(event: ConfigurationEvent) => void> = [];
-    const service = serviceFor(snapshot(), {
+    const service = serviceFor(snapshot({ Applied: { ...configuration(), ActiveStage: 1 }, Pending: { ...configuration(), ActiveStage: 1 } }), {
       OnConfiguration: vi.fn().mockImplementation((callback) => { listeners.push(callback); return () => {}; }),
     });
     render(<App service={service} />);
@@ -331,15 +335,15 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await act(async () => {});
     await act(async () => listeners[0]({
       Binding: { ...selectedDevice, ID: { ...selectedDevice.ID, Serial: "bravo" }, Path: "/dev/hidraw1" },
-      Snapshot: snapshot({ Applied: { ...configuration(), Colors: [[12, 34, 56], ...configuration().Colors!.slice(1)] } }),
+      Snapshot: snapshot({ Applied: { ...configuration(), Colors: [[12, 34, 56], ...configuration().Colors!.slice(1)], ActiveStage: 1 } }),
     }));
 
     expect((screen.getByRole("slider", { name: "Stage 1 DPI" }) as HTMLInputElement).style.getPropertyValue("--stage-color")).toBe("rgb(255, 0, 0)");
-    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(0, 255, 255)");
+    expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(255, 0, 0)");
   });
 
   it("restores the last applied DPI state when the desktop service restarts", async () => {
-    const restored = snapshot({ Applied: configuration(1600), Pending: configuration(1600), Revision: 2 });
+    const restored = snapshot({ Applied: { ...configuration(1600), ActiveStage: 1 }, Pending: { ...configuration(1600), ActiveStage: 1 }, Revision: 2 });
     render(<App service={serviceFor(restored)} />);
 
     expect(await screen.findByRole("slider", { name: "Stage 1 DPI" })).toHaveValue("1600");
@@ -755,9 +759,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
   it("keeps the complete control surface mounted when workspace navigation changes", async () => {
     render(<App service={serviceFor(snapshot())} />);
 
-    await screen.findByRole("slider", { name: "Stage 1 DPI" });
+    await screen.findByRole("slider", { name: "Stage 4 DPI" });
     fireEvent.click(screen.getByRole("link", { name: "Lighting" }));
-    expect(screen.getByRole("slider", { name: "Stage 1 DPI" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Stage 4 DPI" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "1000 Hz" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Angle snap" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Lighting effect" })).toBeInTheDocument();
@@ -765,10 +769,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("button", { name: "Reset to factory" })).toBeInTheDocument();
   });
 
-  it("groups the mounted control surface into four navigable workspace views", async () => {
+  it("groups the mounted control surface into five navigable workspace views", async () => {
     render(<App service={serviceFor(snapshot())} />);
 
-    await screen.findByRole("slider", { name: "Stage 1 DPI" });
+    await screen.findByRole("slider", { name: "Stage 4 DPI" });
     expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
     fireEvent.click(screen.getByRole("link", { name: "Device" }));
 

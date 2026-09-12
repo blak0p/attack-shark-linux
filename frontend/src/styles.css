@@ -3,18 +3,46 @@
 @import "./styles/controls.css";
 @import "./styles/motion.css";
 
-:root { color: var(--text-primary); background: var(--surface-canvas); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-* { box-sizing: border-box; }
-body { min-width: 0; min-height: 100vh; margin: 0; background: var(--surface-canvas); color: var(--text-primary); }
-button, input, select { font: inherit; }
-button { border: 0; }
-.app-shell { padding: var(--space-6); }
-.top-bar { display: flex; align-items: center; gap: var(--space-4); justify-content: space-between; padding: var(--space-3) 0 var(--space-5); }
-.brand { display: grid; gap: 2px; }.brand h1 { margin: 0; font-size: 1rem; }.eyebrow { margin: 0; color: var(--accent-primary); font-size: .7rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-.status, .inventory-device, .polling-state { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; color: var(--text-secondary); font-size: .78rem; }.status strong { color: var(--status-success); }.status [role="alert"], .lighting-state [role="alert"] { color: var(--status-danger); }.inventory-device { white-space:nowrap; }.polling-state { justify-content:center; min-height:2.5rem; margin-top:var(--space-3); border-top:1px solid var(--border-subtle); font-weight:650; }.polling-state span { font-weight:400; }
-.panel, .lighting-control, .panel-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-panel); padding: var(--space-5); }.panel-section, .lighting-control { margin-top: var(--space-4); }
-.panel-header, .stage-label { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }.panel-title { margin: 0; font-size: 1.1rem; }.panel-subtitle, .polling-guidance, .lighting-state, .notice { color: var(--text-secondary); font-size: .82rem; }.panel-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-5); margin-top: var(--space-5); }.stage-indicator, .stage-list { display: grid; gap: var(--space-3); }.stage-item { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: var(--space-3); align-items: center; }.stage-label { color: var(--text-secondary); font-size: .76rem; }.stage-label span:last-child { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.stage-dot { width: 2.35rem; height: 2.35rem; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-raised); color: var(--text-secondary); cursor: pointer; }.stage-dot.active { border-color: var(--accent-primary); background: var(--accent-subtle); color: var(--text-primary); }
-.color-swatch, .lighting-color-swatch { display: inline-block; width: 1rem; height: 1rem; border: 1px solid var(--border-strong); border-radius: 999px; }
-.polling-control, .lighting-speed, .lighting-colors { min-width: 0; margin: 0; padding: 0; border: 0; }.polling-control legend, .lighting-control h3, .lighting-speed legend, .lighting-colors legend { font-weight: 700; }.polling-options, .lighting-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: var(--space-2); margin-top: var(--space-3); }.polling-option, .lighting-option { display: flex; gap: var(--space-2); align-items: center; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-secondary); cursor: pointer; }.polling-option:has(input:checked), .lighting-option:has(input:checked) { border-color: var(--accent-primary); background: var(--accent-subtle); color: var(--text-primary); }
-.lighting-effect-select { display: grid; gap: var(--space-2); margin-top: var(--space-4); }.lighting-effect-select select, select { width: 100%; min-height: 2.6rem; padding: 0 var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary); }.apply-lighting-btn, .reset-btn, .top-bar button { min-height: 2.5rem; padding: 0 var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-raised); color: var(--text-primary); cursor: pointer; }.apply-lighting-btn { margin-top: var(--space-4); background: var(--accent-primary); border-color: var(--accent-primary); color: var(--accent-on-primary); }.reset-btn { width: 100%; }.notice { min-height: 1.5rem; }
+:root {
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Cantarell", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Cantarell", "Segoe UI", sans-serif;
+}
+
+button, input, select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-size: 1.1rem;
+  color: var(--muted);
+}

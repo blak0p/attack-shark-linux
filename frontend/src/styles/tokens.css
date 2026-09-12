@@ -1,1 +1,50 @@
-:root { --blue-300:#7db8ff; --blue-500:#367cf5; --blue-700:#174b9b; --ink-950:#080b12; --ink-900:#0d121c; --ink-850:#111927; --ink-800:#182235; --ink-700:#25324a; --slate-300:#aebbd0; --slate-100:#e8eef9; --green-400:#54d58a; --red-400:#fb7185; --surface-canvas:var(--ink-950); --surface-panel:var(--ink-900); --surface-raised:var(--ink-850); --text-primary:var(--slate-100); --text-secondary:var(--slate-300); --accent-primary:var(--blue-500); --accent-subtle:color-mix(in srgb,var(--blue-500) 16%,transparent); --accent-on-primary:#fff; --status-success:var(--green-400); --status-danger:var(--red-400); --focus-ring:var(--blue-300); --border-subtle:var(--ink-700); --border-strong:#3a4a65; --radius-md:.55rem; --radius-lg:.9rem; --space-2:.5rem; --space-3:.75rem; --space-4:1rem; --space-5:1.25rem; --space-6:1.5rem; --motion-fast:120ms; --motion-standard:180ms; --motion-deliberate:240ms; --ease-standard:cubic-bezier(.2,.8,.2,1); }
+:root {
+  color-scheme: dark;
+
+  /* GNOME / libadwaita / Mission Center design tokens */
+  --accent: #1d9e75;
+  --bg: #1e1e1c;
+  --rail: #292a27;
+  --surface: #30312e;
+  --raised: #393a36;
+  --line: #4a4b46;
+  --text: #f2f1ed;
+  --muted: #b6b7b1;
+  --dim: #8b8c86;
+  --ok: #55c590;
+  --danger: #e05f65;
+  --shadow: 0 12px 36px #0005;
+
+  /* Aliases and semantic tokens */
+  --surface-canvas: var(--bg);
+  --surface-panel: var(--raised);
+  --surface-raised: var(--surface);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --accent-primary: var(--accent);
+  --accent-subtle: #244b3e;
+  --accent-on-primary: #09261d;
+  --status-success: var(--ok);
+  --status-danger: var(--danger);
+  --border-subtle: var(--line);
+  --border-strong: #55564f;
+  --focus-ring: #77dabe;
+
+  /* Radii & spacing */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
+  --radius-window: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-deliberate: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
