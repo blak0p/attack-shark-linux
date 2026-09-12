@@ -170,6 +170,8 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.PollingRate = config.PollingRate
+		if config.NormalSleepMinutes != 0 { combined.NormalSleepMinutes = config.NormalSleepMinutes }
+		if config.ResponseTimeMs != 0 { combined.ResponseTimeMs = config.ResponseTimeMs }
 		if config.Remap != nil {
 			combined.Remap = config.Remap
 		}
@@ -179,7 +181,8 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
-		AttachPollingPersistence(loadPolling, savePolling)
+		AttachPollingPersistence(loadPolling, savePolling).
+		AttachNormalSleepPersistence(loadPolling, savePolling)
 	return service.AttachResetRunner(composeEmergencyReset(dataDir, inventory, service))
 }
 

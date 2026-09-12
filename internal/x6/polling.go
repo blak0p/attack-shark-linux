@@ -12,12 +12,14 @@ import (
 // backward-compatible reads of existing DPI-only records.
 type DeviceConfig struct {
 	DPIConfig
-	PollingRate PollingRate  `json:"pollingRate"`
-	Remap       *RemapConfig `json:"remap,omitempty"`
+	PollingRate        PollingRate  `json:"pollingRate"`
+	NormalSleepMinutes float64      `json:"normalSleepMinutes"`
+	ResponseTimeMs     int          `json:"responseTimeMs"`
+	Remap              *RemapConfig `json:"remap,omitempty"`
 }
 
 func DefaultDeviceConfig() DeviceConfig {
-	return DeviceConfig{DPIConfig: DefaultDPIConfig(), PollingRate: PollingRate1000}
+	return DeviceConfig{DPIConfig: DefaultDPIConfig(), PollingRate: PollingRate1000, NormalSleepMinutes: NormalSleepMinimumMinutes, ResponseTimeMs: ResponseTimeFactoryMs}
 }
 
 // UnmarshalJSON keeps old direct DPI records valid while supplying the polling
