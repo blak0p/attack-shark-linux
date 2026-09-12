@@ -6,6 +6,8 @@ import { WorkspaceView } from "./components/workspace/WorkspaceView";
 import { TopBar } from "./components/workspace/TopBar";
 import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
+import { PowerSettingsPanel } from "./components/panels/PowerSettingsPanel";
+import { SleepPanel } from "./components/panels/SleepPanel";
 import { MouseFeaturesPanel } from "./components/panels/MouseFeaturesPanel";
 import { LightingPanel } from "./components/panels/LightingPanel";
 import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
@@ -35,7 +37,7 @@ const speedFill = (index: number, count: number) => count > 1 ? `${Math.round((i
 
 export function App({ service }: { service: DesktopService }) {
   const { model, actions } = useDesktopWorkspace(service);
-		const { snapshot, polling, lighting, remap, inventory, ready, notice, resetConfirmation, automaticApplyBusy } = model;
+		const { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, ready, notice, resetConfirmation, automaticApplyBusy } = model;
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
   const connected = ready;
@@ -165,6 +167,7 @@ export function App({ service }: { service: DesktopService }) {
 	            </div>
 
           </fieldset></PollingPanel>}
+          {normalSleep && <SleepPanel snapshot={normalSleep} ready={ready} onStage={actions.stageNormalSleep} onRetry={actions.retryNormalSleepPersistence} />}
         </DpiPanel></WorkspaceView>
 
 		<WorkspaceView id="controls" title="Controls"><MouseFeaturesPanel><fieldset className="polling-control" disabled={!ready}>
@@ -200,7 +203,11 @@ export function App({ service }: { service: DesktopService }) {
                 </select>
               </label>
             </div>
-		  </fieldset>{remap && <ButtonRemapPanel remap={remap} ready={ready} onStage={actions.stageRemap} onApply={actions.applyRemap} onDiscard={actions.discardRemap} />}</MouseFeaturesPanel></WorkspaceView>
+		  </fieldset>{debounce && <><PowerSettingsPanel value={debounce.Desired} disabled={!ready} onChange={actions.stageDebounce} /><div className="power-settings-state" role="status" aria-label="Key response time status">
+                {debounce.Firmware === "pending" ? "Applying…" : debounce.Firmware === "failed" ? "Key response time change failed" : `Applied ${debounce.Applied} ms`}
+                {debounce.Persistence === "failed" && <span>Key response time was not saved.</span>}
+                {debounce.RetryAvailable && <button type="button" onClick={actions.retryDebouncePersistence}>Retry key response persistence</button>}
+              </div></>}{remap && <ButtonRemapPanel remap={remap} ready={ready} onStage={actions.stageRemap} onApply={actions.applyRemap} onDiscard={actions.discardRemap} />}</MouseFeaturesPanel></WorkspaceView>
 
         <WorkspaceView id="lighting" title="Lighting">{lighting && <LightingPanel>
             <h3 id="lighting-title">Lighting</h3>

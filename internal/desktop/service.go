@@ -68,6 +68,15 @@ type PollingSnapshot struct {
 	Persistence      string
 	RetryAvailable   bool
 }
+type DebounceSnapshot struct {
+	Desired, Applied int
+	Persisted *int
+	Factory int
+	Revision uint64
+	Error Error
+	Firmware, Persistence string
+	RetryAvailable bool
+}
 type LightingSnapshot struct {
 	Pending  x6.LightingSelection
 	Applied  *x6.LightingSelection
@@ -75,6 +84,14 @@ type LightingSnapshot struct {
 	Revision uint64
 	Firmware string
 	Error    Error
+}
+type NormalSleepSnapshot struct {
+	Pending, Applied float64
+	Persisted *float64
+	Revision uint64
+	Firmware, Persistence string
+	RetryAvailable bool
+	Error Error
 }
 type RemapSnapshot struct {
 	Pending, Applied, Factory x6.RemapConfig
@@ -176,6 +193,20 @@ type pollingState struct {
 	err                       Error
 	firmware, persistence     string
 }
+type settingsState struct {
+	mu sync.Mutex
+	applyMu sync.Mutex
+	normalSleep, responseTime float64
+	responseTimeMs int
+	persistedNormal *float64
+	persistedResponse *int
+	retryNormal *float64
+	retryResponse *int
+	normalRevision, responseRevision uint64
+	normalFirmware, responseFirmware string
+	normalPersistence, responsePersistence string
+	normalError, responseError Error
+}
 type lightingState struct {
 	mu       sync.Mutex
 	applyMu  sync.Mutex
@@ -212,6 +243,8 @@ type Service struct {
 	pollingStates      map[DeviceID]*pollingState
 	pollingSync        *PollingSyncCoordinator
 	pollingPersistence PollingPersistence
+	settingsStates     map[DeviceID]*settingsState
+	settingsPersistence PollingPersistence
 	lightingStates     map[DeviceID]*lightingState
 	remapStates        map[DeviceID]*remapState
 	legacyRemap        *remapState
@@ -229,7 +262,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), settingsStates: make(map[DeviceID]*settingsState), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -307,6 +340,17 @@ func (s *Service) AttachPollingPersistence(load func(Binding) (x6.DeviceConfig, 
 	defer s.mu.Unlock()
 	s.pollingPersistence = pollingPersistence{load: load, save: save}
 	return s
+}
+
+// AttachNormalSleepPersistence and AttachDebouncePersistence share the durable
+// per-device record so applying either field never discards the other.
+func (s *Service) AttachNormalSleepPersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+	s.mu.Lock(); defer s.mu.Unlock()
+	s.settingsPersistence = pollingPersistence{load: load, save: save}
+	return s
+}
+func (s *Service) AttachDebouncePersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+	return s.AttachNormalSleepPersistence(load, save)
 }
 
 type devicePersistence struct {
@@ -399,6 +443,11 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 				}
 			}
 			s.pollingStates[device.ID] = polling
+			settings := newSettingsState()
+			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.settingsPersistence != nil {
+				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil { settings = newSettingsStateFromConfig(config) }
+			}
+			s.settingsStates[device.ID] = settings
 			s.states[device.ID] = state
 		}
 	}
@@ -646,7 +695,11 @@ func (s *Service) ApplyLighting() LightingSnapshot {
 	if inventory == nil {
 		return s.failLighting(state, StaleBinding)
 	}
-	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewLightingOperation(), selection); err != nil {
+	settingsState := s.currentSettingsState()
+	settingsState.mu.Lock()
+	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
+	settingsState.mu.Unlock()
+	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewLightingSettingsOperation(), settings); err != nil {
 		if errors.Is(err, mouse.ErrStaleBinding) {
 			return s.failLighting(state, StaleBinding)
 		}

@@ -63,6 +63,29 @@ export class DPIConfig {
     }
 }
 
+export class DebounceSnapshot {
+    "Desired": number;
+    "Applied": number;
+    "Persisted": number | null;
+    "Factory": number;
+    "Revision": number;
+    "Error": Error;
+    "Firmware": string;
+    "Persistence": string;
+    "RetryAvailable": boolean;
+
+    constructor($$source: Partial<DebounceSnapshot> = {}) {
+        this["Desired"] = 0; this["Applied"] = 0; this["Persisted"] = null; this["Factory"] = 0;
+        this["Revision"] = 0; this["Error"] = new Error(); this["Firmware"] = ""; this["Persistence"] = ""; this["RetryAvailable"] = false;
+        Object.assign(this, $$source);
+    }
+    static createFrom($$source: any = {}): DebounceSnapshot {
+        const $$parsedSource = typeof $$source === "string" ? JSON.parse($$source) : $$source;
+        if ("Error" in $$parsedSource) $$parsedSource["Error"] = Error.createFrom($$parsedSource["Error"]);
+        return new DebounceSnapshot($$parsedSource as Partial<DebounceSnapshot>);
+    }
+}
+
 export const Device = mouse$0.Device;
 export type Device = mouse$0.Device;
 
@@ -209,6 +232,28 @@ export class LightingSnapshot {
             $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
         }
         return new LightingSnapshot($$parsedSource as Partial<LightingSnapshot>);
+    }
+}
+
+export class NormalSleepSnapshot {
+    "Pending": number;
+    "Applied": number;
+    "Persisted": number | null;
+    "Revision": number;
+    "Firmware": string;
+    "Persistence": string;
+    "RetryAvailable": boolean;
+    "Error": Error;
+
+    constructor($$source: Partial<NormalSleepSnapshot> = {}) {
+        this["Pending"] = 0; this["Applied"] = 0; this["Persisted"] = null; this["Revision"] = 0;
+        this["Firmware"] = ""; this["Persistence"] = ""; this["RetryAvailable"] = false; this["Error"] = new Error();
+        Object.assign(this, $$source);
+    }
+    static createFrom($$source: any = {}): NormalSleepSnapshot {
+        const $$parsedSource = typeof $$source === "string" ? JSON.parse($$source) : $$source;
+        if ("Error" in $$parsedSource) $$parsedSource["Error"] = Error.createFrom($$parsedSource["Error"]);
+        return new NormalSleepSnapshot($$parsedSource as Partial<NormalSleepSnapshot>);
     }
 }
 
