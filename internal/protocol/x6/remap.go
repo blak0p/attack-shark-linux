@@ -7,14 +7,22 @@ const RemapReportLength = 59
 type RemapAction string
 
 const (
-	RemapOff         RemapAction = "off"
-	RemapLeft        RemapAction = "left"
-	RemapRight       RemapAction = "right"
-	RemapMiddle      RemapAction = "middle"
-	RemapBackward    RemapAction = "backward"
-	RemapForward     RemapAction = "forward"
-	RemapDoubleClick RemapAction = "double_click"
-	RemapFire        RemapAction = "fire"
+	RemapOff           RemapAction = "off"
+	RemapLeft          RemapAction = "left"
+	RemapRight         RemapAction = "right"
+	RemapMiddle        RemapAction = "middle"
+	RemapBackward      RemapAction = "backward"
+	RemapForward       RemapAction = "forward"
+	RemapDoubleClick   RemapAction = "double_click"
+	RemapFire          RemapAction = "fire"
+	RemapMediaPlayer   RemapAction = "media_player"
+	RemapPlayPause     RemapAction = "play_pause"
+	RemapStop          RemapAction = "stop"
+	RemapPreviousTrack RemapAction = "previous_track"
+	RemapNextTrack     RemapAction = "next_track"
+	RemapVolumeUp      RemapAction = "volume_up"
+	RemapVolumeDown    RemapAction = "volume_down"
+	RemapMute          RemapAction = "mute"
 )
 
 type RemapButton struct {
@@ -60,6 +68,9 @@ func ValidateRemapConfig(config RemapConfig) error {
 		if !isRemapAction(button.Action) {
 			return fmt.Errorf("remap button %d has unsupported action %q", button.Button, button.Action)
 		}
+		if button.Button == 1 && isMultimediaRemapAction(button.Action) {
+			return fmt.Errorf("remap button 1 does not support multimedia action %q", button.Action)
+		}
 	}
 	return nil
 }
@@ -100,6 +111,22 @@ func remapActionID(action RemapAction) byte {
 		return 0x07
 	case RemapFire:
 		return 0x08
+	case RemapMediaPlayer:
+		return 0x15
+	case RemapPlayPause:
+		return 0x18
+	case RemapStop:
+		return 0x19
+	case RemapPreviousTrack:
+		return 0x16
+	case RemapNextTrack:
+		return 0x17
+	case RemapVolumeUp:
+		return 0x1b
+	case RemapVolumeDown:
+		return 0x1c
+	case RemapMute:
+		return 0x1a
 	default:
 		return 0
 	}
@@ -111,7 +138,17 @@ func MatchesRemapACK(report []byte) bool {
 
 func isRemapAction(action RemapAction) bool {
 	switch action {
-	case RemapOff, RemapLeft, RemapRight, RemapMiddle, RemapForward, RemapBackward, RemapDoubleClick, RemapFire:
+	case RemapOff, RemapLeft, RemapRight, RemapMiddle, RemapForward, RemapBackward, RemapDoubleClick, RemapFire,
+		RemapMediaPlayer, RemapPlayPause, RemapStop, RemapPreviousTrack, RemapNextTrack, RemapVolumeUp, RemapVolumeDown, RemapMute:
+		return true
+	default:
+		return false
+	}
+}
+
+func isMultimediaRemapAction(action RemapAction) bool {
+	switch action {
+	case RemapMediaPlayer, RemapPlayPause, RemapStop, RemapPreviousTrack, RemapNextTrack, RemapVolumeUp, RemapVolumeDown, RemapMute:
 		return true
 	default:
 		return false

@@ -1,0 +1,40 @@
+# openspec/config.yaml
+schema: spec-driven
+artifact_store: hybrid
+
+context: |
+  Tech stack: Go 1.25 backend with Wails v3 desktop composition and React/Vite frontend.
+  Architecture: pure X6 protocol in internal/protocol/x6; typed X6 adapter in internal/x6;
+  HID binding and transport in internal/hidlinux/internal/transport; selected-device orchestration
+  in internal/desktop; handwritten frontend contracts under frontend/src; generated bindings are
+  managed and must not be hand-edited.
+  Safety: no hidraw write occurs without an explicit user apply action; never run as root,
+  weaken udev permissions, claim USB interfaces, or inspect the official Windows executable.
+  Testing: Go package tests, Vitest/jsdom frontend tests, go vet, and frontend production build.
+
+strict_tdd: true
+
+testing:
+  test_command: "go test ./..."
+  frontend_test_command: "cd frontend && npm test"
+  vet_command: "go vet ./..."
+  build_command: "go build ./... && cd frontend && npm run build"
+
+rules:
+  proposal:
+    - Include rollback and hardware-safety boundaries for device configuration changes
+    - Identify affected backend and frontend layers
+  specs:
+    - Use RFC 2119 language and Given/When/Then scenarios
+  design:
+    - Preserve protocol, transport, and desktop-layer boundaries
+    - State explicit device-write and acknowledgement invariants
+  tasks:
+    - Use RED, GREEN, TRIANGULATE, and REFACTOR phases
+    - Keep the review workload within 400 changed lines unless a maintainer accepts an exception
+  apply:
+    - Follow strict TDD evidence before production edits
+    - Do not edit generated bindings without a verified reflected-contract change
+  verify:
+    - Run Go tests, desktop race tests, go vet, frontend tests, and frontend build
+    - Compare every implementation scenario against its delta spec

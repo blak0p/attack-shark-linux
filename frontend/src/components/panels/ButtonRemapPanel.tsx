@@ -1,6 +1,6 @@
 import { GnomeSelect } from "./GnomeSelect";
 
-type Action = "off" | "left" | "right" | "middle" | "forward" | "backward" | "double_click" | "fire";
+type Action = "off" | "left" | "right" | "middle" | "forward" | "backward" | "double_click" | "fire" | "media_player" | "play_pause" | "stop" | "previous_track" | "next_track" | "volume_up" | "volume_down" | "mute";
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
 type Remap = {
   Pending: { Buttons: Button[] };
@@ -20,7 +20,17 @@ const labelFor = (action: Action) =>
     backward: "Backward",
     double_click: "Double Click",
     fire: "Fire",
+    media_player: "Media Player",
+    play_pause: "Play/Pause",
+    stop: "Stop",
+    previous_track: "Previous Track",
+    next_track: "Next Track",
+    volume_up: "Volume Up",
+    volume_down: "Volume Down",
+    mute: "Mute",
   })[action];
+
+const isMultimedia = (action: Action) => ["media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"].includes(action);
 
 export function ButtonRemapPanel({
   remap,
@@ -74,8 +84,13 @@ export function ButtonRemapPanel({
             options={remap.Actions.map((action) => ({
               value: action,
               label: labelFor(action),
+              group: isMultimedia(action) ? "Multimedia" : "Basic",
+              disabled: button.Button === 1 && isMultimedia(action),
             }))}
-            onChange={(val) => onStage(button.Button, val as Action)}
+            onChange={(val) => {
+              const action = val as Action;
+              if (!(button.Button === 1 && isMultimedia(action))) onStage(button.Button, action);
+            }}
           />
         </div>
       ))}

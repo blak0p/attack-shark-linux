@@ -36,13 +36,48 @@ func TestRemapAcceptsOnlyClosedActionsAndExactACK(t *testing.T) {
 			t.Fatalf("EncodeRemapReport(%q) error = %v", action, err)
 		}
 	}
-	invalid := DefaultRemapConfig()
-	invalid.Buttons[0].Action = RemapAction("dpi_plus")
-	if _, err := EncodeRemapReport(invalid); err == nil {
-		t.Fatal("EncodeRemapReport() accepted excluded action")
+	for _, action := range []RemapAction{"shortcut", "browser_back", "macro", "unknown"} {
+		invalid := DefaultRemapConfig()
+		invalid.Buttons[0].Action = action
+		if _, err := EncodeRemapReport(invalid); err == nil {
+			t.Fatalf("EncodeRemapReport() accepted excluded action %q", action)
+		}
 	}
 	if !MatchesRemapACK([]byte{0x03, 0x10, 0x50, 0x00, 0x08}) || MatchesRemapACK([]byte{0x03, 0x10, 0x50, 0x00, 0x04}) {
 		t.Fatal("MatchesRemapACK() did not strictly match report 0x08")
+	}
+}
+
+func TestRemapMultimediaActionsUseExactIDsAndProtectButtonOne(t *testing.T) {
+	multimedia := []struct {
+		action RemapAction
+		id     byte
+	}{
+		{RemapMediaPlayer, 0x15}, {RemapPlayPause, 0x18}, {RemapStop, 0x19}, {RemapPreviousTrack, 0x16},
+		{RemapNextTrack, 0x17}, {RemapVolumeUp, 0x1b}, {RemapVolumeDown, 0x1c}, {RemapMute, 0x1a},
+	}
+
+	for _, tt := range multimedia {
+		t.Run(string(tt.action), func(t *testing.T) {
+			for button := 2; button <= 7; button++ {
+				eligible := DefaultRemapConfig()
+				eligible.Buttons[button-1].Action = tt.action
+				report, err := EncodeRemapReport(eligible)
+				if err != nil {
+					t.Fatalf("EncodeRemapReport(%q) error = %v", tt.action, err)
+				}
+				offset := 3 + (remapGroupByButton[button-1]-1)*3
+				if got := report[offset]; got != tt.id {
+					t.Fatalf("Button %d action byte = 0x%02x, want 0x%02x", button, got, tt.id)
+				}
+			}
+
+			protected := DefaultRemapConfig()
+			protected.Buttons[0].Action = tt.action
+			if _, err := EncodeRemapReport(protected); err == nil {
+				t.Fatalf("EncodeRemapReport() accepted Button 1 multimedia action %q", tt.action)
+			}
+		})
 	}
 }
 

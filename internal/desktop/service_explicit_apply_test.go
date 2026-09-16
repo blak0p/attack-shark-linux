@@ -170,6 +170,8 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 	valid := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	config := x6.DefaultRemapConfig()
 	config.Buttons[0].Action = x6.RemapFire
+	buttonOneMultimedia := x6.DefaultRemapConfig()
+	buttonOneMultimedia.Buttons[0].Action = x6.RemapMediaPlayer
 
 	for _, tt := range []struct {
 		name      string
@@ -186,6 +188,13 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 			config:    x6.RemapConfig{},
 			wantCode:  InvalidConfiguration,
 			wantCalls: 0,
+		},
+		{
+			name:      "Button 1 multimedia rejects before command or persistence",
+			config:    buttonOneMultimedia,
+			wantCode:  InvalidConfiguration,
+			wantCalls: 0,
+			wantSaves: 0,
 		},
 		{
 			name:   "missing selection rejects before command",
@@ -254,8 +263,11 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 			if command.calls != tt.wantCalls || persistence.saves != tt.wantSaves {
 				t.Fatalf("ApplyRemap() writes=%d saves=%d; want writes=%d saves=%d", command.calls, persistence.saves, tt.wantCalls, tt.wantSaves)
 			}
-			if tt.wantCode == ApplyFailed && !remapConfigsEqual(got.Applied, before.Applied) {
-				t.Fatalf("ApplyRemap() applied = %#v, want unchanged after failed ACK", got.Applied)
+			if (tt.wantCode == ApplyFailed || tt.wantCode == InvalidConfiguration) && !remapConfigsEqual(got.Applied, before.Applied) {
+				t.Fatalf("ApplyRemap() applied = %#v, want unchanged after failed validation or ACK", got.Applied)
+			}
+			if tt.wantCode == InvalidConfiguration && (got.Revision != before.Revision || !remapConfigsEqual(got.Pending, before.Pending)) {
+				t.Fatalf("ApplyRemap() = %#v, before = %#v; want no draft or revision advance after validation failure", got, before)
 			}
 			if tt.wantCalls == 1 && (selected == nil || command.binding != *selected) {
 				t.Fatalf("ApplyRemap() binding = %#v, want selected binding %#v", command.binding, selected)
@@ -264,6 +276,27 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 				t.Fatalf("ApplyRemap() = %#v, want acknowledged state with retryable persistence failure", got)
 			}
 		})
+	}
+}
+
+func TestRemapSnapshotOrdersFreshBasicThenMultimediaCatalog(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	first := service.GetRemapSnapshot()
+	want := []x6.RemapAction{
+		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
+		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
+	}
+	if len(first.Actions) != len(want) {
+		t.Fatalf("catalog length = %d, want %d", len(first.Actions), len(want))
+	}
+	for index, action := range want {
+		if first.Actions[index] != action {
+			t.Fatalf("catalog[%d] = %q, want %q", index, first.Actions[index], action)
+		}
+	}
+	first.Actions[0] = x6.RemapMute
+	if service.GetRemapSnapshot().Actions[0] != x6.RemapOff {
+		t.Fatal("GetRemapSnapshot() returned aliased action storage")
 	}
 }
 

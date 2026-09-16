@@ -69,13 +69,13 @@ type PollingSnapshot struct {
 	RetryAvailable   bool
 }
 type DebounceSnapshot struct {
-	Desired, Applied int
-	Persisted *int
-	Factory int
-	Revision uint64
-	Error Error
+	Desired, Applied      int
+	Persisted             *int
+	Factory               int
+	Revision              uint64
+	Error                 Error
 	Firmware, Persistence string
-	RetryAvailable bool
+	RetryAvailable        bool
 }
 type LightingSnapshot struct {
 	Pending  x6.LightingSelection
@@ -86,12 +86,12 @@ type LightingSnapshot struct {
 	Error    Error
 }
 type NormalSleepSnapshot struct {
-	Pending, Applied float64
-	Persisted *float64
-	Revision uint64
+	Pending, Applied      float64
+	Persisted             *float64
+	Revision              uint64
 	Firmware, Persistence string
-	RetryAvailable bool
-	Error Error
+	RetryAvailable        bool
+	Error                 Error
 }
 type RemapSnapshot struct {
 	Pending, Applied, Factory x6.RemapConfig
@@ -194,18 +194,18 @@ type pollingState struct {
 	firmware, persistence     string
 }
 type settingsState struct {
-	mu sync.Mutex
-	applyMu sync.Mutex
-	normalSleep, responseTime float64
-	responseTimeMs int
-	persistedNormal *float64
-	persistedResponse *int
-	retryNormal *float64
-	retryResponse *int
-	normalRevision, responseRevision uint64
-	normalFirmware, responseFirmware string
+	mu                                     sync.Mutex
+	applyMu                                sync.Mutex
+	normalSleep, responseTime              float64
+	responseTimeMs                         int
+	persistedNormal                        *float64
+	persistedResponse                      *int
+	retryNormal                            *float64
+	retryResponse                          *int
+	normalRevision, responseRevision       uint64
+	normalFirmware, responseFirmware       string
 	normalPersistence, responsePersistence string
-	normalError, responseError Error
+	normalError, responseError             Error
 }
 type lightingState struct {
 	mu       sync.Mutex
@@ -227,30 +227,30 @@ type remapState struct {
 }
 
 type Service struct {
-	status             StatusReader
-	writer             DPIWriter
-	store              AppliedStore
-	listener           StatusListener
-	events             EventSink
-	inventory          *mouse.TargetedService
-	migrate            func(Binding) error
-	devicePersistence  DevicePersistence
-	inventoryDevices   []Device
-	mu                 sync.Mutex
-	legacy             *deviceState
-	states             map[DeviceID]*deviceState
-	sync               *SyncCoordinator
-	pollingStates      map[DeviceID]*pollingState
-	pollingSync        *PollingSyncCoordinator
-	pollingPersistence PollingPersistence
-	settingsStates     map[DeviceID]*settingsState
+	status              StatusReader
+	writer              DPIWriter
+	store               AppliedStore
+	listener            StatusListener
+	events              EventSink
+	inventory           *mouse.TargetedService
+	migrate             func(Binding) error
+	devicePersistence   DevicePersistence
+	inventoryDevices    []Device
+	mu                  sync.Mutex
+	legacy              *deviceState
+	states              map[DeviceID]*deviceState
+	sync                *SyncCoordinator
+	pollingStates       map[DeviceID]*pollingState
+	pollingSync         *PollingSyncCoordinator
+	pollingPersistence  PollingPersistence
+	settingsStates      map[DeviceID]*settingsState
 	settingsPersistence PollingPersistence
-	lightingStates     map[DeviceID]*lightingState
-	remapStates        map[DeviceID]*remapState
-	legacyRemap        *remapState
-	remapPersistence   RemapPersistence
-	operationMu        sync.Mutex
-	reset              resetRunner
+	lightingStates      map[DeviceID]*lightingState
+	remapStates         map[DeviceID]*remapState
+	legacyRemap         *remapState
+	remapPersistence    RemapPersistence
+	operationMu         sync.Mutex
+	reset               resetRunner
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -345,7 +345,8 @@ func (s *Service) AttachPollingPersistence(load func(Binding) (x6.DeviceConfig, 
 // AttachNormalSleepPersistence and AttachDebouncePersistence share the durable
 // per-device record so applying either field never discards the other.
 func (s *Service) AttachNormalSleepPersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.settingsPersistence = pollingPersistence{load: load, save: save}
 	return s
 }
@@ -445,7 +446,9 @@ func (s *Service) RefreshInventory(ctx context.Context) Inventory {
 			s.pollingStates[device.ID] = polling
 			settings := newSettingsState()
 			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.settingsPersistence != nil {
-				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil { settings = newSettingsStateFromConfig(config) }
+				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil {
+					settings = newSettingsStateFromConfig(config)
+				}
 			}
 			s.settingsStates[device.ID] = settings
 			s.states[device.ID] = state
@@ -1360,7 +1363,10 @@ func remapSnapshotOf(state *remapState) RemapSnapshot {
 }
 
 func remapSnapshotLocked(state *remapState) RemapSnapshot {
-	actions := []x6.RemapAction{x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire}
+	actions := []x6.RemapAction{
+		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
+		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
+	}
 	return RemapSnapshot{Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
 }
 

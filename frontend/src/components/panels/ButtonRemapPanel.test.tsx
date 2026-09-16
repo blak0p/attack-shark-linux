@@ -36,6 +36,51 @@ describe("ButtonRemapPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("draft pending confirmation");
   });
 
+  it("groups multimedia actions and disables them only for Button 1", () => {
+    const onStage = vi.fn();
+    const multimediaRemap = {
+      ...remap,
+      Actions: [...remap.Actions, "media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"],
+    };
+    render(<ButtonRemapPanel remap={multimediaRemap as never} ready onStage={onStage} />);
+
+    const selectors = screen.getAllByRole("combobox");
+    fireEvent.click(selectors[0]);
+    expect(screen.getByRole("group", { name: "Multimedia" })).toBeInTheDocument();
+    const disabledMediaPlayer = screen.getByRole("option", { name: "Media Player" });
+    expect(disabledMediaPlayer).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(disabledMediaPlayer);
+    expect(onStage).not.toHaveBeenCalled();
+    fireEvent.keyDown(selectors[0], { key: "End" });
+    expect(selectors[0]).toHaveAttribute("aria-activedescendant", expect.stringMatching(/-opt-7$/));
+
+    fireEvent.click(selectors[1]);
+    const enabledMediaPlayer = Array.from(screen.getByRole("listbox", { name: "Button 2 action" }).querySelectorAll('[role="option"]')).find((option) => option.textContent === "Media Player")!;
+    expect(enabledMediaPlayer).toHaveAttribute("aria-disabled", "false");
+    fireEvent.click(enabledMediaPlayer);
+    expect(onStage).toHaveBeenCalledWith(2, "media_player");
+  });
+
+  it("preserves ordered groups and disabled semantics for all seven selectors", () => {
+    const multimediaRemap = {
+      ...remap,
+      Actions: [...remap.Actions, "media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"],
+    };
+    render(<ButtonRemapPanel remap={multimediaRemap as never} ready onStage={vi.fn()} />);
+
+    const selectors = screen.getAllByRole("combobox");
+    selectors.forEach((selector) => fireEvent.click(selector));
+    const listboxes = screen.getAllByRole("listbox");
+    expect(listboxes).toHaveLength(7);
+    listboxes.forEach((listbox, index) => {
+      const groups = Array.from(listbox.querySelectorAll('[role="group"]')).map((group) => group.getAttribute("aria-label"));
+      expect(groups).toEqual(["Basic", "Multimedia"]);
+      const multimedia = Array.from(listbox.querySelectorAll('[role="group"][aria-label="Multimedia"] [role="option"]'));
+      expect(multimedia.map((option) => option.textContent)).toEqual(["Media Player", "Play/Pause", "Stop", "Previous Track", "Next Track", "Volume Up", "Volume Down", "Mute"]);
+      expect(multimedia.every((option) => option.getAttribute("aria-disabled") === (index === 0 ? "true" : "false"))).toBe(true);
+    });
+  });
+
   it("applies on Enter and discards on Escape only while the panel is focused", () => {
     const onApply = vi.fn();
     const onDiscard = vi.fn();
