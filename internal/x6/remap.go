@@ -12,15 +12,23 @@ type RemapButton = protocol.RemapButton
 type RemapConfig = protocol.RemapConfig
 
 const (
-	RemapReportLength = protocol.RemapReportLength
-	RemapOff          = protocol.RemapOff
-	RemapLeft         = protocol.RemapLeft
-	RemapRight        = protocol.RemapRight
-	RemapMiddle       = protocol.RemapMiddle
-	RemapForward      = protocol.RemapForward
-	RemapBackward     = protocol.RemapBackward
-	RemapDoubleClick  = protocol.RemapDoubleClick
-	RemapFire         = protocol.RemapFire
+	RemapReportLength  = protocol.RemapReportLength
+	RemapOff           = protocol.RemapOff
+	RemapLeft          = protocol.RemapLeft
+	RemapRight         = protocol.RemapRight
+	RemapMiddle        = protocol.RemapMiddle
+	RemapForward       = protocol.RemapForward
+	RemapBackward      = protocol.RemapBackward
+	RemapDoubleClick   = protocol.RemapDoubleClick
+	RemapFire          = protocol.RemapFire
+	RemapMediaPlayer   = protocol.RemapMediaPlayer
+	RemapPlayPause     = protocol.RemapPlayPause
+	RemapStop          = protocol.RemapStop
+	RemapPreviousTrack = protocol.RemapPreviousTrack
+	RemapNextTrack     = protocol.RemapNextTrack
+	RemapVolumeUp      = protocol.RemapVolumeUp
+	RemapVolumeDown    = protocol.RemapVolumeDown
+	RemapMute          = protocol.RemapMute
 )
 
 func DefaultRemapConfig() RemapConfig { return protocol.DefaultRemapConfig() }
