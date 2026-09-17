@@ -54,7 +54,7 @@ Wails service (`internal/desktop/service.go`), emitting live events, or changing
 3. In `cmd`, ensure the real emitter is attached (`AttachListener`) and the
    listener is started/stopped with the app lifecycle.
 4. Regenerate bindings; update `frontend/src/wails-service.ts` facade.
-5. Run `go build ./...` and `(cd frontend && npm run build)`.
+5. Run `(cd frontend && npm ci && npm run build)` before `go build ./...`, Go tests, or `go vet ./...`; `//go:embed frontend/dist` requires the generated assets.
 
 ## Output Contract
 Report the method/binding added, the event name emitted, the lifecycle wiring
