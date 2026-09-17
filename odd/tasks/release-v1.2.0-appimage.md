@@ -29,7 +29,7 @@ Publish `v1.2.0` as one stable GitHub Latest release with a Linux AppImage, its 
 
 ## Work Units
 
-- [ ] REL-1: Version source and signed update contract; strict TDD. Independently verified; awaiting feature-branch and user-approved work-unit commit.
+- [x] REL-1: Version source and signed update contract; strict TDD. Independently verified and committed in `af5f035` (`feat(update): add signed update contract`).
 - [ ] REL-2: AppImage packaging, `.desktop`, and icon assets.
 - [ ] REL-3: Release workflow with AppImage, both rules, signed metadata, latest stable release notes.
 - [ ] REL-4: Idempotent curl installer; user-approved udev installation/reload, manual fallback.
@@ -52,4 +52,4 @@ Publish `v1.2.0` as one stable GitHub Latest release with a Linux AppImage, its 
 - REL-1 initial writer: `internal/update/contract.go` and `contract_test.go`; RED for missing symbols, GREEN 20 tests, then 21 focused; configured full suite passed 344 Go tests.
 - First independent review found three defects: uint64 overflow in prerelease comparisons, optional approval API, and normalized version text in signed bytes.
 - Correction: arbitrary-length prerelease numbers compare by digit length then lexically; only the approval-gated API returns a replacement candidate; signed bytes preserve exact version text. Correction RED failed while `VerifyManifest` returned a release; GREEN passed 23 focused tests; configured full suite passed 346 Go tests.
-- Native assessment returned no output and is unassessable; its high-risk plan mandated a second independent verification. It passed: 23 focused tests and `git diff --check` passed with no findings. REL-1 now awaits an approved feature-branch commit; default delivery is ask-on-risk.
+- Native assessment returned no output and is unassessable; its high-risk plan mandated a second independent verification. It passed: 23 focused tests and `git diff --check` passed with no findings. REL-1 is committed in `af5f035`; default delivery is ask-on-risk.
