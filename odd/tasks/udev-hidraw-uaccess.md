@@ -39,7 +39,7 @@ The issue #77 reporter observed the ordering failure on CachyOS with Hyprland. R
 - [x] **UDEV-2 — Run the reversible live end-to-end acceptance.** PASS. The volatile `60-attack-shark-x6-hidraw.rules` candidate produced `uaccess` tags and `user:alejandro:rw-` ACLs on all four X6 hidraw nodes after physical replug. The desktop Device view read interface `dongle` and battery `100%` without applying any device change. Terminal closure interrupted automatic cleanup, but exact manual restoration was then verified read-only: both root-owned baseline rules exist, the candidate and backup are absent, and all four hidraw nodes are `alejandro:root` mode `0660` with active-user read/write access.
 - [x] **UDEV-3 — RED, GREEN, and REFACTOR the packaged policy and documentation.** RED observed because the new policy path was absent. GREEN observed after explicit deletion authorization: removed both obsolete `99-...` policies, renamed the correct hidraw policy to `60-attack-shark-x6-hidraw.rules`, and updated the documentation. Focused test passed; `gofmt` completed; `git diff --check` passed.
 - [x] **UDEV-4 — Verify delivery evidence and clarify issue #77.** Static contract and diff checks passed. Posted and read back the corrective issue comment: https://github.com/blak0p/attack-shark-linux/issues/77#issuecomment-5717223060. It records both the ordering and hidraw-target requirements and the live acceptance evidence.
-- [ ] **UDEV-5 — Create the work-unit commit.** Awaiting explicit user authorization to commit the verified change. Proposed Conventional Commit: `fix(udev): grant uaccess to X6 hidraw nodes`.
+- [x] **UDEV-5 — Create the work-unit commit.** Committed as `a516ba24f1635ac54b0ada4957fab58616d1badd` with `fix(udev): grant uaccess to X6 hidraw nodes`. Native assessment was unavailable/schema-incompatible, so independent verification ran and passed the focused policy test and committed-range diff check.
 
 ## Acceptance criteria and checks
 
@@ -51,4 +51,4 @@ The issue #77 reporter observed the ordering failure on CachyOS with Hyprland. R
 
 ## Current progress and next step
 
-TDD RED → GREEN → REFACTOR is complete. The live E2E acceptance passed, baseline recovery was verified, static checks passed, and issue #77 was corrected. The only pending action is the work-unit commit, which requires explicit user authorization. No commit has been created.
+TDD RED → GREEN → REFACTOR is complete. The live E2E acceptance passed, baseline recovery was verified, static checks passed, issue #77 was corrected, and work-unit commit `a516ba24f1635ac54b0ada4957fab58616d1badd` was independently verified. Source and tracking evidence commits are complete.
