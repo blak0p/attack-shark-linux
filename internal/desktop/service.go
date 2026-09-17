@@ -1366,6 +1366,7 @@ func remapSnapshotLocked(state *remapState) RemapSnapshot {
 	actions := []x6.RemapAction{
 		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
 		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
+		x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus,
 	}
 	return RemapSnapshot{Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
 }

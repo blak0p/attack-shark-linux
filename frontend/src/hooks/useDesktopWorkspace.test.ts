@@ -92,6 +92,23 @@ describe("useDesktopWorkspace", () => {
 		expect(harness.unsubscribeRemap).toHaveBeenCalledOnce();
   });
 
+  it("clears only the explicitly replaced DPI marker when staging remap", async () => {
+    const pending = { Buttons: [
+      { Button: 1, Action: "left", PreservedDefault: "" }, { Button: 2, Action: "right", PreservedDefault: "" },
+      { Button: 3, Action: "middle", PreservedDefault: "" }, { Button: 4, Action: "forward", PreservedDefault: "" },
+      { Button: 5, Action: "backward", PreservedDefault: "" }, { Button: 6, Action: null, PreservedDefault: "DPI+" },
+      { Button: 7, Action: null, PreservedDefault: "DPI-" },
+    ] };
+    const harness = serviceFor({ GetRemapSnapshot: vi.fn().mockResolvedValue(remap({ Pending: pending, Applied: pending })) });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.remap?.Pending.Buttons).toHaveLength(7));
+
+    act(() => result.current.actions.stageRemap(6, "dpi_cycle"));
+
+    expect(result.current.model.remap?.Pending.Buttons[5]).toEqual({ Button: 6, Action: "dpi_cycle", PreservedDefault: "" });
+    expect(result.current.model.remap?.Pending.Buttons[6]).toEqual({ Button: 7, Action: null, PreservedDefault: "DPI-" });
+  });
+
   it("hydrates both settings, applies them independently, and refreshes both after a configuration event", async () => {
     const configurationListeners: Array<(event: { Binding: typeof binding; Snapshot: ReturnType<typeof snapshot> }) => void> = [];
     const harness = serviceFor({ OnConfiguration: vi.fn().mockImplementation((callback) => { configurationListeners.push(callback); return vi.fn(); }) });

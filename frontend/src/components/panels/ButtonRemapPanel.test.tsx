@@ -16,6 +16,10 @@ const multimediaRemap = {
   ...remap,
   Actions: [...remap.Actions, "media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"],
 };
+const mouseControlsRemap = {
+  ...multimediaRemap,
+  Actions: [...multimediaRemap.Actions, "scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"],
+};
 
 afterEach(cleanup);
 
@@ -52,6 +56,35 @@ describe("ButtonRemapPanel", () => {
     expect(disabledMediaPlayer).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(disabledMediaPlayer);
     expect(onStage).not.toHaveBeenCalled();
+  });
+
+  it("keeps Mouse Controls visible, ordered, and inaccessible for Button 1", () => {
+    const onStage = vi.fn();
+    render(<ButtonRemapPanel remap={mouseControlsRemap as never} ready onStage={onStage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Button 1 action" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mouse Controls" }));
+    const submenu = screen.getByRole("menu", { name: "Mouse Controls actions" });
+    const entries = ["Scroll Up", "Scroll Down", "DPI Cycle", "DPI+", "DPI−"];
+    expect(within(submenu).getAllByRole("menuitem").map((entry) => entry.textContent)).toEqual(entries);
+    for (const label of entries) {
+      const entry = within(submenu).getByRole("menuitem", { name: label });
+      expect(entry).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(entry);
+    }
+    const trigger = screen.getByRole("button", { name: "Button 1 action" });
+    fireEvent.keyDown(trigger, { key: "End" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.keyDown(trigger, { key: " " });
+    expect(onStage).not.toHaveBeenCalled();
+  });
+
+  it("stages a Mouse Controls action for an eligible button", () => {
+    const onStage = vi.fn();
+    render(<ButtonRemapPanel remap={mouseControlsRemap as never} ready onStage={onStage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Button 2 action" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mouse Controls" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "DPI Cycle" }));
+    expect(onStage).toHaveBeenCalledWith(2, "dpi_cycle");
   });
 
   it("allows Buttons 2–7 to stage Multimedia actions", () => {

@@ -170,8 +170,12 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 	valid := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	config := x6.DefaultRemapConfig()
 	config.Buttons[0].Action = x6.RemapFire
-	buttonOneMultimedia := x6.DefaultRemapConfig()
-	buttonOneMultimedia.Buttons[0].Action = x6.RemapMediaPlayer
+	buttonOneMouseControls := []x6.RemapConfig{}
+	for _, action := range []x6.RemapAction{x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus} {
+		blocked := x6.DefaultRemapConfig()
+		blocked.Buttons[0].Action = action
+		buttonOneMouseControls = append(buttonOneMouseControls, blocked)
+	}
 
 	for _, tt := range []struct {
 		name      string
@@ -188,13 +192,6 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 			config:    x6.RemapConfig{},
 			wantCode:  InvalidConfiguration,
 			wantCalls: 0,
-		},
-		{
-			name:      "Button 1 multimedia rejects before command or persistence",
-			config:    buttonOneMultimedia,
-			wantCode:  InvalidConfiguration,
-			wantCalls: 0,
-			wantSaves: 0,
 		},
 		{
 			name:   "missing selection rejects before command",
@@ -277,6 +274,22 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 			}
 		})
 	}
+
+	for _, blocked := range buttonOneMouseControls {
+		t.Run("Button 1 Mouse Controls rejects before all side effects/"+string(blocked.Buttons[0].Action), func(t *testing.T) {
+			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			if err != nil { t.Fatalf("NewProfileRegistry() error = %v", err) }
+			command := &remapCommandFake{ack: true}
+			persistence := &remapPersistenceFake{}
+			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{valid}}, command))
+			service.remapPersistence = persistence
+			service.RefreshInventory(context.Background())
+			before, got := service.GetRemapSnapshot(), service.ApplyRemap(blocked)
+			if got.Error.Code != InvalidConfiguration || command.calls != 0 || persistence.saves != 0 || got.Revision != before.Revision || !remapConfigsEqual(got.Pending, before.Pending) || !remapConfigsEqual(got.Applied, before.Applied) {
+				t.Fatalf("ApplyRemap() = %#v, writes=%d saves=%d; want unchanged rejected state", got, command.calls, persistence.saves)
+			}
+		})
+	}
 }
 
 func TestRemapSnapshotOrdersFreshBasicThenMultimediaCatalog(t *testing.T) {
@@ -285,6 +298,7 @@ func TestRemapSnapshotOrdersFreshBasicThenMultimediaCatalog(t *testing.T) {
 	want := []x6.RemapAction{
 		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
 		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
+		x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus,
 	}
 	if len(first.Actions) != len(want) {
 		t.Fatalf("catalog length = %d, want %d", len(first.Actions), len(want))
