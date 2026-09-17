@@ -19,7 +19,7 @@ app := application.New(application.Options{
 })
 ```
 
-Assets come from `//go:embed frontend/dist` (`main.go:20`).
+Assets come from `//go:embed frontend/dist` (`main.go:20`). Generate them on a clean checkout with `(cd frontend && npm ci && npm run build)` before any Go build, test, or vet command; the output is generated and ignored rather than versioned.
 
 ## 2. Bridge events without importing Wails into `desktop`
 

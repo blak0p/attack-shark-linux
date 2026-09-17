@@ -17,21 +17,21 @@ install-deps: ## Install native Ubuntu/Debian dependencies required by Wails
 frontend-install: ## Install frontend dependencies deterministically
 	cd $(FRONTEND_DIR) && npm ci
 
-frontend-build: ## Build frontend assets
+frontend-build: frontend-install ## Build frontend assets
 	cd $(FRONTEND_DIR) && npm run build
 
 frontend-test: ## Run frontend tests
 	cd $(FRONTEND_DIR) && npm test
 
-go-test: ## Run Go tests
+go-test: frontend-build ## Run Go tests
 	go test ./...
 
-vet: ## Run Go vet
+vet: frontend-build ## Run Go vet
 	go vet ./...
 
 test: go-test frontend-test ## Run Go and frontend tests
 
-build: ## Build the Wails desktop application
+build: frontend-build ## Build the Wails desktop application
 	cd $(APP_DIR) && $(WAILS) build
 
 dev: ## Start the Wails development application

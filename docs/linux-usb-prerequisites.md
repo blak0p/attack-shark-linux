@@ -27,6 +27,8 @@ Wails remains pinned to `github.com/wailsapp/wails/v3 v3.0.0-beta.5`; this
 document does not upgrade it. Build and run the fake-only hidraw tests with:
 
 ```sh
+# Generate the assets embedded by cmd/x6configurator before Go checks or builds.
+(cd frontend && npm ci && npm run build)
 go test ./internal/hidlinux -run 'TestHidraw(SendAndAwait|ReadInterruptIN|Enumerate|ValidateDescriptor)' -count=1
 go build ./cmd/x6configurator
 ```

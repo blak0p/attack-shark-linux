@@ -50,9 +50,13 @@ cd attack-shark-linux
 The hidraw tests run against a fake device — no hardware needed:
 
 ```sh
+(cd frontend && npm ci && npm run build)
 go build ./...
 go test ./...
 ```
+
+Generate the embedded frontend first on every clean checkout, before any Go
+build, test, vet, or release check.
 
 To test against the real dongle, install the udev policy first
 ([docs/linux-usb-prerequisites.md](docs/linux-usb-prerequisites.md)).
@@ -82,12 +86,15 @@ Branch naming:
 **Tests must pass before merge.** CI enforces this automatically.
 
 ```sh
+# Required before backend checks on a clean checkout
+(cd frontend && npm ci && npm run build)
+
 # Backend
 go test ./...        # unit tests (fake hidraw, no device needed)
 go vet ./...         # static analysis
 
 # Frontend
-(cd frontend && npm ci && npm test)
+(cd frontend && npm test)
 ```
 
 ### Test conventions
@@ -139,6 +146,7 @@ body.
 
 ### PR checklist (required)
 
+- [ ] `(cd frontend && npm ci && npm run build)` completes before Go checks
 - [ ] `go build ./...` compiles without errors
 - [ ] `go test ./...` unit tests pass
 - [ ] `go vet ./...` passes

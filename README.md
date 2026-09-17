@@ -35,20 +35,25 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 
 ## Building
 
-Requirements: Go 1.25+, Node.js (for the frontend).
+Requirements: Go 1.25+, Node.js (for the frontend), and [Task](https://taskfile.dev).
 
 ```sh
-# Backend + embedded frontend
-task build                # taskfile at cmd/x6configurator
-
-# Or manually:
-go build ./...
+# Generate the embedded frontend before any Go build, test, or vet command.
 (cd frontend && npm ci && npm run build)
+
+# Backend + embedded frontend
+task --dir cmd/x6configurator build
+
+# Or build the Go packages manually:
+go build ./...
 ```
 
 ## Testing
 
 ```sh
+# Required once per clean checkout, before Go checks:
+(cd frontend && npm ci && npm run build)
+
 go test ./...        # backend unit tests (hidraw tests use a fake, no device needed)
 go vet ./...         # static analysis
 (cd frontend && npm test)   # frontend unit tests (vitest)

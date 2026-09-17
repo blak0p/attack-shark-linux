@@ -4,10 +4,7 @@
 /.codegraph/
 # Local AI runtime state
 .atl/
-# Generated frontend bundle embedded by the Wails composition root. It is
-# versioned so direct Go builds and tests have the same runtime assets.
-!/cmd/x6configurator/frontend/
-!/cmd/x6configurator/frontend/dist/
-!/cmd/x6configurator/frontend/dist/**
+# Generated frontend bundle embedded by the Wails composition root.
+/cmd/x6configurator/frontend/dist/
 /bin/
 /frontend/node_modules/

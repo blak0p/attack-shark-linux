@@ -10,15 +10,16 @@ context: |
   managed and must not be hand-edited.
   Safety: no hidraw write occurs without an explicit user apply action; never run as root,
   weaken udev permissions, claim USB interfaces, or inspect the official Windows executable.
-  Testing: Go package tests, Vitest/jsdom frontend tests, go vet, and frontend production build.
+  Testing: generate the embedded frontend with `cd frontend && npm ci && npm run build`
+  before Go package tests, go vet, or Go builds; then run Vitest/jsdom frontend tests.
 
 strict_tdd: true
 
 testing:
-  test_command: "go test ./..."
-  frontend_test_command: "cd frontend && npm test"
-  vet_command: "go vet ./..."
-  build_command: "go build ./... && cd frontend && npm run build"
+  test_command: "cd frontend && npm ci && npm run build && cd .. && go test ./..."
+  frontend_test_command: "cd frontend && npm ci && npm test"
+  vet_command: "cd frontend && npm ci && npm run build && cd .. && go vet ./..."
+  build_command: "cd frontend && npm ci && npm run build && cd .. && go build ./..."
 
 rules:
   proposal:
