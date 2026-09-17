@@ -272,24 +272,46 @@ select option {
   font-size: 11px;
 }
 
-.gnome-select-popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+.gnome-select-popup,
+.gnome-select-submenu {
   min-width: 100%;
   width: max-content;
-  max-width: 220px;
-  max-height: 220px;
-  overflow-y: auto;
+  max-width: min(220px, calc(100vw - 16px));
+  max-height: min(220px, calc(100vh - 16px));
   background: #393a36 !important;
   border: 1px solid #565751;
   border-radius: var(--radius-md);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-  z-index: 100;
+  z-index: 1000;
   padding: 4px;
 }
 
+/* Portal the menu to the viewport so scroll containers cannot clip its submenu. */
+.gnome-select-popup {
+  position: fixed;
+  /* A fixed element's 100% minimum is the viewport, not its trigger. */
+  min-width: min(160px, calc(100vw - 16px));
+  width: max-content;
+  overflow: visible;
+}
+
+.gnome-select-submenu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 4px);
+  overflow-y: auto;
+}
+
+.gnome-select-submenu.flipped {
+  right: calc(100% + 4px);
+  left: auto;
+}
+
 .gnome-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 13px;
@@ -304,18 +326,9 @@ select option {
   background: #454640;
 }
 
-.gnome-select-option.selected {
-  background: #244b3e;
-  color: #c0f0dc;
-  font-weight: 500;
-}
-
-.gnome-select-group-label {
-  padding: 8px 10px 4px;
+.gnome-select-submenu-arrow {
   color: var(--dim);
   font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
 }
 
 .gnome-select-option.disabled {

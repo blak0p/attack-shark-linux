@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 
 export type GnomeSelectOption = {
   value: string;
@@ -7,8 +8,7 @@ export type GnomeSelectOption = {
   disabled?: boolean;
 };
 
-type IndexedOption = GnomeSelectOption & { index: number };
-type OptionGroup = { name?: string; options: IndexedOption[] };
+type Category = { name: string; options: GnomeSelectOption[] };
 
 export type GnomeSelectProps = {
   id?: string;
@@ -32,136 +32,212 @@ export function GnomeSelect({
   onChange,
 }: GnomeSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const listboxId = useId();
-  const [open, setOpen] = useState(false);
-  const selectedIndex = options.findIndex((opt) => opt.value === value);
-  const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const [activeIndex, setActiveIndex] = useState(currentIndex);
-  const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
-  const groupedOptions = options.reduce<OptionGroup[]>((groups, option, index) => {
-    const group = groups.at(-1);
-    if (group?.name === option.group) group.options.push({ ...option, index });
-    else groups.push({ name: option.group, options: [{ ...option, index }] });
-    return groups;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const categories = options.reduce<Category[]>((result, option) => {
+    const name = option.group ?? "Basic";
+    const category = result.find((candidate) => candidate.name === name);
+    if (category) category.options.push(option);
+    else result.push({ name, options: [option] });
+    return result;
   }, []);
+  const selectedOption = options.find((option) => option.value === value);
+  const [open, setOpen] = useState(false);
+  const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [activeActionIndex, setActiveActionIndex] = useState(0);
+  const [submenuFlipped, setSubmenuFlipped] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
+  const submenuCategory = categories.find((category) => category.name === openCategory);
 
-  const nextEnabledIndex = (start: number, direction: number) => {
-    for (let step = 1; step <= options.length; step++) {
-      const index = (start + direction * step + options.length) % options.length;
-      if (!options[index].disabled) return index;
-    }
-    return start;
+  const restoreTriggerFocus = () => triggerRef.current?.focus();
+  const closeSelector = () => {
+    setOpen(false);
+    setOpenCategory(null);
+    restoreTriggerFocus();
   };
 
   useEffect(() => {
-    if (!open) setActiveIndex(currentIndex);
-  }, [currentIndex, open]);
+    if (!open) {
+      setOpenCategory(null);
+      setActiveCategoryIndex(0);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!containerRef.current?.contains(target) && !categoryMenuRef.current?.contains(target)) closeSelector();
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
     return () => document.removeEventListener("mousedown", closeOnOutsideClick);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const positionPopup = () => {
+      const triggerBounds = triggerRef.current!.getBoundingClientRect();
+      const popupHeight = categories.length * 37 + 8;
+      setPopupPosition({
+        top: Math.max(8, Math.min(triggerBounds.bottom + 4, window.innerHeight - popupHeight - 8)),
+        left: Math.max(8, Math.min(triggerBounds.left, window.innerWidth - 168)),
+      });
+    };
+    positionPopup();
+    window.addEventListener("resize", positionPopup);
+    window.addEventListener("scroll", positionPopup, true);
+    return () => {
+      window.removeEventListener("resize", positionPopup);
+      window.removeEventListener("scroll", positionPopup, true);
+    };
+  }, [open, categories.length]);
+
+  useLayoutEffect(() => {
+    if (!openCategory || !categoryMenuRef.current) return;
+    const { right } = categoryMenuRef.current.getBoundingClientRect();
+    setSubmenuFlipped(right + 224 > window.innerWidth);
+  }, [openCategory, popupPosition]);
+
+  const openSelector = () => {
+    setOpen(true);
+    setActiveCategoryIndex(0);
+    setOpenCategory(null);
+  };
+
+  const revealCategory = (index: number) => {
+    setActiveCategoryIndex(index);
+    setOpenCategory(categories[index]?.name ?? null);
+    setActiveActionIndex(0);
+  };
+
   const handleSelect = (option: GnomeSelectOption) => {
     if (option.disabled) return;
     onChange(option.value);
-    setOpen(false);
+    closeSelector();
+  };
+
+  const moveCategory = (direction: number) => {
+    setActiveCategoryIndex((previous) => (previous + direction + categories.length) % categories.length);
+  };
+
+  const moveAction = (direction: number) => {
+    if (!submenuCategory) return;
+    setActiveActionIndex((previous) => (previous + direction + submenuCategory.options.length) % submenuCategory.options.length);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     if (disabled) return;
+    const action = submenuCategory?.options[activeActionIndex];
+
     if (event.key === "Escape") {
-      if (open) {
-        event.preventDefault();
-        setOpen(false);
-      }
+      event.preventDefault();
+      if (openCategory) setOpenCategory(null);
+      else if (open) closeSelector();
       return;
     }
-    if (event.key === "Enter" || event.key === " ") {
+    if (!open && ["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) {
       event.preventDefault();
-      if (!open) {
-        setOpen(true);
-        setActiveIndex(currentIndex);
-      } else if (options[activeIndex]) handleSelect(options[activeIndex]);
+      openSelector();
+      return;
+    }
+    if (!open) return;
+
+    if (event.key === "ArrowLeft" && openCategory) {
+      event.preventDefault();
+      setOpenCategory(null);
+      return;
+    }
+    if (["ArrowRight", "Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      if (openCategory && action) handleSelect(action);
+      else revealCategory(activeCategoryIndex);
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      if (!open) {
-        setOpen(true);
-        setActiveIndex(currentIndex);
-        return;
-      }
-      setActiveIndex((previous) => nextEnabledIndex(previous, event.key === "ArrowDown" ? 1 : -1));
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      if (openCategory) moveAction(direction);
+      else moveCategory(direction);
       return;
     }
-    if (open && (event.key === "Home" || event.key === "End")) {
+    if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
-      const start = event.key === "Home" ? -1 : 0;
-      const direction = event.key === "Home" ? 1 : -1;
-      setActiveIndex(nextEnabledIndex(start, direction));
+      if (openCategory) setActiveActionIndex(event.key === "Home" ? 0 : submenuCategory!.options.length - 1);
+      else setActiveCategoryIndex(event.key === "Home" ? 0 : categories.length - 1);
     }
   };
+
+  const activeDescendant = openCategory
+    ? `${menuId}-action-${activeActionIndex}`
+    : `${menuId}-category-${activeCategoryIndex}`;
 
   return (
     <div className={`gnome-select-wrapper ${className}`} ref={containerRef}>
       <button
         id={id}
+        ref={triggerRef}
         type="button"
         className="select gnome-select-trigger"
-        role="combobox"
         aria-label={ariaLabel}
         aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-controls={listboxId}
-        aria-activedescendant={open && options[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined}
+        aria-haspopup="menu"
+        aria-controls={open ? `${menuId}-categories` : undefined}
+        aria-activedescendant={open ? activeDescendant : undefined}
         disabled={disabled}
-        onClick={() => {
-          if (!disabled) {
-            setOpen((previous) => !previous);
-            setActiveIndex(currentIndex);
-          }
-        }}
+        onClick={() => (open ? closeSelector() : openSelector())}
         onKeyDown={handleKeyDown}
       >
         <span className="gnome-select-value">{selectedOption?.label ?? placeholder ?? value}</span>
         <span className="gnome-select-arrow" aria-hidden="true">▾</span>
       </button>
 
-      {open && (
-        <div id={listboxId} className="gnome-select-popup" role="listbox" aria-label={ariaLabel}>
-          {groupedOptions.map((group) => (
-            group.name ? (
-              <div key={group.name} role="group" aria-label={group.name}>
-                <div className="gnome-select-group-label">{group.name}</div>
-                {group.options.map((option) => <Option key={option.value} option={option} />)}
-              </div>
-            ) : group.options.map((option) => <Option key={option.value} option={option} />)
+      {open && createPortal(
+        <div
+          ref={categoryMenuRef}
+          id={`${menuId}-categories`}
+          className="gnome-select-popup"
+          role="menu"
+          aria-label={`${ariaLabel} categories`}
+          style={popupPosition}
+        >
+          {categories.map((category, index) => (
+            <div
+              key={category.name}
+              id={`${menuId}-category-${index}`}
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={openCategory === category.name}
+              className={`gnome-select-option ${activeCategoryIndex === index ? "active" : ""}`}
+              onClick={() => revealCategory(index)}
+              onMouseEnter={() => revealCategory(index)}
+            >
+              {category.name}
+              <span aria-hidden="true" className="gnome-select-submenu-arrow">▸</span>
+            </div>
           ))}
-        </div>
+          {submenuCategory && (
+            <div className={`gnome-select-submenu ${submenuFlipped ? "flipped" : ""}`} role="menu" aria-label={`${submenuCategory.name} actions`}>
+              {submenuCategory.options.map((option, index) => (
+                <div
+                  key={option.value}
+                  id={`${menuId}-action-${index}`}
+                  role="menuitem"
+                  aria-disabled={option.disabled ?? false}
+                  className={`gnome-select-option ${activeActionIndex === index ? "active" : ""} ${option.disabled ? "disabled" : ""}`}
+                  onClick={() => handleSelect(option)}
+                  onMouseEnter={() => setActiveActionIndex(index)}
+                >
+                  {option.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   );
-
-  function Option({ option }: { option: IndexedOption }) {
-    const isSelected = option.value === value;
-    const isActive = option.index === activeIndex;
-    return (
-      <div
-        id={`${listboxId}-opt-${option.index}`}
-        role="option"
-        aria-selected={isSelected}
-        aria-disabled={option.disabled ?? false}
-        className={`gnome-select-option ${isSelected ? "selected" : ""} ${isActive ? "active" : ""} ${option.disabled ? "disabled" : ""}`}
-        onClick={() => handleSelect(option)}
-        onMouseEnter={() => !option.disabled && setActiveIndex(option.index)}
-      >
-        {option.label}
-      </div>
-    );
-  }
 }
