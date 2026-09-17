@@ -40,6 +40,7 @@ The issue #77 reporter observed the ordering failure on CachyOS with Hyprland. R
 - [x] **UDEV-3 — RED, GREEN, and REFACTOR the packaged policy and documentation.** RED observed because the new policy path was absent. GREEN observed after explicit deletion authorization: removed both obsolete `99-...` policies, renamed the correct hidraw policy to `60-attack-shark-x6-hidraw.rules`, and updated the documentation. Focused test passed; `gofmt` completed; `git diff --check` passed.
 - [x] **UDEV-4 — Verify delivery evidence and clarify issue #77.** Static contract and diff checks passed. Posted and read back the corrective issue comment: https://github.com/blak0p/attack-shark-linux/issues/77#issuecomment-5717223060. It records both the ordering and hidraw-target requirements and the live acceptance evidence.
 - [x] **UDEV-5 — Create the work-unit commit.** Committed as `a516ba24f1635ac54b0ada4957fab58616d1badd` with `fix(udev): grant uaccess to X6 hidraw nodes`. Native assessment was unavailable/schema-incompatible, so independent verification ran and passed the focused policy test and committed-range diff check.
+- [x] **UDEV-6 — Apply the verified policy to the local host.** PASS. Installed `/etc/udev/rules.d/60-attack-shark-x6-hidraw.rules`, removed both superseded local `99-...` rules, reloaded udev, physically replugged the dongle, and observed `user:alejandro:rw-` ACL access on all four X6 hidraw nodes. The temporary rollback backup was removed after verification.
 
 ## Acceptance criteria and checks
 
@@ -51,4 +52,4 @@ The issue #77 reporter observed the ordering failure on CachyOS with Hyprland. R
 
 ## Current progress and next step
 
-TDD RED → GREEN → REFACTOR is complete. The live E2E acceptance passed, baseline recovery was verified, static checks passed, issue #77 was corrected, and work-unit commit `a516ba24f1635ac54b0ada4957fab58616d1badd` was independently verified. Source and tracking evidence commits are complete.
+TDD RED → GREEN → REFACTOR is complete. The live E2E acceptance passed, baseline recovery was verified, static checks passed, issue #77 was corrected, and work-unit commit `a516ba24f1635ac54b0ada4957fab58616d1badd` was independently verified. The final persistent local policy installation also passed. The host-install evidence update remains uncommitted; push and PR creation remain maintainer decisions.
