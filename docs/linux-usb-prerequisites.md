@@ -11,7 +11,7 @@ the device world-writable.
 1. From the repository root, copy the shipped rule and reload udev:
 
    ```sh
-   sudo install -Dm0644 packaging/udev/99-attack-shark-x6.rules /etc/udev/rules.d/99-attack-shark-x6.rules
+   sudo install -Dm0644 packaging/udev/60-attack-shark-x6-hidraw.rules /etc/udev/rules.d/60-attack-shark-x6-hidraw.rules
    sudo udevadm control --reload-rules
    sudo udevadm trigger
    ```
@@ -41,14 +41,14 @@ seat user. On systems without logind/uaccess support, use a static group instead
 ```sh
 sudo groupadd --system attack-shark-x6
 sudo usermod -aG attack-shark-x6 "$USER"
-sudo install -Dm0644 packaging/udev/99-attack-shark-x6.rules /etc/udev/rules.d/99-attack-shark-x6.rules
+sudo install -Dm0644 packaging/udev/60-attack-shark-x6-hidraw.rules /etc/udev/rules.d/60-attack-shark-x6-hidraw.rules
 ```
 
 Then replace the installed rule's final action with this group policy, reload
 udev, and replug the dongle:
 
 ```udev
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa60", GROUP="attack-shark-x6", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa60", GROUP="attack-shark-x6", MODE="0660"
 ```
 
 ```sh
@@ -66,7 +66,7 @@ The application maps `os.ErrPermission` to the UI error code
 `permission_denied`. This means Linux denied access to the validated dongle; it
 does not mean the app should be run as root. Check, in order:
 
-- The rule is installed at `/etc/udev/rules.d/99-attack-shark-x6.rules`.
+- The rule is installed at `/etc/udev/rules.d/60-attack-shark-x6-hidraw.rules`.
 - Rules were reloaded, the trigger command ran, and the dongle was replugged.
 - For group policy, the user belongs to `attack-shark-x6` and has logged in again.
 - The dongle identity still appears as `1d57:fa60`.
@@ -79,11 +79,11 @@ Confirm the USB identity:
 lsusb -d 1d57:fa60
 ```
 
-Inspect udev attributes after locating the matching device node (replace the
-placeholder with the bus/device path reported by your system):
+Inspect udev attributes after locating an X6 hidraw node (replace the
+placeholder with the hidraw node reported by your system):
 
 ```sh
-udevadm info -a -n /dev/bus/usb/BBB/DDD
+udevadm info -a -n /dev/hidrawN
 ```
 
 The adapter reads status or acknowledgements from the vendor hidraw node only
