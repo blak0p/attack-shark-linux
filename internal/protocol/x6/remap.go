@@ -23,6 +23,11 @@ const (
 	RemapVolumeUp      RemapAction = "volume_up"
 	RemapVolumeDown    RemapAction = "volume_down"
 	RemapMute          RemapAction = "mute"
+	RemapScrollUp      RemapAction = "scroll_up"
+	RemapScrollDown    RemapAction = "scroll_down"
+	RemapDPICycle      RemapAction = "dpi_cycle"
+	RemapDPIPlus       RemapAction = "dpi_plus"
+	RemapDPIMinus      RemapAction = "dpi_minus"
 )
 
 type RemapButton struct {
@@ -68,8 +73,8 @@ func ValidateRemapConfig(config RemapConfig) error {
 		if !isRemapAction(button.Action) {
 			return fmt.Errorf("remap button %d has unsupported action %q", button.Button, button.Action)
 		}
-		if button.Button == 1 && isMultimediaRemapAction(button.Action) {
-			return fmt.Errorf("remap button 1 does not support multimedia action %q", button.Action)
+		if button.Button == 1 && (isMultimediaRemapAction(button.Action) || isMouseControlsRemapAction(button.Action)) {
+			return fmt.Errorf("remap button 1 does not support action %q", button.Action)
 		}
 	}
 	return nil
@@ -127,6 +132,16 @@ func remapActionID(action RemapAction) byte {
 		return 0x1c
 	case RemapMute:
 		return 0x1a
+	case RemapScrollUp:
+		return 0x09
+	case RemapScrollDown:
+		return 0x0a
+	case RemapDPICycle:
+		return 0x0d
+	case RemapDPIPlus:
+		return 0x0e
+	case RemapDPIMinus:
+		return 0x0f
 	default:
 		return 0
 	}
@@ -139,7 +154,17 @@ func MatchesRemapACK(report []byte) bool {
 func isRemapAction(action RemapAction) bool {
 	switch action {
 	case RemapOff, RemapLeft, RemapRight, RemapMiddle, RemapForward, RemapBackward, RemapDoubleClick, RemapFire,
-		RemapMediaPlayer, RemapPlayPause, RemapStop, RemapPreviousTrack, RemapNextTrack, RemapVolumeUp, RemapVolumeDown, RemapMute:
+		RemapMediaPlayer, RemapPlayPause, RemapStop, RemapPreviousTrack, RemapNextTrack, RemapVolumeUp, RemapVolumeDown, RemapMute,
+		RemapScrollUp, RemapScrollDown, RemapDPICycle, RemapDPIPlus, RemapDPIMinus:
+		return true
+	default:
+		return false
+	}
+}
+
+func isMouseControlsRemapAction(action RemapAction) bool {
+	switch action {
+	case RemapScrollUp, RemapScrollDown, RemapDPICycle, RemapDPIPlus, RemapDPIMinus:
 		return true
 	default:
 		return false

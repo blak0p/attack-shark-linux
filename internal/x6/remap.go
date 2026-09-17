@@ -29,6 +29,11 @@ const (
 	RemapVolumeUp      = protocol.RemapVolumeUp
 	RemapVolumeDown    = protocol.RemapVolumeDown
 	RemapMute          = protocol.RemapMute
+	RemapScrollUp      = protocol.RemapScrollUp
+	RemapScrollDown    = protocol.RemapScrollDown
+	RemapDPICycle      = protocol.RemapDPICycle
+	RemapDPIPlus       = protocol.RemapDPIPlus
+	RemapDPIMinus      = protocol.RemapDPIMinus
 )
 
 func DefaultRemapConfig() RemapConfig { return protocol.DefaultRemapConfig() }

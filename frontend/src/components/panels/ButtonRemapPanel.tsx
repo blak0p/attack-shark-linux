@@ -1,6 +1,6 @@
 import { GnomeSelect } from "./GnomeSelect";
 
-type Action = "off" | "left" | "right" | "middle" | "forward" | "backward" | "double_click" | "fire" | "media_player" | "play_pause" | "stop" | "previous_track" | "next_track" | "volume_up" | "volume_down" | "mute";
+type Action = "off" | "left" | "right" | "middle" | "forward" | "backward" | "double_click" | "fire" | "media_player" | "play_pause" | "stop" | "previous_track" | "next_track" | "volume_up" | "volume_down" | "mute" | "scroll_up" | "scroll_down" | "dpi_cycle" | "dpi_plus" | "dpi_minus";
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
 type Remap = {
   Pending: { Buttons: Button[] };
@@ -28,9 +28,15 @@ const labelFor = (action: Action) =>
     volume_up: "Volume Up",
     volume_down: "Volume Down",
     mute: "Mute",
+    scroll_up: "Scroll Up",
+    scroll_down: "Scroll Down",
+    dpi_cycle: "DPI Cycle",
+    dpi_plus: "DPI+",
+    dpi_minus: "DPI−",
   })[action];
 
 const isMultimedia = (action: Action) => ["media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"].includes(action);
+const isMouseControls = (action: Action) => ["scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"].includes(action);
 
 export function ButtonRemapPanel({
   remap,
@@ -84,12 +90,12 @@ export function ButtonRemapPanel({
             options={remap.Actions.map((action) => ({
               value: action,
               label: labelFor(action),
-              group: isMultimedia(action) ? "Multimedia" : "Basic",
-              disabled: button.Button === 1 && isMultimedia(action),
+              group: isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
+              disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
             }))}
             onChange={(val) => {
               const action = val as Action;
-              if (!(button.Button === 1 && isMultimedia(action))) onStage(button.Button, action);
+              if (!(button.Button === 1 && (isMultimedia(action) || isMouseControls(action)))) onStage(button.Button, action);
             }}
           />
         </div>

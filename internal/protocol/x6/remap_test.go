@@ -81,6 +81,36 @@ func TestRemapMultimediaActionsUseExactIDsAndProtectButtonOne(t *testing.T) {
 	}
 }
 
+func TestMouseControlsUseExactIDsAndRespectPhysicalButtonPolicy(t *testing.T) {
+	mouseControls := []struct {
+		action RemapAction
+		id     byte
+	}{
+		{RemapScrollUp, 0x09}, {RemapScrollDown, 0x0a}, {RemapDPICycle, 0x0d}, {RemapDPIPlus, 0x0e}, {RemapDPIMinus, 0x0f},
+	}
+	for _, tt := range mouseControls {
+		t.Run(string(tt.action), func(t *testing.T) {
+			for button := 2; button <= 7; button++ {
+				config := DefaultRemapConfig()
+				config.Buttons[button-1].Action = tt.action
+				report, err := EncodeRemapReport(config)
+				if err != nil {
+					t.Fatalf("EncodeRemapReport(Button %d, %q) error = %v", button, tt.action, err)
+				}
+				offset := 3 + (remapGroupByButton[button-1]-1)*3
+				if report[offset] != tt.id {
+					t.Fatalf("Button %d action byte = 0x%02x, want 0x%02x", button, report[offset], tt.id)
+				}
+			}
+			blocked := DefaultRemapConfig()
+			blocked.Buttons[0].Action = tt.action
+			if err := ValidateRemapConfig(blocked); err == nil {
+				t.Fatalf("ValidateRemapConfig() accepted Button 1 %q", tt.action)
+			}
+		})
+	}
+}
+
 func TestRemapDefaultsPreserveDPIMarkersAndReturnCopies(t *testing.T) {
 	first := DefaultRemapConfig()
 	second := DefaultRemapConfig()
