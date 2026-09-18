@@ -445,6 +445,40 @@ func TestPackagedAppImageWebKitProcessesAreExecutable(t *testing.T) {
 	}
 }
 
+func TestReleasePackagingInjectsOnlyNormalizedPublicBuildContract(t *testing.T) {
+	taskfile, err := os.ReadFile("Taskfile.yml")
+	if err != nil {
+		t.Fatalf("read release package task: %v", err)
+	}
+	for _, want := range []string{
+		"package:release:",
+		"package:container:release:",
+		"ATTACK_SHARK_RELEASE_SIGNING_SEED",
+		"go run ../../cmd/release public-key",
+		"-X github.com/blak0p/attack-shark-linux/internal/update.CurrentVersion=${RELEASE_TAG#v}",
+		"-X github.com/blak0p/attack-shark-linux/internal/update.ReleasePublicKey=${release_public_key}",
+		"go run ../../cmd/release stage -tag \"$RELEASE_TAG\"",
+		"-appimage build/attack-shark-linux-x86_64.AppImage",
+		"-output-dir build/release",
+		"go build -ldflags",
+	} {
+		if !strings.Contains(string(taskfile), want) {
+			t.Errorf("release package task must contain %q", want)
+		}
+	}
+	if strings.Contains(string(taskfile), "-seed") {
+		t.Fatal("release package task must not put signing material in command arguments")
+	}
+
+	module, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read module definition: %v", err)
+	}
+	if !strings.Contains(string(module), "github.com/wailsapp/wails/v3 v3.0.0-beta.23") {
+		t.Fatal("Go module must align with the beta.23 packaging CLI")
+	}
+}
+
 func TestRootlessUbuntuAppImageContainerRoute(t *testing.T) {
 	taskfile, err := os.ReadFile("Taskfile.yml")
 	if err != nil {

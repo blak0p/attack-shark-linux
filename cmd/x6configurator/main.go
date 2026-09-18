@@ -12,12 +12,23 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
+	"github.com/blak0p/attack-shark-linux/internal/update"
 	"github.com/blak0p/attack-shark-linux/internal/x6"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed frontend/dist
 var assets embed.FS
+
+// releaseBuildContract retains release-time updater values in the desktop binary.
+// The values are injected by the release packaging route and are not exposed to UI bindings.
+var releaseBuildContract = struct {
+	CurrentVersion   string
+	ReleasePublicKey string
+}{
+	CurrentVersion:   update.CurrentVersion,
+	ReleasePublicKey: update.ReleasePublicKey,
+}
 
 // wailsEventSink bridges the desktop service to the Wails event manager so the
 // frontend can subscribe to live status updates.
