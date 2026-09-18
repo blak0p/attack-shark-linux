@@ -6,5 +6,7 @@
 .atl/
 # Generated frontend bundle embedded by the Wails composition root.
 /cmd/x6configurator/frontend/dist/
+# Generated Wails AppImage and AppDir output from the rootless Ubuntu builder.
+/cmd/x6configurator/build/
 /bin/
 /frontend/node_modules/

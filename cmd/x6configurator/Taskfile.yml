@@ -12,3 +12,19 @@ tasks:
     dir: ../../frontend
     cmds:
       - npm run build
+
+  package:
+    desc: Package a Linux AppImage from freshly built frontend assets.
+    deps: [build:frontend]
+    cmds:
+      - go build -o build/attack-shark-linux .
+      - |-
+        PKG_CONFIG_PATH="/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" wails3 generate appimage -binary build/attack-shark-linux -icon ../../packaging/icons/attack-shark-x6.svg -desktopfile ../../packaging/desktop/attack-shark-x6.desktop -outputdir build -builddir build/appimage &&
+        chmod 0755 build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitNetworkProcess build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitWebProcess &&
+        (cd build && APPIMAGE_EXTRACT_AND_RUN=1 appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage)
+
+  package:container:
+    desc: Package the Linux AppImage in a rootless Ubuntu 24.04 Podman builder.
+    cmds:
+      - podman build --tag attack-shark-x6-appimage-builder:ubuntu-24.04 --file ../../packaging/appimage/Containerfile ../../packaging/appimage
+      - podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --env HOME=/tmp --env APPIMAGE_EXTRACT_AND_RUN=1 --volume ../..:/workspace:Z --workdir /workspace/cmd/x6configurator attack-shark-x6-appimage-builder:ubuntu-24.04 sh -c 'wails3 package GOOS=linux && mv build/Attack_Shark_X6_Configurator-x86_64.AppImage build/attack-shark-linux-x86_64.AppImage'
