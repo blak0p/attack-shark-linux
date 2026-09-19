@@ -35,8 +35,16 @@ func TestReleaseWorkflowEnforcesCanonicalReleasePolicy(t *testing.T) {
 	if !strings.Contains(packaging, "working-directory: cmd/x6configurator\n") {
 		t.Error("packaging must run from cmd/x6configurator")
 	}
-	if !strings.Contains(packaging, "run: task package:container:release\n") {
-		t.Error("packaging must invoke the release packaging task exactly")
+	for _, required := range []string{
+		"mkdir -p build/release",
+		`release_public_key="$(go run ../../cmd/release public-key)"`,
+		`sed "s|__ATTACK_SHARK_RELEASE_PUBLIC_KEY__|$release_public_key|" ../../install.sh > build/release/install.sh`,
+		"chmod 0755 build/release/install.sh",
+		"task package:container:release",
+	} {
+		if !strings.Contains(packaging, required) {
+			t.Errorf("packaging must contain %q", required)
+		}
 	}
 	if !strings.Contains(packaging, "ATTACK_SHARK_RELEASE_SIGNING_SEED: ${{ secrets.ATTACK_SHARK_RELEASE_SIGNING_SEED }}") {
 		t.Error("release signing seed must be available to packaging")
@@ -60,6 +68,7 @@ func TestReleaseWorkflowEnforcesCanonicalReleasePolicy(t *testing.T) {
 		"cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage",
 		"cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage.sha256",
 		"cmd/x6configurator/build/release/update-manifest.json",
+		"cmd/x6configurator/build/release/install.sh",
 		"packaging/udev/60-attack-shark-x6-hidraw.rules",
 	}
 	assets := releaseAssetArguments(release)

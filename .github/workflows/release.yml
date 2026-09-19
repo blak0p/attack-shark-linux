@@ -86,7 +86,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/attack-shark-linux-x86_64.AppImage
           ATTACK_SHARK_RELEASE_SIGNING_SEED: ${{ secrets.ATTACK_SHARK_RELEASE_SIGNING_SEED }}
-        run: task package:container:release
+        run: |
+          set -euo pipefail
+          mkdir -p build/release
+          release_public_key="$(go run ../../cmd/release public-key)"
+          sed "s|__ATTACK_SHARK_RELEASE_PUBLIC_KEY__|$release_public_key|" ../../install.sh > build/release/install.sh
+          chmod 0755 build/release/install.sh
+          task package:container:release
 
       - name: Create GitHub Release
         env:
@@ -108,4 +114,5 @@ jobs:
             cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage \
             cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage.sha256 \
             cmd/x6configurator/build/release/update-manifest.json \
+            cmd/x6configurator/build/release/install.sh \
             packaging/udev/60-attack-shark-x6-hidraw.rules
