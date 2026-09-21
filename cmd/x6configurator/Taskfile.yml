@@ -1,6 +1,13 @@
 version: '3'
 
 tasks:
+  bindings:
+    desc: Generate canonical Wails TypeScript bindings and mirror the complete tree for the desktop frontend.
+    dir: .
+    cmds:
+      - wails3 generate bindings -ts -d ../../frontend/bindings
+      - rsync -a --delete ../../frontend/bindings/ frontend/bindings/
+
   build:
     desc: Build the Wails desktop application without re-entering Wails.
     deps: [build:frontend]

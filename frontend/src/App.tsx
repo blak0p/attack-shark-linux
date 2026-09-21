@@ -14,6 +14,7 @@ import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
 import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { DeviceStatusPanel } from "./components/panels/DeviceStatusPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 export type {
   ConfigurationEvent,
   DesktopService,
@@ -83,6 +84,9 @@ export function App({ service }: { service: DesktopService }) {
     notice,
     resetConfirmation,
     automaticApplyBusy,
+    update,
+    updateApplying,
+    updateError,
   } = model;
 
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
@@ -200,6 +204,7 @@ export function App({ service }: { service: DesktopService }) {
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}
     >
+      {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
         id="performance"

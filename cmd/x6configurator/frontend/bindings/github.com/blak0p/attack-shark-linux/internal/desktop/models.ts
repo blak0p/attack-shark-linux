@@ -74,14 +74,48 @@ export class DebounceSnapshot {
     "Persistence": string;
     "RetryAvailable": boolean;
 
+    /** Creates a new DebounceSnapshot instance. */
     constructor($$source: Partial<DebounceSnapshot> = {}) {
-        this["Desired"] = 0; this["Applied"] = 0; this["Persisted"] = null; this["Factory"] = 0;
-        this["Revision"] = 0; this["Error"] = new Error(); this["Firmware"] = ""; this["Persistence"] = ""; this["RetryAvailable"] = false;
+        if (!("Desired" in $$source)) {
+            this["Desired"] = 0;
+        }
+        if (!("Applied" in $$source)) {
+            this["Applied"] = 0;
+        }
+        if (!("Persisted" in $$source)) {
+            this["Persisted"] = null;
+        }
+        if (!("Factory" in $$source)) {
+            this["Factory"] = 0;
+        }
+        if (!("Revision" in $$source)) {
+            this["Revision"] = 0;
+        }
+        if (!("Error" in $$source)) {
+            this["Error"] = (new Error());
+        }
+        if (!("Firmware" in $$source)) {
+            this["Firmware"] = "";
+        }
+        if (!("Persistence" in $$source)) {
+            this["Persistence"] = "";
+        }
+        if (!("RetryAvailable" in $$source)) {
+            this["RetryAvailable"] = false;
+        }
+
         Object.assign(this, $$source);
     }
+
+    /**
+     * Creates a new DebounceSnapshot instance from a string or object.
+     */
     static createFrom($$source: any = {}): DebounceSnapshot {
-        const $$parsedSource = typeof $$source === "string" ? JSON.parse($$source) : $$source;
-        if ("Error" in $$parsedSource) $$parsedSource["Error"] = Error.createFrom($$parsedSource["Error"]);
+        const $$createField4_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Error" in $$parsedSource) {
+            $$parsedSource["Error"] = $$createField4_0($$parsedSource["Error"]);
+        }
         return new DebounceSnapshot($$parsedSource as Partial<DebounceSnapshot>);
     }
 }
@@ -161,9 +195,9 @@ export class Inventory {
      * Creates a new Inventory instance from a string or object.
      */
     static createFrom($$source: any = {}): Inventory {
-        const $$createField0_0 = $$createType1;
-        const $$createField1_0 = $$createType3;
-        const $$createField2_0 = $$createType4;
+        const $$createField0_0 = $$createType2;
+        const $$createField1_0 = $$createType4;
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Devices" in $$parsedSource) {
             $$parsedSource["Devices"] = $$createField0_0($$parsedSource["Devices"]);
@@ -217,7 +251,7 @@ export class LightingSnapshot {
         const $$createField0_0 = $$createType5;
         const $$createField1_0 = $$createType6;
         const $$createField2_0 = $$createType8;
-        const $$createField5_0 = $$createType4;
+        const $$createField5_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Pending" in $$parsedSource) {
             $$parsedSource["Pending"] = $$createField0_0($$parsedSource["Pending"]);
@@ -245,14 +279,45 @@ export class NormalSleepSnapshot {
     "RetryAvailable": boolean;
     "Error": Error;
 
+    /** Creates a new NormalSleepSnapshot instance. */
     constructor($$source: Partial<NormalSleepSnapshot> = {}) {
-        this["Pending"] = 0; this["Applied"] = 0; this["Persisted"] = null; this["Revision"] = 0;
-        this["Firmware"] = ""; this["Persistence"] = ""; this["RetryAvailable"] = false; this["Error"] = new Error();
+        if (!("Pending" in $$source)) {
+            this["Pending"] = 0;
+        }
+        if (!("Applied" in $$source)) {
+            this["Applied"] = 0;
+        }
+        if (!("Persisted" in $$source)) {
+            this["Persisted"] = null;
+        }
+        if (!("Revision" in $$source)) {
+            this["Revision"] = 0;
+        }
+        if (!("Firmware" in $$source)) {
+            this["Firmware"] = "";
+        }
+        if (!("Persistence" in $$source)) {
+            this["Persistence"] = "";
+        }
+        if (!("RetryAvailable" in $$source)) {
+            this["RetryAvailable"] = false;
+        }
+        if (!("Error" in $$source)) {
+            this["Error"] = (new Error());
+        }
+
         Object.assign(this, $$source);
     }
+
+    /**
+     * Creates a new NormalSleepSnapshot instance from a string or object.
+     */
     static createFrom($$source: any = {}): NormalSleepSnapshot {
-        const $$parsedSource = typeof $$source === "string" ? JSON.parse($$source) : $$source;
-        if ("Error" in $$parsedSource) $$parsedSource["Error"] = Error.createFrom($$parsedSource["Error"]);
+        const $$createField5_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Error" in $$parsedSource) {
+            $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
+        }
         return new NormalSleepSnapshot($$parsedSource as Partial<NormalSleepSnapshot>);
     }
 }
@@ -305,7 +370,7 @@ export class PollingSnapshot {
      * Creates a new PollingSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): PollingSnapshot {
-        const $$createField4_0 = $$createType4;
+        const $$createField4_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Error" in $$parsedSource) {
             $$parsedSource["Error"] = $$createField4_0($$parsedSource["Error"]);
@@ -366,7 +431,7 @@ export class RemapSnapshot {
         const $$createField0_1 = $$createType9;
         const $$createField0_2 = $$createType9;
         const $$createField1_0 = $$createType10;
-        const $$createField5_0 = $$createType4;
+        const $$createField5_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Pending" in $$parsedSource) {
             $$parsedSource["Pending"] = $$createField0_0($$parsedSource["Pending"]);
@@ -446,7 +511,7 @@ export class ResetResult {
     static createFrom($$source: any = {}): ResetResult {
         const $$createField0_0 = $$createType12;
         const $$createField1_0 = $$createType11;
-        const $$createField2_0 = $$createType4;
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Lanes" in $$parsedSource) {
             $$parsedSource["Lanes"] = $$createField0_0($$parsedSource["Lanes"]);
@@ -541,7 +606,7 @@ export class Snapshot {
         const $$createField2_0 = $$createType13;
         const $$createField3_0 = $$createType13;
         const $$createField4_0 = $$createType13;
-        const $$createField6_0 = $$createType4;
+        const $$createField6_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Applied" in $$parsedSource) {
             $$parsedSource["Applied"] = $$createField2_0($$parsedSource["Applied"]);
@@ -565,14 +630,38 @@ export class Snapshot {
  */
 export type StatusListener = any;
 
+/**
+ * UpdateInfo is the display-only update contract exported to Wails bindings.
+ */
+export class UpdateInfo {
+    "Version": string;
+
+    /** Creates a new UpdateInfo instance. */
+    constructor($$source: Partial<UpdateInfo> = {}) {
+        if (!("Version" in $$source)) {
+            this["Version"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UpdateInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UpdateInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UpdateInfo($$parsedSource as Partial<UpdateInfo>);
+    }
+}
+
 export type resetRunner = any;
 
 // Private type creation functions
-const $$createType0 = mouse$0.Device.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = mouse$0.Binding.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = Error.createFrom;
+const $$createType0 = Error.createFrom;
+const $$createType1 = mouse$0.Device.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = mouse$0.Binding.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
 const $$createType5 = x6$1.LightingSelection.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
 const $$createType7 = x6$0.LightingEffect.createFrom;

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io/fs"
@@ -61,6 +62,59 @@ func (f *targetedCommandFake) observations() (int, []mouse.Binding) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls, append([]mouse.Binding(nil), f.bindings...)
+}
+
+func TestReleaseUpdaterRequiresInstallerManagedRuntimeAppImageIdentity(t *testing.T) {
+	originalContract := releaseBuildContract
+	originalInstalledPath := installedAppImagePath
+	originalRuntimeAppImagePath := runtimeAppImagePath
+	t.Cleanup(func() {
+		releaseBuildContract = originalContract
+		installedAppImagePath = originalInstalledPath
+		runtimeAppImagePath = originalRuntimeAppImagePath
+	})
+	releaseBuildContract.CurrentVersion = "1.2.0"
+	releaseBuildContract.ReleasePublicKey = "public-key"
+	root := t.TempDir()
+	installed := filepath.Join(root, "attack-shark-linux-x86_64.AppImage")
+	payload := filepath.Join(root, "squashfs-root", "usr", "bin", "attack-shark-linux")
+	unmanaged := filepath.Join(root, "downloaded.AppImage")
+	for _, path := range []string{installed, unmanaged} {
+		if err := os.WriteFile(path, []byte("AppImage"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(payload), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(payload, []byte("embedded payload"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	installedAppImagePath = func() (string, error) { return installed, nil }
+	if sameManagedAppImage(root, root) {
+		t.Fatal("APPIMAGE identity must reject non-regular paths")
+	}
+
+	runtimeAppImagePath = func() string { return installed }
+	if updater := releaseUpdater(); updater == nil {
+		t.Fatal("managed APPIMAGE outer path must enable updater even when os.Executable is the embedded payload")
+	}
+	for _, runtimePath := range []string{"", "relative.AppImage", unmanaged, filepath.Join(root, "missing.AppImage")} {
+		runtimeAppImagePath = func() string { return runtimePath }
+		if updater := releaseUpdater(); updater != nil {
+			t.Fatalf("runtime APPIMAGE %q must not enable updater", runtimePath)
+		}
+	}
+	releaseBuildContract.CurrentVersion = "0.0.0-dev"
+	runtimeAppImagePath = func() string { return installed }
+	if updater := releaseUpdater(); updater != nil {
+		t.Fatal("development builds must not enable updater or recovery")
+	}
+	releaseBuildContract.CurrentVersion = "1.2.0"
+	releaseBuildContract.ReleasePublicKey = ""
+	if updater := releaseUpdater(); updater != nil {
+		t.Fatal("builds without a release key must not enable updater or recovery")
+	}
 }
 
 func TestEmbeddedFrontendServesBuiltRuntimeEntry(t *testing.T) {
@@ -599,6 +653,42 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 	} {
 		if !strings.Contains(string(effects), field) {
 			t.Errorf("generated Wails lighting bindings must preserve %s", field)
+		}
+	}
+}
+
+func TestGeneratedDesktopModelBindingsAreByteIdentical(t *testing.T) {
+	canonical, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+	if err != nil {
+		t.Fatalf("read canonical generated desktop models: %v", err)
+	}
+	mirrored, err := os.ReadFile("frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+	if err != nil {
+		t.Fatalf("read mirrored generated desktop models: %v", err)
+	}
+	if !bytes.Equal(canonical, mirrored) {
+		t.Fatal("generated desktop models must be byte-identical")
+	}
+}
+
+func TestGeneratedWailsBindingsHideUpdateCompositionAndRecovery(t *testing.T) {
+	for _, path := range []string{
+		"../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service.ts",
+		"frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service.ts",
+	} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read generated desktop service binding %q: %v", path, err)
+		}
+		for _, method := range []string{"AttachUpdater", "RecoverUpdates"} {
+			if strings.Contains(string(contents), "export function "+method) {
+				t.Errorf("generated Wails binding %q must not expose %s", path, method)
+			}
+		}
+		for _, method := range []string{"CheckForUpdate", "ApplyVerifiedUpdate"} {
+			if !strings.Contains(string(contents), "export function "+method+"()") {
+				t.Errorf("generated Wails binding %q must expose zero-argument %s", path, method)
+			}
 		}
 	}
 }

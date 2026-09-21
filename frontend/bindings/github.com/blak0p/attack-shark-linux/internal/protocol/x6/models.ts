@@ -96,6 +96,19 @@ export enum RemapAction {
     RemapForward = "forward",
     RemapDoubleClick = "double_click",
     RemapFire = "fire",
+    RemapMediaPlayer = "media_player",
+    RemapPlayPause = "play_pause",
+    RemapStop = "stop",
+    RemapPreviousTrack = "previous_track",
+    RemapNextTrack = "next_track",
+    RemapVolumeUp = "volume_up",
+    RemapVolumeDown = "volume_down",
+    RemapMute = "mute",
+    RemapScrollUp = "scroll_up",
+    RemapScrollDown = "scroll_down",
+    RemapDPICycle = "dpi_cycle",
+    RemapDPIPlus = "dpi_plus",
+    RemapDPIMinus = "dpi_minus",
 };
 
 export class RemapButton {

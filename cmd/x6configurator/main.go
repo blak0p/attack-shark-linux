@@ -5,6 +5,8 @@ import (
 	"embed"
 	"errors"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
 
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
@@ -90,6 +92,13 @@ func startWails() error {
 
 	backend := hidlinux.NewHidrawBackend()
 	service, passive := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), backend)
+	updater := releaseUpdater()
+	if updater != nil {
+		desktop.ConfigureUpdater(service, updater, nil)
+		if err := desktop.RecoverUpdates(service); err != nil {
+			return err
+		}
+	}
 	listenCtx, stopListening := context.WithCancel(context.Background())
 	app := application.New(application.Options{
 		Name: "Attack Shark X6 Configurator",
@@ -104,6 +113,15 @@ func startWails() error {
 		},
 	})
 
+	if updater != nil {
+		desktop.ConfigureUpdater(service, updater, func() error {
+			if err := launchInstalledAppImage(); err != nil {
+				return err
+			}
+			app.Quit()
+			return nil
+		})
+	}
 	service.AttachListener(passive, wailsEventSink{app: app})
 	service.StartListener(listenCtx)
 
@@ -119,6 +137,52 @@ func startWails() error {
 		return err
 	}
 	return nil
+}
+
+var (
+	runtimeAppImagePath   = func() string { return os.Getenv("APPIMAGE") }
+	installedAppImagePath = func() (string, error) {
+		current, err := user.Current()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(current.HomeDir, ".local", "share", "attack-shark-x6", "attack-shark-linux-x86_64.AppImage"), nil
+	}
+)
+
+func releaseUpdater() *update.Updater {
+	return releaseUpdaterAt(runtimeAppImagePath())
+}
+
+func releaseUpdaterAt(appImage string) *update.Updater {
+	if releaseBuildContract.CurrentVersion == "" || releaseBuildContract.CurrentVersion == "0.0.0-dev" || releaseBuildContract.ReleasePublicKey == "" {
+		return nil
+	}
+	installed, err := installedAppImagePath()
+	if err != nil || !sameManagedAppImage(appImage, installed) {
+		return nil
+	}
+	return &update.Updater{CurrentVersion: releaseBuildContract.CurrentVersion, PublicKey: releaseBuildContract.ReleasePublicKey, Transport: update.NewGitHubTransport(nil)}
+}
+
+func sameManagedAppImage(appImage, installed string) bool {
+	if appImage == "" || !filepath.IsAbs(appImage) {
+		return false
+	}
+	appImageInfo, err := os.Stat(appImage)
+	if err != nil || !appImageInfo.Mode().IsRegular() {
+		return false
+	}
+	installedInfo, err := os.Stat(installed)
+	return err == nil && installedInfo.Mode().IsRegular() && os.SameFile(appImageInfo, installedInfo)
+}
+
+func launchInstalledAppImage() error {
+	installed, err := installedAppImagePath()
+	if err != nil {
+		return err
+	}
+	return exec.Command(installed).Start()
 }
 
 func newDesktopService(dataDir string) *desktop.Service {
@@ -181,8 +245,12 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.PollingRate = config.PollingRate
-		if config.NormalSleepMinutes != 0 { combined.NormalSleepMinutes = config.NormalSleepMinutes }
-		if config.ResponseTimeMs != 0 { combined.ResponseTimeMs = config.ResponseTimeMs }
+		if config.NormalSleepMinutes != 0 {
+			combined.NormalSleepMinutes = config.NormalSleepMinutes
+		}
+		if config.ResponseTimeMs != 0 {
+			combined.ResponseTimeMs = config.ResponseTimeMs
+		}
 		if config.Remap != nil {
 			combined.Remap = config.Remap
 		}
