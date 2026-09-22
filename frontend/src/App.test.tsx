@@ -140,6 +140,16 @@ describe("App", () => {
 		expect(screen.getByRole("alert")).toHaveTextContent("device unavailable");
 	});
 
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("shows clear feedback for %s", async (code, message) => {
+    const service = serviceFor(snapshot({ Error: { Code: code } }));
+    render(<App service={service} />);
+
+    expect((await screen.findAllByRole("alert")).every((alert) => alert.textContent === message)).toBe(true);
+  });
+
   it("requests live status on mount instead of trusting a hardware-free cached snapshot", async () => {
     const service = serviceFor(snapshot({ Connection: "", Battery: null }), {
       RefreshStatus: vi.fn().mockResolvedValue(snapshot({ Connection: "dongle", Battery: 84 })),
@@ -303,6 +313,31 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 
     expect(await screen.findByRole("status", { name: "Firmware synchronization queued" })).toBeInTheDocument();
     expect(screen.queryByText("Firmware synchronization failed")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("renders actionable %s feedback in every affected panel", async (code, message) => {
+    const failed = { Firmware: "failed", Error: { Code: code } };
+    const service = serviceFor(snapshot(), {
+      GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot(failed)),
+      GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot(failed)),
+      GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleepSnapshot(failed)),
+      GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot(failed)),
+      RefreshInventory: vi.fn().mockResolvedValue({
+        Devices: [selectedDevice],
+        Selected: selectedDevice,
+        Error: { Code: code },
+      }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByRole("status", { name: "Polling status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Normal sleep status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Key response time status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Button remapping status" })).toHaveTextContent(message);
+    expect(document.querySelector(".device-status")).toHaveTextContent(message);
   });
 
   it("refreshes acknowledged colors without replacing editable pending controls", async () => {
@@ -744,15 +779,18 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("status", { name: "Lighting status" })).toHaveTextContent("Lighting applied");
   });
 
-  it("shows a lighting application failure without reporting success", async () => {
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("shows a lighting %s failure without reporting success", async (code, message) => {
     const service = serviceFor(snapshot(), {
-      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x10, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 1, Firmware: "failed", Error: { Code: "apply_failed" } }),
+      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x10, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 1, Firmware: "failed", Error: { Code: code } }),
     });
     render(<App service={service} />);
 
     await chooseLightingEffect("Fixed");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Lighting application failed: apply failed");
+    expect(await screen.findByRole("alert")).toHaveTextContent(`Lighting application failed: ${message}`);
     expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
   });
 

@@ -3,6 +3,7 @@ package hidlinux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -72,6 +73,29 @@ func TestAdapterMapsDiscoveryAndOperationErrors(t *testing.T) {
 			_, err := adapter.Enumerate(context.Background(), transport.X6Match())
 			if !IsErrorKind(err, tt.kind) || !errors.Is(err, tt.err) {
 				t.Fatalf("Enumerate() error = %v, want %s wrapping %v", err, tt.kind, tt.err)
+			}
+		})
+	}
+}
+
+func TestClassifyPreservesTransportErrorPrecedenceAndWrapsENOENTAsDisconnected(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		kind ErrorKind
+	}{
+		{name: "raw missing device", err: os.ErrNotExist, kind: Disconnected},
+		{name: "wrapped missing device", err: fmt.Errorf("open hidraw: %w", os.ErrNotExist), kind: Disconnected},
+		{name: "permission precedes missing device", err: errors.Join(os.ErrPermission, os.ErrNotExist), kind: Permission},
+		{name: "deadline precedes missing device", err: errors.Join(context.DeadlineExceeded, os.ErrNotExist), kind: Timeout},
+		{name: "cancellation precedes missing device", err: errors.Join(context.Canceled, os.ErrNotExist), kind: Cancelled},
+		{name: "existing disconnect sentinel precedes missing device", err: errors.Join(ErrDeviceDisconnected, os.ErrNotExist), kind: Disconnected},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classify(tt.err)
+			if !IsErrorKind(got, tt.kind) || !errors.Is(got, tt.err) {
+				t.Fatalf("classify(%v) = %v, want %s wrapping original error", tt.err, got, tt.kind)
 			}
 		})
 	}

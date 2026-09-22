@@ -623,6 +623,9 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		if !strings.Contains(string(models), `"Error": Error`) {
 			t.Errorf("generated Wails polling binding %q must expose the typed Error field", path)
 		}
+		if !strings.Contains(string(models), `DeviceDisconnected = "device_disconnected"`) {
+			t.Errorf("generated Wails model binding %q must expose DeviceDisconnected", path)
+		}
 	}
 
 	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models.ts")
@@ -657,17 +660,67 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 	}
 }
 
-func TestGeneratedDesktopModelBindingsAreByteIdentical(t *testing.T) {
-	canonical, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+func TestGeneratedWailsBindingTreesAreByteIdentical(t *testing.T) {
+	canonicalRoot := "../../frontend/bindings"
+	mirroredRoot := "frontend/bindings"
+	err := filepath.WalkDir(canonicalRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(canonicalRoot, path)
+		if err != nil {
+			return err
+		}
+		mirroredPath := filepath.Join(mirroredRoot, relative)
+		mirroredInfo, err := os.Stat(mirroredPath)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if !mirroredInfo.IsDir() {
+				t.Errorf("generated Wails binding directory %q must be mirrored as a directory", relative)
+			}
+			return nil
+		}
+		if mirroredInfo.IsDir() {
+			t.Errorf("generated Wails binding file %q must be mirrored as a file", relative)
+			return nil
+		}
+		canonical, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		mirrored, err := os.ReadFile(mirroredPath)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(canonical, mirrored) {
+			t.Errorf("generated Wails binding %q must be byte-identical", relative)
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("read canonical generated desktop models: %v", err)
+		t.Fatalf("compare generated Wails binding trees: %v", err)
 	}
-	mirrored, err := os.ReadFile("frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models.ts")
+	err = filepath.WalkDir(mirroredRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(mirroredRoot, path)
+		if err != nil {
+			return err
+		}
+		canonicalInfo, err := os.Stat(filepath.Join(canonicalRoot, relative))
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() != canonicalInfo.IsDir() {
+			t.Errorf("generated Wails binding tree entry %q must have the same type", relative)
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("read mirrored generated desktop models: %v", err)
-	}
-	if !bytes.Equal(canonical, mirrored) {
-		t.Fatal("generated desktop models must be byte-identical")
+		t.Fatalf("compare mirrored generated Wails binding tree: %v", err)
 	}
 }
 

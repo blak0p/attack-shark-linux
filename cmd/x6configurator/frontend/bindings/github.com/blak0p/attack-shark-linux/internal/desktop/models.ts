@@ -154,6 +154,7 @@ export enum ErrorCode {
     $zero = "",
 
     DeviceUnavailable = "device_unavailable",
+    DeviceDisconnected = "device_disconnected",
     PermissionDenied = "permission_denied",
     StatusReadFailed = "status_read_failed",
     InvalidConfiguration = "invalid_configuration",
