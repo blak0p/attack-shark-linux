@@ -4,10 +4,11 @@
 
 | Version | Supported |
 | ------- | --------- |
-| main (unreleased) | :warning: Beta — no installer or tagged release yet |
+| main (unreleased) | :warning: Beta — development branch; remote release gates remain |
 
-Until the first release, security fixes land on `main` and are described in the
-release notes of the first tagged version.
+Security fixes land on `main` during development. Signed RC prereleases use
+`vMAJOR.MINOR.PATCH-rc.N` tags and remain prereleases; stable publication as
+`v1.2.0` is a separate remote gate and is not claimed by this document.
 
 ## Reporting a Vulnerability
 
@@ -41,6 +42,10 @@ relevant and in scope:
 - **Report payloads** — configuration writes (`SET_REPORT`) must be built from
   validated inputs; no unchecked user data should reach the device.
 - **Credentials and secrets** — nothing sensitive may ever be committed.
+- **Release and update verification** — RC installation and AppImage updates
+  require signed release metadata; updates also require explicit user approval
+  and are confined to the user-local AppImage. The updater does not install or
+  modify udev rules.
 
 ## Security Best Practices
 
@@ -55,4 +60,8 @@ When contributing:
 ## Known Limitations
 
 - The app is pre-release; behavior may change without notice.
-- No installer is shipped yet — see [README](README.md) for building from source.
+- The signed RC installer and x86_64 AppImage are release artifacts, but live
+  installer/update rehearsal evidence and stable publication are separately
+  gated and are not claimed here.
+- Macros, on-device profiles, and DEB/RPM/AUR packages or repositories are
+  deferred. Local per-device persistence is distinct from on-device profiles.
