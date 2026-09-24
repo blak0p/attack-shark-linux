@@ -15,6 +15,9 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const [notice, setNotice] = useState("");
   const [resetConfirmation, setResetConfirmation] = useState(false);
   const [automaticApplyRequests, setAutomaticApplyRequests] = useState(0);
+  const [update, setUpdate] = useState<WorkspaceModel["update"]>();
+  const [updateApplying, setUpdateApplying] = useState(false);
+  const [updateError, setUpdateError] = useState("");
   const selected = useRef<Binding | null>(null);
 
   const refreshSelectedDeviceSnapshots = () => {
@@ -29,6 +32,11 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   useEffect(() => { refreshSelectedDeviceSnapshots(); }, [service]);
   useEffect(() => { void service.RefreshInventory().then((next) => { setInventory(next); refreshSelectedDeviceSnapshots(); }); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected ?? null; }, [inventory]);
+  useEffect(() => {
+    let cancelled = false;
+    if (service.CheckForUpdate) void service.CheckForUpdate().then((available) => { if (!cancelled && available) setUpdate(available); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [service]);
   useEffect(() => service.OnStatusEvent((event) => {
     setSnapshot((current) => current && receivesEvent(selected.current, event) ? applyStatusEvent(current, event) : current);
   }), [service]);
@@ -61,6 +69,11 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     });
   }));
   const actions: WorkspaceActions = {
+    applyUpdate: () => {
+      setUpdateApplying(true); setUpdateError("");
+      if (!service.ApplyVerifiedUpdate) { setUpdateApplying(false); return; }
+      void service.ApplyVerifiedUpdate().catch((error: unknown) => setUpdateError(error instanceof Error ? error.message : "Unable to restart")).finally(() => setUpdateApplying(false));
+    },
     selectDevice: (serial) => {
       const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
       if (device) void service.SelectDevice(device.ID).then((next) => { setInventory(next); refreshSelectedDeviceSnapshots(); });
@@ -119,7 +132,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
     retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
   };
-		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
+		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, update, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {

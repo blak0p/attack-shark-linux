@@ -22,7 +22,8 @@ export {
     ResetLaneResult,
     ResetResult,
     Service,
-    Snapshot
+    Snapshot,
+    UpdateInfo
 } from "./models.js";
 
 export type {

@@ -3,8 +3,10 @@
 Linux desktop configurator for the **Attack Shark X6** gaming mouse, built with
 Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 
-> **Status**: Beta. There is no installer yet — build from source (see
-> [Building](#building)). Not affiliated with or endorsed by Attack Shark.
+> **Status**: Beta. The release implementation includes a signed x86_64
+> AppImage and a release-asset installer with signed artifact verification.
+> Remote RC rehearsal and stable publication remain gated; this repository does not claim a published Latest
+> release. Not affiliated with or endorsed by Attack Shark.
 
 ## Features
 
@@ -15,8 +17,9 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
   per-stage colors and an active-stage circle UI.
 - **Apply on demand** — writes the 56-byte configuration report over hidraw
   (`SET_REPORT`), with debounced auto-sync after one second of inactivity.
-- **Per-device persistence** — versioned device profiles survive restarts,
-  with factory-defaults restore.
+- **Per-device persistence** — versioned device profiles are stored locally and
+  survive restarts, with factory-defaults restore. This is local persistence,
+  not on-device profiles.
 - **Polling-rate configuration** — select 125, 250, 500, or 1000 Hz; the
   acknowledged choice persists per serial-bearing device, while session-only
   devices retain it only for the current session.
@@ -32,6 +35,78 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 > **Do not** run the app as root and **do not** change the udev rules to
 > world-writable mode `0666`. The policy grants the active seat user access via
 > `TAG+="uaccess"` with device mode `0660`.
+
+## Release channels and installation
+
+Normal installation selects the newest valid signed stable GitHub release.
+Once a stable release is published, fetch its immutable installer asset through
+the latest stable release URL, without `--beta`:
+
+```sh
+(
+  installer=$(mktemp) || exit 1
+  trap 'rm -f "$installer"' 0
+  curl --fail --location --output "$installer" \
+    https://github.com/blak0p/attack-shark-linux/releases/latest/download/install.sh &&
+    sh "$installer"
+)
+```
+
+Until a stable release exists, this download fails; normal installation never
+falls back to an RC or source from `main`. To rehearse an RC instead, download
+`install.sh` from a trusted RC asset on the
+[GitHub releases page](https://github.com/blak0p/attack-shark-linux/releases),
+then explicitly select the beta channel:
+
+```sh
+sh ./install.sh --beta
+```
+
+The installer selects the newest valid signed release in the chosen channel;
+no version needs to be hardcoded. Obtain `install.sh` only from a trusted
+release asset. The installer writes the
+AppImage and absolute desktop entry under the current OS account's user-local
+data directories. Adding `--install-udev` is separate, requires explicit
+confirmation before `sudo`, and has a manual fallback. The installer-managed
+rule is exactly
+`60-attack-shark-x6-hidraw.rules`.
+
+The installed AppImage checks for a newer signed release and requires explicit
+user approval before replacement. An RC installation updates only to a newer
+signed RC; a stable installation updates only to a newer signed stable release.
+Updates are confined to
+`~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage`; the updater
+never elevates and never changes udev rules. A stable release and the RC
+rehearsal are remote gates, so no live installer, update, or rehearsal evidence
+is claimed here.
+
+## Emergency recovery
+
+If an applied configuration leaves the mouse unusable, run the headless factory
+reset with the application binary:
+
+```sh
+attack-shark-linux reset
+```
+
+For an installed AppImage, invoke the same recovery command from its install
+directory:
+
+```sh
+cd ~/.local/share/attack-shark-x6
+./attack-shark-linux-x86_64.AppImage reset
+```
+
+This command opens no window. It selects one validated X6 hidraw target and
+writes the documented factory configuration, including DPI, polling, and button
+remap defaults. Use it only for recovery: it replaces the mouse's current
+configuration. Do not run it as root; install the udev policy first.
+
+## Release limits
+
+Macros, on-device profiles, and DEB/RPM/AUR packages or distribution
+repositories are deferred. Local per-device persistence does not imply that
+profiles are stored on the mouse.
 
 ## Building
 

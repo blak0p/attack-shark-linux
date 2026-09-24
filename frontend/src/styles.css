@@ -38,6 +38,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   outline-offset: 2px;
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--focus-ring);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
 .app-shell {
   display: flex;
   align-items: center;

@@ -40,7 +40,12 @@ jobs:
 
       - name: Install Wails CLI
         run: |
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install Task
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@v3.45.4
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Install frontend dependencies
@@ -52,8 +57,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Pushed tag '$TAG' is not a semantic version tag."
+          TAG="${TAG#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$ ]]; then
+            echo "::error::Pushed tag '$TAG' must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N."
             exit 1
           fi
 
@@ -74,12 +80,39 @@ jobs:
       - name: Run verification
         run: make check
 
+      - name: Package signed release artifacts
+        working-directory: cmd/x6configurator
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/attack-shark-linux-x86_64.AppImage
+          ATTACK_SHARK_RELEASE_SIGNING_SEED: ${{ secrets.ATTACK_SHARK_RELEASE_SIGNING_SEED }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/release
+          release_public_key="$(go run ../../cmd/release public-key)"
+          sed "s|__ATTACK_SHARK_RELEASE_PUBLIC_KEY__|$release_public_key|" ../../install.sh > build/release/install.sh
+          chmod 0755 build/release/install.sh
+          task package:container:release
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
-            --verify-tag \
-            --title "$TAG" \
+          set -euo pipefail
+          release_args=(
+            --verify-tag
+            --title "$TAG"
             --notes-file "$RUNNER_TEMP/release-notes.md"
+          )
+          if [[ "$TAG" =~ -rc\. ]]; then
+            release_args+=(--prerelease --latest=false)
+          else
+            release_args+=(--latest)
+          fi
+          gh release create "$TAG" "${release_args[@]}" \
+            cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage \
+            cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage.sha256 \
+            cmd/x6configurator/build/release/update-manifest.json \
+            cmd/x6configurator/build/release/install.sh \
+            packaging/udev/60-attack-shark-x6-hidraw.rules

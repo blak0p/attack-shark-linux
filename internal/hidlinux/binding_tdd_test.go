@@ -74,6 +74,31 @@ func TestHidrawSendAndAwaitBindingAdmitsOnlyKnownReportPairs(t *testing.T) {
 	}
 }
 
+func TestHidrawSendAndAwaitBindingClassifiesNodeAccessFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		kind ErrorKind
+	}{
+		{name: "permission denied", err: os.ErrPermission, kind: Permission},
+		{name: "raw missing device", err: os.ErrNotExist, kind: Disconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
+			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: failingHidrawOpener{err: tt.err}}
+			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
+			payload := make([]byte, protocol.DPIReportLength)
+			payload[0] = 0x04
+
+			err := backend.SendAndAwaitBound(context.Background(), binding, payload, func([]byte) bool { return false })
+			if !IsErrorKind(err, tt.kind) || !errors.Is(err, tt.err) || DiagnosticOperation(err) != "transfer" {
+				t.Fatalf("SendAndAwaitBound() error = %v, want transfer %s wrapping %v", err, tt.kind, tt.err)
+			}
+		})
+	}
+}
+
 func TestHidrawSendAndAwaitBindingDoesNotReuseTimedOutListenerNode(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")

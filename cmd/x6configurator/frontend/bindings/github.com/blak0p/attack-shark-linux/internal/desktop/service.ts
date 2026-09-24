@@ -26,11 +26,9 @@ export function ApplyDPI(): $CancellablePromise<$models.Snapshot> {
 }
 
 export function ApplyDebounce(): $CancellablePromise<$models.DebounceSnapshot> {
-    return $Call.ByID(2092901873).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
-}
-
-export function ApplyNormalSleep(): $CancellablePromise<$models.NormalSleepSnapshot> {
-    return $Call.ByID(4245697592).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+    return $Call.ByID(2092901873).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -38,7 +36,13 @@ export function ApplyNormalSleep(): $CancellablePromise<$models.NormalSleepSnaps
  */
 export function ApplyLighting(): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(2699165782).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType2($result);
+    });
+}
+
+export function ApplyNormalSleep(): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(4245697592).then(($result: any) => {
+        return $$createType3($result);
     });
 }
 
@@ -47,7 +51,7 @@ export function ApplyLighting(): $CancellablePromise<$models.LightingSnapshot> {
  */
 export function ApplyPollingRate(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(3669795219).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -57,7 +61,20 @@ export function ApplyPollingRate(): $CancellablePromise<$models.PollingSnapshot>
  */
 export function ApplyRemap(config: x6$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
     return $Call.ByID(4250088139, config).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
+    });
+}
+
+/**
+ * ApplyVerifiedUpdate requires the prior explicit frontend approval action.
+ */
+export function ApplyVerifiedUpdate(): $CancellablePromise<void> {
+    return $Call.ByID(2152837855);
+}
+
+export function AttachDebouncePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(3627225259, load, save).then(($result: any) => {
+        return $$createType7($result);
     });
 }
 
@@ -66,7 +83,7 @@ export function ApplyRemap(config: x6$0.RemapConfig): $CancellablePromise<$model
  */
 export function AttachDevicePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3887596840, load, save).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -75,7 +92,7 @@ export function AttachDevicePersistence(load: any, save: any): $CancellablePromi
  */
 export function AttachInventory(inventory: mouse$0.TargetedService | null): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3655060073, inventory).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -85,7 +102,7 @@ export function AttachInventory(inventory: mouse$0.TargetedService | null): $Can
  */
 export function AttachListener(listener: $models.StatusListener, events: $models.EventSink): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3795100807, listener, events).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -94,13 +111,23 @@ export function AttachListener(listener: $models.StatusListener, events: $models
  */
 export function AttachMigrator(migrate: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(1213464496, migrate).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
+    });
+}
+
+/**
+ * AttachNormalSleepPersistence and AttachDebouncePersistence share the durable
+ * per-device record so applying either field never discards the other.
+ */
+export function AttachNormalSleepPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
+    return $Call.ByID(789849878, load, save).then(($result: any) => {
+        return $$createType7($result);
     });
 }
 
 export function AttachPollingPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(46337553, load, save).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -109,7 +136,22 @@ export function AttachPollingPersistence(load: any, save: any): $CancellableProm
  */
 export function AttachResetRunner(runner: $models.resetRunner): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(2710634656, runner).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
+    });
+}
+
+/**
+ * CheckForUpdate verifies availability only. It never downloads, replaces, or relaunches.
+ */
+export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null> {
+    return $Call.ByID(3339219796).then(($result: any) => {
+        return $$createType9($result);
+    });
+}
+
+export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(847781341).then(($result: any) => {
+        return $$createType1($result);
     });
 }
 
@@ -117,13 +159,15 @@ export function AttachResetRunner(runner: $models.resetRunner): $CancellableProm
  * GetLightingSnapshot reports staged and acknowledged lighting state without
  * claiming a live hardware read.
  */
-export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnapshot> {
-    return $Call.ByID(847781341).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
-}
-
 export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1849424142).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType2($result);
+    });
+}
+
+export function GetNormalSleepSnapshot(): $CancellablePromise<$models.NormalSleepSnapshot> {
+    return $Call.ByID(690718744).then(($result: any) => {
+        return $$createType3($result);
     });
 }
 
@@ -131,13 +175,9 @@ export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnaps
  * GetPollingSnapshot reports desired, acknowledged, and persistence state; it
  * deliberately does not claim a live hardware observation.
  */
-export function GetNormalSleepSnapshot(): $CancellablePromise<$models.NormalSleepSnapshot> {
-    return $Call.ByID(690718744).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
-}
-
 export function GetPollingSnapshot(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1825488429).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -146,7 +186,7 @@ export function GetPollingSnapshot(): $CancellablePromise<$models.PollingSnapsho
  */
 export function GetRemapSnapshot(): $CancellablePromise<$models.RemapSnapshot> {
     return $Call.ByID(3043747887).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
@@ -169,7 +209,7 @@ export function Quiesce(binding: $models.Binding): $CancellablePromise<void> {
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(2420989727).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType10($result);
     });
 }
 
@@ -184,16 +224,20 @@ export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
  */
 export function ResetToFactory(): $CancellablePromise<$models.ResetResult> {
     return $Call.ByID(2708725118).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType11($result);
     });
 }
 
 export function RetryDebouncePersistence(): $CancellablePromise<$models.DebounceSnapshot> {
-    return $Call.ByID(2757981562).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
+    return $Call.ByID(2757981562).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 export function RetryNormalSleepPersistence(): $CancellablePromise<$models.NormalSleepSnapshot> {
-    return $Call.ByID(3832391481).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+    return $Call.ByID(3832391481).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
@@ -204,13 +248,13 @@ export function RetryPersistence(): $CancellablePromise<$models.Snapshot> {
 
 export function RetryPollingPersistence(): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(3085626362).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
 export function RetryRemapPersistence(): $CancellablePromise<$models.RemapSnapshot> {
     return $Call.ByID(2964542300).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
@@ -219,7 +263,7 @@ export function RetryRemapPersistence(): $CancellablePromise<$models.RemapSnapsh
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(236647672, id).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType10($result);
     });
 }
 
@@ -229,26 +273,30 @@ export function StageDPI(config: $models.DPIConfig): $CancellablePromise<$models
     });
 }
 
-/**
- * StageLighting updates only the selected device's pending state.
- */
-export function StageDebounce(responseTimeMs: number): $CancellablePromise<$models.DebounceSnapshot> {
-    return $Call.ByID(3641231323, responseTimeMs).then(($result: any) => $models.DebounceSnapshot.createFrom($result));
-}
-
-export function StageLighting(selection: x6$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
-    return $Call.ByID(1205871004, selection).then(($result: any) => {
+export function StageDebounce(ms: number): $CancellablePromise<$models.DebounceSnapshot> {
+    return $Call.ByID(3641231323, ms).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
+/**
+ * StageLighting updates only the selected device's pending state.
+ */
+export function StageLighting(selection: x6$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
+    return $Call.ByID(1205871004, selection).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function StageNormalSleep(minutes: number): $CancellablePromise<$models.NormalSleepSnapshot> {
-    return $Call.ByID(1234567502, minutes).then(($result: any) => $models.NormalSleepSnapshot.createFrom($result));
+    return $Call.ByID(1234567502, minutes).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1822189569, rate).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -263,10 +311,14 @@ export function StartListener(): $CancellablePromise<void> {
 
 // Private type creation functions
 const $$createType0 = $models.Snapshot.createFrom;
-const $$createType1 = $models.LightingSnapshot.createFrom;
-const $$createType2 = $models.PollingSnapshot.createFrom;
-const $$createType3 = $models.RemapSnapshot.createFrom;
-const $$createType4 = $models.Service.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = $models.Inventory.createFrom;
-const $$createType7 = $models.ResetResult.createFrom;
+const $$createType1 = $models.DebounceSnapshot.createFrom;
+const $$createType2 = $models.LightingSnapshot.createFrom;
+const $$createType3 = $models.NormalSleepSnapshot.createFrom;
+const $$createType4 = $models.PollingSnapshot.createFrom;
+const $$createType5 = $models.RemapSnapshot.createFrom;
+const $$createType6 = $models.Service.createFrom;
+const $$createType7 = $Create.Nullable($$createType6);
+const $$createType8 = $models.UpdateInfo.createFrom;
+const $$createType9 = $Create.Nullable($$createType8);
+const $$createType10 = $models.Inventory.createFrom;
+const $$createType11 = $models.ResetResult.createFrom;

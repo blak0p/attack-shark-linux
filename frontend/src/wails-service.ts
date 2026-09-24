@@ -11,6 +11,8 @@ type ExplicitApplyBindings = {
 const explicitApplyBindings = bindings as typeof bindings & ExplicitApplyBindings;
 
 export const desktopService: DesktopService = {
+  CheckForUpdate: bindings.CheckForUpdate as DesktopService["CheckForUpdate"],
+  ApplyVerifiedUpdate: bindings.ApplyVerifiedUpdate as DesktopService["ApplyVerifiedUpdate"],
   GetSnapshot: bindings.GetSnapshot,
   GetPollingSnapshot: bindings.GetPollingSnapshot,
   GetDebounceSnapshot: bindings.GetDebounceSnapshot,

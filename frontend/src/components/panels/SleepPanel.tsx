@@ -5,9 +5,11 @@ type SleepPanelProps = {
   ready: boolean;
   onStage: (minutes: number) => void;
   onRetry: () => void;
+  errorCode?: string;
+  feedbackFor?: (code: string) => string;
 };
 
-export function SleepPanel({ snapshot, ready, onStage, onRetry }: SleepPanelProps) {
+export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedbackFor }: SleepPanelProps) {
   return (
     <article id="normal-sleep" className="card" aria-labelledby="sleep-title">
       <h2 id="sleep-title">Normal sleep</h2>
@@ -32,7 +34,10 @@ export function SleepPanel({ snapshot, ready, onStage, onRetry }: SleepPanelProp
         {snapshot.Firmware === "pending"
           ? "Applying…"
           : snapshot.Firmware === "failed"
-          ? "Normal sleep application failed"
+          ? <>
+              Normal sleep application failed
+              {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
+            </>
           : `Applied ${snapshot.Applied} minutes`}
         {snapshot.Persistence === "failed" && <span> Sleep preference was not saved.</span>}
         {snapshot.RetryAvailable && (
