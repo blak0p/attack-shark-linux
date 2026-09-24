@@ -4,8 +4,8 @@ Linux desktop configurator for the **Attack Shark X6** gaming mouse, built with
 Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 
 > **Status**: Beta. The release implementation includes a signed x86_64
-> AppImage and an immutable signed RC installer. Remote RC rehearsal and stable
-> publication remain gated; this repository does not claim a published Latest
+> AppImage and a release-asset installer with signed artifact verification.
+> Remote RC rehearsal and stable publication remain gated; this repository does not claim a published Latest
 > release. Not affiliated with or endorsed by Attack Shark.
 
 ## Features
@@ -38,20 +38,35 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 
 ## Release channels and installation
 
-The first release channel is signed GitHub RC prereleases. An RC installer must
-be invoked with `--beta`; it selects the newest valid signed RC and never builds
-or downloads source from `main`:
+Normal installation selects the newest valid signed stable GitHub release.
+Once a stable release is published, fetch its immutable installer asset through
+the latest stable release URL, without `--beta`:
 
 ```sh
-curl --fail --location \
-  https://github.com/blak0p/attack-shark-linux/releases/download/v1.2.0-rc.1/install.sh \
-  | sh -- --beta
+(
+  installer=$(mktemp) || exit 1
+  trap 'rm -f "$installer"' 0
+  curl --fail --location --output "$installer" \
+    https://github.com/blak0p/attack-shark-linux/releases/latest/download/install.sh &&
+    sh "$installer"
+)
 ```
 
-Here `v1.2.0-rc.1` is an example signed RC tag; replace it with the desired
-signed RC tag before running the command. The installer writes the AppImage and
-absolute desktop entry under the current OS account's user-local data
-directories. Adding `--install-udev` is separate, requires explicit
+Until a stable release exists, this download fails; normal installation never
+falls back to an RC or source from `main`. To rehearse an RC instead, download
+`install.sh` from a trusted RC asset on the
+[GitHub releases page](https://github.com/blak0p/attack-shark-linux/releases),
+then explicitly select the beta channel:
+
+```sh
+sh ./install.sh --beta
+```
+
+The installer selects the newest valid signed release in the chosen channel;
+no version needs to be hardcoded. Obtain `install.sh` only from a trusted
+release asset. The installer writes the
+AppImage and absolute desktop entry under the current OS account's user-local
+data directories. Adding `--install-udev` is separate, requires explicit
 confirmation before `sudo`, and has a manual fallback. The installer-managed
 rule is exactly
 `60-attack-shark-x6-hidraw.rules`.

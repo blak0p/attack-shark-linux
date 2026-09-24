@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestInstallerEnforcesSignedCanonicalRCPolicy(t *testing.T) {
+func TestInstallerEnforcesSignedCanonicalReleasePolicy(t *testing.T) {
 	installerBytes, err := os.ReadFile(filepath.Join("..", "..", "install.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +89,46 @@ func TestInstallerCorrectsIndependentREL4BDefects(t *testing.T) {
 	}
 }
 
+func TestInstallerSelectsNewestSignedStableUnderPOSIXShell(t *testing.T) {
+	output, home, err := runInstallerFixtureForChannel(t, false, false, "v1.2.0-rc.19", "v1.2.0")
+	if err != nil {
+		t.Fatalf("stable installer failed unexpectedly: %v; output: %s", err, output)
+	}
+	if !strings.Contains(output, "signed stable v1.2.0") {
+		t.Fatalf("installer did not select the newest signed stable: %s", output)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local", "share", "attack-shark-x6", "attack-shark-linux-x86_64.AppImage")); err != nil {
+		t.Fatalf("installer did not atomically install the selected stable artifact: %v", err)
+	}
+}
+
+func TestInstallerSelectsNewestStableAcrossPages(t *testing.T) {
+	output, _, err := runInstallerFixtureForChannel(t, false, false, "v1.2.9", "v1.10.0")
+	if err != nil || !strings.Contains(output, "signed stable v1.10.0") {
+		t.Fatalf("expected greatest stable across pages: %v; output: %s", err, output)
+	}
+}
+
+func TestInstallerFailsWithoutStableInsteadOfSelectingRC(t *testing.T) {
+	output, _, err := runInstallerFixtureForChannel(t, false, false, "v1.2.0-rc.19", "v1.2.0-rc.20")
+	if err == nil {
+		t.Fatalf("stable installer selected an RC when no stable exists: %s", output)
+	}
+	if !strings.Contains(output, "No valid signed GitHub stable release is available.") {
+		t.Fatalf("stable installer did not explain stable absence: %s", output)
+	}
+}
+
+func TestInstallerBetaDoesNotSelectStable(t *testing.T) {
+	output, _, err := runInstallerFixtureForChannel(t, false, true, "v1.2.0", "v1.2.1")
+	if err == nil {
+		t.Fatalf("beta installer selected a stable release: %s", output)
+	}
+	if !strings.Contains(output, "No valid signed GitHub RC release is available.") {
+		t.Fatalf("beta installer did not explain RC absence: %s", output)
+	}
+}
+
 func TestInstallerSelectsGreatestRCAndStopsAtExhaustionUnderPOSIXShell(t *testing.T) {
 	output, home, err := runInstallerFixture(t, false, "v1.2.0-rc.11", "v1.2.0-rc.19")
 	if err != nil {
@@ -146,6 +186,11 @@ func TestInstallerRejectsRepeatedNonemptyReleasePage(t *testing.T) {
 
 func runInstallerFixture(t *testing.T, repeatPages bool, firstTag, secondTag string) (string, string, error) {
 	t.Helper()
+	return runInstallerFixtureForChannel(t, repeatPages, true, firstTag, secondTag)
+}
+
+func runInstallerFixtureForChannel(t *testing.T, repeatPages, beta bool, firstTag, secondTag string) (string, string, error) {
+	t.Helper()
 	temp := t.TempDir()
 	home := filepath.Join(temp, "account-home")
 	bin := filepath.Join(temp, "bin")
@@ -189,7 +234,17 @@ if [ -f "$last" ]; then input=$(cat "$last"); else input=$(cat); fi
 case "$*" in
   *'type == '*) case "$input" in '[]') printf '0\n' ;; *) printf '1\n' ;; esac ;;
   *"length == 1") printf 'true\n' ;;
-  *".[] | select"*) printf '%s\n' "$input" ;;
+  *".[] | select"*)
+    case "$*" in
+      *'--arg prerelease true'*) expected=true ;;
+      *'--arg prerelease false'*) expected=false ;;
+      *) exit 1 ;;
+    esac
+    case "$input:$expected" in
+      *-rc.*:true) printf '%s\n' "$input" ;;
+      *-rc.*:false) ;;
+      v[0-9]*.[0-9]*.[0-9]*:false) printf '%s\n' "$input" ;;
+    esac ;;
   *".version | strings"*) version=${input#*/download/v}; printf '%s\n' "${version%/update-manifest.json}" ;;
   *".url | strings"*) printf '%s\n' "$input" | sed 's/update-manifest.json/attack-shark-linux-x86_64.AppImage/' ;;
   *".sha256 | strings"*) printf '09c1a2f3396015e2a1d6060fd66ed7c9744fdb5b101679121943b9e0fd8424c2\n' ;;
@@ -198,7 +253,11 @@ esac
 `)
 	context, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	command := exec.CommandContext(context, "/bin/sh", installerPath, "--beta")
+	arguments := []string{installerPath}
+	if beta {
+		arguments = append(arguments, "--beta")
+	}
+	command := exec.CommandContext(context, "/bin/sh", arguments...)
 	command.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "INSTALLER_TEST_HOME="+home, "INSTALLER_TEST_REPEAT="+map[bool]string{true: "true", false: "false"}[repeatPages], "INSTALLER_TEST_FIRST_TAG="+firstTag, "INSTALLER_TEST_SECOND_TAG="+secondTag)
 	output, err := command.CombinedOutput()
 	if context.Err() != nil {
@@ -214,17 +273,17 @@ func writeInstallerStub(t *testing.T, dir, name, body string) {
 	}
 }
 
-func TestInstallerOnlyAcceptsExplicitBetaFlag(t *testing.T) {
+func TestInstallerDefaultsToStableAndAcceptsExplicitBetaFlag(t *testing.T) {
 	installerBytes, err := os.ReadFile(filepath.Join("..", "..", "install.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	installer := string(installerBytes)
 	for _, required := range []string{
-		`[ "$1" = "--beta" ]`,
+		`[ "${1:-}" = "--beta" ]`,
 		`[ "$1" = "--install-udev" ]`,
-		"Usage: install.sh --beta [--install-udev]",
-		"No valid signed GitHub RC release is available.",
+		"Usage: install.sh [--beta] [--install-udev]",
+		"No valid signed GitHub $channel release is available.",
 	} {
 		if !strings.Contains(installer, required) {
 			t.Errorf("installer argument contract must contain %q", required)

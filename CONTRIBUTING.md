@@ -28,7 +28,7 @@ gaming mouse (Go + Wails v3 backend, React frontend). High-level directions:
 
 - Protocol coverage: remap (`0x08`), lighting, polling, sleep
 - Macro manager (deferred)
-- Signed RC AppImage and immutable installer maintenance; stable publication
+- Signed stable-default AppImage installer and opt-in RC channel maintenance; stable publication
   and remote RC rehearsal remain separately gated
 - Live status features (battery, DPI switching)
 
@@ -65,7 +65,9 @@ release rule is `60-attack-shark-x6-hidraw.rules`; do not run the app as root.
 
 The release installer and updater are user-local: the installer may use `sudo`
 only for an explicitly approved udev install/reload, while the updater replaces
-only the installed AppImage and never changes udev. Do not describe a live RC
+only the installed AppImage and never changes udev. Normal installation fails
+without a signed stable release; `--beta` selects only signed RCs, and updates
+stay in the installed channel. Do not describe a live RC
 installer/update rehearsal or stable publication unless the remote gates have
 passed.
 
@@ -161,7 +163,7 @@ body.
 - [ ] `(cd frontend && npm test)` passes if the frontend changed
 - [ ] Followed [conventional commits](https://www.conventionalcommits.org/)
 - [ ] Updated documentation if applicable
-- [ ] Release-facing claims distinguish implemented signed RC artifacts from
+- [ ] Release-facing claims distinguish implemented stable-default/opt-in RC policy from
       remote rehearsal and stable-publication evidence
 
 **If tests fail, the PR will not be merged.** No exceptions.

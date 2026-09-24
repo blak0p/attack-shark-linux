@@ -42,8 +42,8 @@ relevant and in scope:
 - **Report payloads** — configuration writes (`SET_REPORT`) must be built from
   validated inputs; no unchecked user data should reach the device.
 - **Credentials and secrets** — nothing sensitive may ever be committed.
-- **Release and update verification** — RC installation and AppImage updates
-  require signed release metadata; updates also require explicit user approval
+- **Release and update verification** — stable-default and opt-in RC
+  installation and AppImage updates require signed release metadata; updates also require explicit user approval
   and are confined to the user-local AppImage. The updater does not install or
   modify udev rules.
 
@@ -60,8 +60,10 @@ When contributing:
 ## Known Limitations
 
 - The app is pre-release; behavior may change without notice.
-- The signed RC installer and x86_64 AppImage are release artifacts, but live
+- The stable-default installer (with `--beta` for signed RCs) and x86_64
+  AppImage are release artifacts; no stable candidate means normal installation
+  fails rather than selecting an RC. Live
   installer/update rehearsal evidence and stable publication are separately
-  gated and are not claimed here.
+  gated and are not claimed here. Updates remain within their installed channel.
 - Macros, on-device profiles, and DEB/RPM/AUR packages or repositories are
   deferred. Local per-device persistence is distinct from on-device profiles.

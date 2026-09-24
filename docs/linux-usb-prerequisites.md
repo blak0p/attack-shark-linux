@@ -64,10 +64,14 @@ active local seat.
 
 ## Release installer boundary
 
-The signed RC installer can install the AppImage under the current OS account's
-user-local data directory. Its optional udev flow is separate, requires explicit
-approval before `sudo`, and otherwise provides a manual fallback. The AppImage
-updater never elevates and never changes this udev policy.
+The release-asset installer selects signed stable releases by default and signed
+RC releases only with `--beta`. Without a stable candidate, normal installation
+fails instead of falling back to an RC or `main`. It installs the AppImage under
+the current OS account's user-local data directory. Its optional udev flow is
+separate, requires explicit approval before `sudo`, and otherwise provides a
+manual fallback. The AppImage
+updater never elevates and never changes this udev policy; updates remain in
+the installed stable or RC channel.
 
 ## Permission-denied recovery
 

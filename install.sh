@@ -12,7 +12,7 @@ LC_ALL=C
 export LC_ALL
 
 usage() {
-	printf '%s\n' 'Usage: install.sh --beta [--install-udev]' >&2
+	printf '%s\n' 'Usage: install.sh [--beta] [--install-udev]' >&2
 	exit 2
 }
 
@@ -33,6 +33,10 @@ require_command() {
 	command -v "$1" >/dev/null 2>&1 || fail "required command is unavailable: $1"
 }
 
+is_stable_tag() {
+	printf '%s\n' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+}
+
 is_rc_tag() {
 	printf '%s\n' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.(0|[1-9][0-9]*)$'
 }
@@ -42,9 +46,11 @@ cleanup() {
 	rmdir "$workdir" 2>/dev/null || :
 }
 
-[ "$#" -ge 1 ] || usage
-[ "$1" = "--beta" ] || usage
-shift
+channel=stable
+if [ "${1:-}" = "--beta" ]; then
+	channel=RC
+	shift
+fi
 install_udev=false
 if [ "$#" -eq 1 ]; then
 	[ "$1" = "--install-udev" ] || usage
@@ -96,7 +102,7 @@ decimal_is_greater_at_equal_length() {
 	return 1
 }
 
-rc_is_newer() {
+version_is_newer() {
 	left=${1#v}; right=${2#v}
 	left_base=${left%-rc.*}; right_base=${right%-rc.*}
 	left_rc=${left##*.}; right_rc=${right##*.}
@@ -104,7 +110,7 @@ rc_is_newer() {
 	set -- $left_base; left_major=$1; left_minor=$2; left_patch=$3
 	set -- $right_base; right_major=$1; right_minor=$2; right_patch=$3
 	IFS=$old_ifs
-	for pair in "$left_major:$right_major" "$left_minor:$right_minor" "$left_patch:$right_patch" "$left_rc:$right_rc"; do
+	for pair in "$left_major:$right_major" "$left_minor:$right_minor" "$left_patch:$right_patch"; do
 		left_number=${pair%%:*}; right_number=${pair#*:}
 		if decimal_is_longer "$left_number" "$right_number"; then
 			return 0
@@ -117,6 +123,12 @@ rc_is_newer() {
 			return
 		fi
 	done
+	if [ "$channel" = RC ]; then
+		if decimal_is_longer "$left_rc" "$right_rc"; then return 0; fi
+		if decimal_is_longer "$right_rc" "$left_rc"; then return 1; fi
+		decimal_is_greater_at_equal_length "$left_rc" "$right_rc"
+		return
+	fi
 	return 1
 }
 
@@ -148,7 +160,7 @@ MAX_RELEASE_PAGES=1000
 releases_page=1
 seen_page_fingerprints=
 while [ "$releases_page" -le "$MAX_RELEASE_PAGES" ]; do
-	releases=$(curl --fail --location --silent --show-error "$API_URL?per_page=100&page=$releases_page") || fail 'query GitHub RC releases'
+	releases=$(curl --fail --location --silent --show-error "$API_URL?per_page=100&page=$releases_page") || fail 'query GitHub releases'
 	release_count=$(printf '%s' "$releases" | jq -er 'if type == "array" then length else error("release response is not an array") end' 2>/dev/null) || fail 'GitHub release response is invalid'
 	[ "$release_count" -eq 0 ] && break
 	page_fingerprint=$(printf '%s' "$releases" | sha256sum) || fail 'fingerprint GitHub release response'
@@ -157,12 +169,14 @@ while [ "$releases_page" -le "$MAX_RELEASE_PAGES" ]; do
 	fi
 	seen_page_fingerprints="${seen_page_fingerprints}${page_fingerprint}
 "
-	for tag in $(printf '%s' "$releases" | jq -r '.[] | select(.prerelease == true and .draft == false) | .tag_name' 2>/dev/null); do
-		is_rc_tag "$tag" || continue
+	prerelease=false
+	if [ "$channel" = RC ]; then prerelease=true; fi
+	for tag in $(printf '%s' "$releases" | jq -r --arg prerelease "$prerelease" '.[] | select(.prerelease == ($prerelease == "true") and .draft == false) | .tag_name' 2>/dev/null); do
+		if [ "$channel" = RC ]; then is_rc_tag "$tag" || continue; else is_stable_tag "$tag" || continue; fi
 		download_url="$DOWNLOAD_ROOT/$tag"
 		valid_release=$(printf '%s' "$releases" | jq -e --arg tag "$tag" --arg root "$download_url" \
-			--arg appimage "$APPIMAGE_NAME" --arg manifest "$MANIFEST_NAME" --arg rule "$UDEV_RULE_NAME" '
-			[.[] | select(.prerelease == true and .draft == false and .tag_name == $tag) |
+			--arg appimage "$APPIMAGE_NAME" --arg manifest "$MANIFEST_NAME" --arg rule "$UDEV_RULE_NAME" --arg prerelease "$prerelease" '
+			[.[] | select(.prerelease == ($prerelease == "true") and .draft == false and .tag_name == $tag) |
 			 select((.assets | length) == 5) |
 			 select(all(.assets[]; .name == $appimage or .name == ($appimage + ".sha256") or .name == $manifest or .name == $rule or .name == "install.sh")) |
 			 select((.assets | map(.name) | unique | length) == 5) |
@@ -170,7 +184,7 @@ while [ "$releases_page" -le "$MAX_RELEASE_PAGES" ]; do
 			] | length == 1' 2>/dev/null) || continue
 		[ "$valid_release" = true ] || continue
 		manifest_is_valid "$tag" || continue
-		if [ -z "$selected_tag" ] || rc_is_newer "$tag" "$selected_tag"; then
+		if [ -z "$selected_tag" ] || version_is_newer "$tag" "$selected_tag"; then
 			selected_tag=$tag
 			appimage_url=$candidate_appimage_url
 			udev_url="$DOWNLOAD_ROOT/$tag/$UDEV_RULE_NAME"
@@ -180,7 +194,7 @@ while [ "$releases_page" -le "$MAX_RELEASE_PAGES" ]; do
 	[ "$releases_page" -lt "$MAX_RELEASE_PAGES" ] || fail 'release discovery did not terminate within 1000 pages'
 	releases_page=$((releases_page + 1))
 done
-[ -n "$selected_tag" ] || fail 'No valid signed GitHub RC release is available.'
+[ -n "$selected_tag" ] || fail "No valid signed GitHub $channel release is available."
 
 curl --fail --location --silent --show-error "$appimage_url" -o "$workdir/appimage" || fail 'download AppImage'
 printf '%s  %s\n' "$digest" "$workdir/appimage" | sha256sum -c - >/dev/null 2>&1 || fail 'downloaded AppImage SHA-256 does not match signed manifest'
@@ -206,7 +220,7 @@ Terminal=false
 Categories=Settings;Utility;
 EOF
 mv -f "$desktop_temporary" "$desktop_dir/attack-shark-x6.desktop" || fail 'atomically install desktop entry'
-printf 'Installed %s from signed RC %s\n' "$install_path" "$selected_tag"
+printf 'Installed %s from signed %s %s\n' "$install_path" "$channel" "$selected_tag"
 
 if [ "$install_udev" = true ]; then
 	if [ ! -t 0 ]; then
