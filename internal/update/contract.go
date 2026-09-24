@@ -283,4 +283,3 @@ func compareParsed(left, right version) int {
 	}
 	return 0
 }
-
