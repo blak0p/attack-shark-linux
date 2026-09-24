@@ -2,7 +2,6 @@
 # This file is published only as a GitHub release asset. The workflow replaces
 # this placeholder with the release signing public key before uploading it.
 PUBLIC_KEY="__ATTACK_SHARK_RELEASE_PUBLIC_KEY__"
-REPOSITORY="blak0p/attack-shark-linux"
 API_URL="https://api.github.com/repos/blak0p/attack-shark-linux/releases"
 APPIMAGE_NAME="attack-shark-linux-x86_64.AppImage"
 MANIFEST_NAME="update-manifest.json"
@@ -106,10 +105,10 @@ version_is_newer() {
 	left=${1#v}; right=${2#v}
 	left_base=${left%-rc.*}; right_base=${right%-rc.*}
 	left_rc=${left##*.}; right_rc=${right##*.}
-	old_ifs=$IFS; IFS=.
-	set -- $left_base; left_major=$1; left_minor=$2; left_patch=$3
-	set -- $right_base; right_major=$1; right_minor=$2; right_patch=$3
-	IFS=$old_ifs
+	left_major=${left_base%%.*}; left_rest=${left_base#*.}
+	left_minor=${left_rest%%.*}; left_patch=${left_rest#*.}
+	right_major=${right_base%%.*}; right_rest=${right_base#*.}
+	right_minor=${right_rest%%.*}; right_patch=${right_rest#*.}
 	for pair in "$left_major:$right_major" "$left_minor:$right_minor" "$left_patch:$right_patch"; do
 		left_number=${pair%%:*}; right_number=${pair#*:}
 		if decimal_is_longer "$left_number" "$right_number"; then
