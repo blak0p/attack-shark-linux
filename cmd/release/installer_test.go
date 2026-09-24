@@ -190,6 +190,36 @@ func runInstallerFixture(t *testing.T, repeatPages bool, firstTag, secondTag str
 }
 
 func runInstallerFixtureForChannel(t *testing.T, repeatPages, beta bool, firstTag, secondTag string) (string, string, error) {
+	return runInstallerFixtureWithKey(t, repeatPages, beta, true, firstTag, secondTag)
+}
+
+func TestInstallerRenderedKeyDoesNotRejectItself(t *testing.T) {
+	for _, beta := range []bool{false, true} {
+		t.Run(map[bool]string{false: "stable", true: "RC"}[beta], func(t *testing.T) {
+			tag := "v1.2.0"
+			if beta {
+				tag = "v1.2.0-rc.2"
+			}
+			older := "v1.1.0"
+			if beta {
+				older = "v1.2.0-rc.1"
+			}
+			output, _, err := runInstallerFixtureWithKey(t, false, beta, true, older, tag)
+			if err != nil || !strings.Contains(output, "signed "+map[bool]string{false: "stable", true: "RC"}[beta]+" "+tag) {
+				t.Fatalf("globally rendered installer rejected signed release: %v; output: %s", err, output)
+			}
+		})
+	}
+}
+
+func TestInstallerRejectsUnrenderedKey(t *testing.T) {
+	output, _, err := runInstallerFixtureWithKey(t, false, true, false, "v1.2.0-rc.2", "v1.2.0-rc.2")
+	if err == nil || !strings.Contains(output, "installer public key was not injected") {
+		t.Fatalf("unrendered installer must fail before release discovery: %v; output: %s", err, output)
+	}
+}
+
+func runInstallerFixtureWithKey(t *testing.T, repeatPages, beta, renderKey bool, firstTag, secondTag string) (string, string, error) {
 	t.Helper()
 	temp := t.TempDir()
 	home := filepath.Join(temp, "account-home")
@@ -201,7 +231,10 @@ func runInstallerFixtureForChannel(t *testing.T, repeatPages, beta bool, firstTa
 	if err != nil {
 		t.Fatal(err)
 	}
-	installer := strings.Replace(string(installerBytes), "__ATTACK_SHARK_RELEASE_PUBLIC_KEY__", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 1)
+	installer := string(installerBytes)
+	if renderKey {
+		installer = strings.ReplaceAll(installer, "__ATTACK_SHARK_RELEASE_PUBLIC_KEY__", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	}
 	installerPath := filepath.Join(temp, "install.sh")
 	if err := os.WriteFile(installerPath, []byte(installer), 0o755); err != nil {
 		t.Fatal(err)

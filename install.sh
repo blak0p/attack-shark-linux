@@ -63,7 +63,8 @@ case "$account_home" in
 	/*) ;;
 	*) fail 'current OS account home is empty, unresolvable, or not absolute' ;;
 esac
-[ "$PUBLIC_KEY" != '__ATTACK_SHARK_RELEASE_PUBLIC_KEY__' ] || fail 'installer public key was not injected by the release workflow'
+# Split the sentinel so workflow-wide key substitution cannot rewrite this guard.
+[ "$PUBLIC_KEY" != '__ATTACK_SHARK_RELEASE_'"PUBLIC_KEY__" ] || fail 'installer public key was not injected by the release workflow'
 
 for command in awk curl getent id jq openssl base64 sha256sum grep mktemp; do
 	require_command "$command"
