@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,8 @@ func TestInstallerEnforcesSignedCanonicalReleasePolicy(t *testing.T) {
 		"install_dir=\"$account_home/.local/share/attack-shark-x6\"",
 		"install_path=\"$install_dir/$APPIMAGE_NAME\"",
 		"Exec=$install_path",
+		"Icon=attack-shark-x6",
+		"--appimage-extract",
 		"--install-udev",
 		"udevadm control --reload-rules",
 		"udevadm trigger",
@@ -62,6 +66,7 @@ func TestInstallerCorrectsIndependentREL4BDefects(t *testing.T) {
 		`case "$account_home" in`,
 		`install_dir="$account_home/.local/share/attack-shark-x6"`,
 		`desktop_dir="$account_home/.local/share/applications"`,
+		`icon_theme_dir="$account_home/.local/share/icons/hicolor/scalable/apps"`,
 		`manual_udev_fallback "$udev_url"`,
 		`curl --fail --location --silent --show-error '$rule_url' | sudo install -Dm0644 /dev/stdin /etc/udev/rules.d/60-attack-shark-x6-hidraw.rules`,
 		`API_URL="https://api.github.com/repos/blak0p/attack-shark-linux/releases"`,
@@ -99,6 +104,36 @@ func TestInstallerSelectsNewestSignedStableUnderPOSIXShell(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local", "share", "attack-shark-x6", "attack-shark-linux-x86_64.AppImage")); err != nil {
 		t.Fatalf("installer did not atomically install the selected stable artifact: %v", err)
+	}
+	themeIconPath := filepath.Join(home, ".local", "share", "icons", "hicolor", "scalable", "apps", "attack-shark-x6.svg")
+	themeIconInfo, err := os.Stat(themeIconPath)
+	if err != nil {
+		t.Fatalf("installer did not install theme icon: %v", err)
+	}
+	if themeIconInfo.Mode().Perm() != 0o644 {
+		t.Errorf("theme icon mode = %v, want 0644", themeIconInfo.Mode().Perm())
+	}
+	themeIconBytes, err := os.ReadFile(themeIconPath)
+	if err != nil || !strings.Contains(string(themeIconBytes), "<svg>fixture-icon</svg>") {
+		t.Errorf("theme icon content invalid: %v, content: %s", err, string(themeIconBytes))
+	}
+
+	appIconPath := filepath.Join(home, ".local", "share", "attack-shark-x6", "attack-shark-x6.svg")
+	appIconInfo, err := os.Stat(appIconPath)
+	if err != nil {
+		t.Fatalf("installer did not install app directory icon: %v", err)
+	}
+	if appIconInfo.Mode().Perm() != 0o644 {
+		t.Errorf("app directory icon mode = %v, want 0644", appIconInfo.Mode().Perm())
+	}
+
+	desktopBytes, err := os.ReadFile(filepath.Join(home, ".local", "share", "applications", "attack-shark-x6.desktop"))
+	if err != nil {
+		t.Fatalf("installer did not install desktop file: %v", err)
+	}
+	desktop := string(desktopBytes)
+	if !strings.Contains(desktop, "Icon=attack-shark-x6") {
+		t.Errorf("desktop file must contain Icon=attack-shark-x6: %s", desktop)
 	}
 }
 
@@ -239,6 +274,14 @@ func runInstallerFixtureWithKey(t *testing.T, repeatPages, beta, renderKey bool,
 	if err := os.WriteFile(installerPath, []byte(installer), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	fixtureAppImagePath := filepath.Join(temp, "fixture-appimage")
+	const fixtureAppImage = "#!/bin/sh\nif [ \"$1\" = \"--appimage-extract\" ]; then\n  mkdir -p squashfs-root\n  printf '<svg>fixture-icon</svg>\\n' > squashfs-root/.DirIcon\n  exit 0\nfi\nexit 0\n"
+	if err := os.WriteFile(fixtureAppImagePath, []byte(fixtureAppImage), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	appImageDigest := sha256.Sum256([]byte(fixtureAppImage))
+	appImageDigestHex := hex.EncodeToString(appImageDigest[:])
+
 	writeInstallerStub(t, bin, "id", "#!/bin/sh\nprintf '1000\\n'\n")
 	writeInstallerStub(t, bin, "getent", "#!/bin/sh\nprintf 'tester:x:1000:1000::%s:/bin/sh\\n' \"$INSTALLER_TEST_HOME\"\n")
 	writeInstallerStub(t, bin, "openssl", "#!/bin/sh\nexit 0\n")
@@ -257,7 +300,7 @@ case "$url" in
   *'&page=2') if [ "$INSTALLER_TEST_REPEAT" = true ]; then value=$INSTALLER_TEST_FIRST_TAG; else value=$INSTALLER_TEST_SECOND_TAG; fi ;;
   *'&page='*) if [ "$INSTALLER_TEST_REPEAT" = true ]; then value=$INSTALLER_TEST_FIRST_TAG; else value='[]'; fi ;;
   */update-manifest.json) value=$url ;;
-  */attack-shark-linux-x86_64.AppImage) value='fixture-appimage' ;;
+  */attack-shark-linux-x86_64.AppImage) if [ -n "$output" ]; then cat "$INSTALLER_TEST_APPIMAGE_PATH" > "$output"; else cat "$INSTALLER_TEST_APPIMAGE_PATH"; fi; exit 0 ;;
 esac
 if [ -n "$output" ]; then printf '%s' "$value" > "$output"; else printf '%s' "$value"; fi
 `)
@@ -280,7 +323,7 @@ case "$*" in
     esac ;;
   *".version | strings"*) version=${input#*/download/v}; printf '%s\n' "${version%/update-manifest.json}" ;;
   *".url | strings"*) printf '%s\n' "$input" | sed 's/update-manifest.json/attack-shark-linux-x86_64.AppImage/' ;;
-  *".sha256 | strings"*) printf '09c1a2f3396015e2a1d6060fd66ed7c9744fdb5b101679121943b9e0fd8424c2\n' ;;
+  *".sha256 | strings"*) printf '%s\n' "$INSTALLER_TEST_APPIMAGE_SHA256" ;;
   *".signature | strings"*) printf 'AAAA\n' ;;
 esac
 `)
@@ -291,7 +334,15 @@ esac
 		arguments = append(arguments, "--beta")
 	}
 	command := exec.CommandContext(context, "/bin/sh", arguments...)
-	command.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "INSTALLER_TEST_HOME="+home, "INSTALLER_TEST_REPEAT="+map[bool]string{true: "true", false: "false"}[repeatPages], "INSTALLER_TEST_FIRST_TAG="+firstTag, "INSTALLER_TEST_SECOND_TAG="+secondTag)
+	command.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"INSTALLER_TEST_HOME="+home,
+		"INSTALLER_TEST_REPEAT="+map[bool]string{true: "true", false: "false"}[repeatPages],
+		"INSTALLER_TEST_FIRST_TAG="+firstTag,
+		"INSTALLER_TEST_SECOND_TAG="+secondTag,
+		"INSTALLER_TEST_APPIMAGE_PATH="+fixtureAppImagePath,
+		"INSTALLER_TEST_APPIMAGE_SHA256="+appImageDigestHex,
+	)
 	output, err := command.CombinedOutput()
 	if context.Err() != nil {
 		t.Fatalf("installer did not terminate under /bin/sh: %v; output: %s", context.Err(), output)
@@ -303,6 +354,32 @@ func writeInstallerStub(t *testing.T, dir, name, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInstallerEnforcesDesktopIconContract(t *testing.T) {
+	installerBytes, err := os.ReadFile(filepath.Join("..", "..", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer := string(installerBytes)
+
+	for _, required := range []string{
+		`icon_theme_dir="$account_home/.local/share/icons/hicolor/scalable/apps"`,
+		`"$install_path" --appimage-extract .DirIcon`,
+		`"$install_path" --appimage-extract attack-shark-x6.svg`,
+		`icon_temporary=$(mktemp "$install_dir/.attack-shark-x6.svg.XXXXXX")`,
+		`theme_icon_temporary=$(mktemp "$icon_theme_dir/.attack-shark-x6.svg.XXXXXX")`,
+		`chmod 0644 "$icon_temporary"`,
+		`chmod 0644 "$theme_icon_temporary"`,
+		`mv -f "$icon_temporary" "$install_dir/attack-shark-x6.svg"`,
+		`mv -f "$theme_icon_temporary" "$icon_theme_dir/attack-shark-x6.svg"`,
+		`fail 'extract application icon from AppImage'`,
+		"Icon=attack-shark-x6",
+	} {
+		if !strings.Contains(installer, required) {
+			t.Errorf("installer must contain %q for desktop icon contract", required)
+		}
 	}
 }
 

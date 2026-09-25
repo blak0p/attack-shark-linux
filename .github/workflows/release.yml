@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Verify and release
+  build:
+    name: Build and package release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pushed tag
@@ -75,7 +75,8 @@ jobs:
             exit 1
           fi
 
-          printf '%s\n' "$release_notes" > "$RUNNER_TEMP/release-notes.md"
+          mkdir -p build-meta
+          printf '%s\n' "$release_notes" > build-meta/release-notes.md
 
       - name: Run verification
         run: make check
@@ -94,6 +95,80 @@ jobs:
           chmod 0755 build/release/install.sh
           task package:container:release
 
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            cmd/x6configurator/build/release/
+            build-meta/release-notes.md
+          retention-days: 1
+
+  smoke-test-distros:
+    name: Smoke test (${{ matrix.distro.name }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro:
+          - name: Ubuntu 24.04
+            image: ubuntu:24.04
+            install: |
+              apt-get update
+              apt-get install -y --no-install-recommends xvfb libgtk-4-1
+          - name: Arch Linux
+            image: archlinux:latest
+            install: |
+              pacman -Sy --noconfirm archlinux-keyring
+              pacman -S --noconfirm --needed xorg-server-xvfb gtk4
+          - name: Fedora
+            image: fedora:latest
+            install: |
+              dnf install -y xorg-x11-server-Xvfb gtk4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
+      - name: Run ${{ matrix.distro.name }} smoke test
+        run: |
+          set -euo pipefail
+          chmod +x cmd/x6configurator/build/release/attack-shark-linux-x86_64.AppImage
+          chmod +x packaging/appimage/smoke-test.sh
+
+          docker run --rm \
+            -v "$PWD/cmd/x6configurator/build/release:/artifacts:ro" \
+            -v "$PWD/packaging/appimage:/scripts:ro" \
+            "${{ matrix.distro.image }}" \
+            sh -c '
+              set -eu
+              echo "==> Installing minimal dependencies on ${{ matrix.distro.name }}..."
+              ${{ matrix.distro.install }}
+              /scripts/smoke-test.sh /artifacts/attack-shark-linux-x86_64.AppImage
+            '
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, smoke-test-distros]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pushed tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,7 +178,7 @@ jobs:
           release_args=(
             --verify-tag
             --title "$TAG"
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+            --notes-file build-meta/release-notes.md
           )
           if [[ "$TAG" =~ -rc\. ]]; then
             release_args+=(--prerelease --latest=false)

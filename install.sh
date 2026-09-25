@@ -41,6 +41,7 @@ is_rc_tag() {
 }
 
 cleanup() {
+	rm -rf "$workdir/squashfs-root"
 	rm -f "$workdir/manifest.json" "$workdir/appimage" "$workdir/payload" "$workdir/signature" "$workdir/public-key.der" "$workdir/udev.rules"
 	rmdir "$workdir" 2>/dev/null || :
 }
@@ -208,6 +209,41 @@ cat "$workdir/appimage" > "$temporary_install" || fail 'write AppImage'
 chmod 0755 "$temporary_install" || fail 'preserve AppImage executable permission'
 mv -f "$temporary_install" "$install_path" || fail 'atomically install AppImage'
 
+(cd "$workdir" && "$install_path" --appimage-extract .DirIcon) >/dev/null 2>&1 || :
+if [ ! -s "$workdir/squashfs-root/.DirIcon" ]; then
+	(cd "$workdir" && "$install_path" --appimage-extract attack-shark-x6.svg) >/dev/null 2>&1 || :
+fi
+if [ ! -s "$workdir/squashfs-root/.DirIcon" ] && [ ! -s "$workdir/squashfs-root/attack-shark-x6.svg" ]; then
+	(cd "$workdir" && "$install_path" --appimage-extract packaging/icons/attack-shark-x6.svg) >/dev/null 2>&1 || :
+fi
+
+icon_source=
+for candidate in \
+	"$workdir/squashfs-root/.DirIcon" \
+	"$workdir/squashfs-root/attack-shark-x6.svg" \
+	"$workdir/squashfs-root/packaging/icons/attack-shark-x6.svg"; do
+	if [ -s "$candidate" ]; then
+		icon_source=$candidate
+		break
+	fi
+done
+[ -n "$icon_source" ] || fail 'extract application icon from AppImage'
+
+icon_theme_dir="$account_home/.local/share/icons/hicolor/scalable/apps"
+mkdir -p "$icon_theme_dir" || fail 'create user-local icon theme directory'
+
+icon_temporary=$(mktemp "$install_dir/.attack-shark-x6.svg.XXXXXX") || fail 'create atomic icon target'
+cat "$icon_source" > "$icon_temporary" || fail 'write application icon'
+chmod 0644 "$icon_temporary" || fail 'preserve application icon permissions'
+mv -f "$icon_temporary" "$install_dir/attack-shark-x6.svg" || fail 'atomically install application icon'
+
+theme_icon_temporary=$(mktemp "$icon_theme_dir/.attack-shark-x6.svg.XXXXXX") || fail 'create atomic theme icon target'
+cat "$icon_source" > "$theme_icon_temporary" || fail 'write theme icon'
+chmod 0644 "$theme_icon_temporary" || fail 'preserve theme icon permissions'
+mv -f "$theme_icon_temporary" "$icon_theme_dir/attack-shark-x6.svg" || fail 'atomically install theme icon'
+
+rm -rf "$workdir/squashfs-root"
+
 desktop_dir="$account_home/.local/share/applications"
 mkdir -p "$desktop_dir" || fail 'create user-local applications directory'
 desktop_temporary=$(mktemp "$desktop_dir/.attack-shark-x6.desktop.XXXXXX") || fail 'create atomic desktop entry'
@@ -216,9 +252,11 @@ cat > "$desktop_temporary" <<EOF
 Type=Application
 Name=Attack Shark X6 Configurator
 Exec=$install_path
+Icon=attack-shark-x6
 Terminal=false
 Categories=Settings;Utility;
 EOF
+chmod 0644 "$desktop_temporary" || fail 'preserve desktop entry permissions'
 mv -f "$desktop_temporary" "$desktop_dir/attack-shark-x6.desktop" || fail 'atomically install desktop entry'
 printf 'Installed %s from signed %s %s\n' "$install_path" "$channel" "$selected_tag"
 
