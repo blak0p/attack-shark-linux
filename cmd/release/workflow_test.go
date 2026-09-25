@@ -150,3 +150,51 @@ func workflowStep(t *testing.T, workflow, name string) string {
 	}
 	return step
 }
+
+func TestReleaseWorkflowEnforcesMultiDistroMatrixSmokeTest(t *testing.T) {
+	workflowPath := filepath.Join("..", "..", ".github", "workflows", "release.yml")
+	workflowBytes, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(workflowBytes)
+
+	// Ensure smoke-test-distros job exists and depends on build
+	requireExactOnce(t, workflow, "  smoke-test-distros:\n    name: Smoke test (${{ matrix.distro.name }})\n    needs: build", "smoke-test-distros job depending on build")
+
+	// Ensure all required distributions are part of the verification matrix
+	for _, requiredDistro := range []string{"ubuntu:24.04", "archlinux:latest", "fedora:latest"} {
+		if !strings.Contains(workflow, requiredDistro) {
+			t.Errorf("smoke-test matrix must include container %q", requiredDistro)
+		}
+	}
+
+	// Ensure release job requires smoke-test-distros to pass before publishing
+	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros]", "release job depending on both build and smoke-test-distros")
+
+	// Ensure smoke-test.sh exists and is executable
+	scriptPath := filepath.Join("..", "..", "packaging", "appimage", "smoke-test.sh")
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("smoke-test.sh script not found: %v", err)
+	}
+	if info.Mode()&0111 == 0 {
+		t.Errorf("smoke-test.sh must be executable, got mode %v", info.Mode())
+	}
+
+	scriptBytes, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes)
+	for _, required := range []string{
+		"APPIMAGE_EXTRACT_AND_RUN=1",
+		"xvfb-run",
+		"WebKitNetworkProcess",
+		"124",
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("smoke-test.sh must contain %q", required)
+		}
+	}
+}

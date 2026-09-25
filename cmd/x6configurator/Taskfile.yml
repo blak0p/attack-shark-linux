@@ -20,6 +20,11 @@ tasks:
     cmds:
       - npm run build
 
+  prepare:appdir:
+    desc: Configure WebKit permissions, AppRun hooks, and AppRun wrapper for portable execution.
+    cmds:
+      - ../../packaging/appimage/prepare-appdir.sh build/appimage/attack-shark-linux-x86_64.AppDir
+
   package:
     desc: Package a Linux AppImage from freshly built frontend assets.
     deps: [build:frontend]
@@ -27,8 +32,9 @@ tasks:
       - go build -o build/attack-shark-linux .
       - |-
         PKG_CONFIG_PATH="/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" wails3 generate appimage -binary build/attack-shark-linux -icon ../../packaging/icons/attack-shark-x6.svg -desktopfile ../../packaging/desktop/attack-shark-x6.desktop -outputdir build -builddir build/appimage &&
-        chmod 0755 build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitNetworkProcess build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitWebProcess &&
-        (cd build && APPIMAGE_EXTRACT_AND_RUN=1 appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage)
+        task prepare:appdir &&
+        (cd build && APPIMAGE_EXTRACT_AND_RUN=1 appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage) &&
+        mv -f build/Attack_Shark_X6_Configurator-x86_64.AppImage build/attack-shark-linux-x86_64.AppImage
 
   package:release:
     desc: Build and stage signed release artifacts from a normalized release tag.
@@ -39,8 +45,9 @@ tasks:
         release_public_key="$(go run ../../cmd/release public-key)" &&
         go build -ldflags "-X github.com/blak0p/attack-shark-linux/internal/update.CurrentVersion=${RELEASE_TAG#v} -X github.com/blak0p/attack-shark-linux/internal/update.ReleasePublicKey=${release_public_key}" -o build/attack-shark-linux . &&
         PKG_CONFIG_PATH="/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" wails3 generate appimage -binary build/attack-shark-linux -icon ../../packaging/icons/attack-shark-x6.svg -desktopfile ../../packaging/desktop/attack-shark-x6.desktop -outputdir build -builddir build/appimage &&
-        chmod 0755 build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitNetworkProcess build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitWebProcess &&
+        task prepare:appdir &&
         (cd build && APPIMAGE_EXTRACT_AND_RUN=1 appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage) &&
+        mv -f build/Attack_Shark_X6_Configurator-x86_64.AppImage build/attack-shark-linux-x86_64.AppImage &&
         ATTACK_SHARK_RELEASE_SIGNING_SEED="$ATTACK_SHARK_RELEASE_SIGNING_SEED" go run ../../cmd/release stage -tag "$RELEASE_TAG" -appimage build/attack-shark-linux-x86_64.AppImage -output-dir build/release -url "$RELEASE_URL"
 
   package:container:
@@ -54,4 +61,4 @@ tasks:
     cmds:
       - test -n "$RELEASE_TAG" && test -n "$RELEASE_URL" && test -n "$ATTACK_SHARK_RELEASE_SIGNING_SEED"
       - podman build --tag attack-shark-x6-appimage-builder:ubuntu-24.04 --file ../../packaging/appimage/Containerfile ../../packaging/appimage
-      - podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --env HOME=/tmp --env APPIMAGE_EXTRACT_AND_RUN=1 --env RELEASE_TAG --env RELEASE_URL --env ATTACK_SHARK_RELEASE_SIGNING_SEED --volume ../..:/workspace:Z --workdir /workspace/cmd/x6configurator attack-shark-x6-appimage-builder:ubuntu-24.04 sh -c 'npm --prefix ../../frontend run build && release_public_key="$(go run ../../cmd/release public-key)" && go build -ldflags "-X github.com/blak0p/attack-shark-linux/internal/update.CurrentVersion=${RELEASE_TAG#v} -X github.com/blak0p/attack-shark-linux/internal/update.ReleasePublicKey=${release_public_key}" -o build/attack-shark-linux . && wails3 generate appimage -binary build/attack-shark-linux -icon ../../packaging/icons/attack-shark-x6.svg -desktopfile ../../packaging/desktop/attack-shark-x6.desktop -outputdir build -builddir build/appimage && chmod 0755 build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitNetworkProcess build/appimage/attack-shark-linux-x86_64.AppDir/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/WebKitWebProcess && (cd build && appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage) && go run ../../cmd/release stage -tag "$RELEASE_TAG" -appimage build/attack-shark-linux-x86_64.AppImage -output-dir build/release -url "$RELEASE_URL"'
+      - podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --env HOME=/tmp --env APPIMAGE_EXTRACT_AND_RUN=1 --env RELEASE_TAG --env RELEASE_URL --env ATTACK_SHARK_RELEASE_SIGNING_SEED --volume ../..:/workspace:Z --workdir /workspace/cmd/x6configurator attack-shark-x6-appimage-builder:ubuntu-24.04 sh -c 'npm --prefix ../../frontend run build && release_public_key="$(go run ../../cmd/release public-key)" && go build -ldflags "-X github.com/blak0p/attack-shark-linux/internal/update.CurrentVersion=${RELEASE_TAG#v} -X github.com/blak0p/attack-shark-linux/internal/update.ReleasePublicKey=${release_public_key}" -o build/attack-shark-linux . && wails3 generate appimage -binary build/attack-shark-linux -icon ../../packaging/icons/attack-shark-x6.svg -desktopfile ../../packaging/desktop/attack-shark-x6.desktop -outputdir build -builddir build/appimage && task prepare:appdir && (cd build && appimage/linuxdeploy-x86_64.AppImage --appdir appimage/attack-shark-linux-x86_64.AppDir --output appimage) && mv -f build/Attack_Shark_X6_Configurator-x86_64.AppImage build/attack-shark-linux-x86_64.AppImage && go run ../../cmd/release stage -tag "$RELEASE_TAG" -appimage build/attack-shark-linux-x86_64.AppImage -output-dir build/release -url "$RELEASE_URL"'
