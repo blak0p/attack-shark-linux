@@ -52,7 +52,7 @@ tasks:
     desc: Package the Linux AppImage in a rootless Ubuntu 24.04 Podman builder.
     cmds:
       - podman build --tag attack-shark-x6-appimage-builder:ubuntu-24.04 --file ../../packaging/appimage/Containerfile ../../packaging/appimage
-      - podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --env HOME=/tmp --env APPIMAGE_EXTRACT_AND_RUN=1 --volume ../..:/workspace:Z --workdir /workspace/cmd/x6configurator attack-shark-x6-appimage-builder:ubuntu-24.04 task package
+      - podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --env HOME=/tmp --env APPIMAGE_EXTRACT_AND_RUN=1 --volume ../..:/workspace:Z --workdir /workspace/cmd/x6configurator attack-shark-x6-appimage-builder:ubuntu-24.04 sh -c 'wails3 package GOOS=linux && mv build/Attack_Shark_X6_Configurator-x86_64.AppImage build/attack-shark-linux-x86_64.AppImage'
 
   package:container:release:
     desc: Build and stage signed release artifacts in the rootless Ubuntu 24.04 builder.
