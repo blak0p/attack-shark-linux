@@ -95,8 +95,9 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
-  const connected = ready;
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
+  const connected = ready && !inventory?.Error.Code &&
+    snapshot.Error.Code !== "device_disconnected" && snapshot.Error.Code !== "permission_denied";
   const pending = snapshot.Pending;
   const stages = pending.DPI.map((dpi, index) => ({ index, dpi })).filter(
     ({ index }) => ((pending.StageMask ?? 0) >> index) & 1
