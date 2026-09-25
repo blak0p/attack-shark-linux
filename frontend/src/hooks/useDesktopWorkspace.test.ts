@@ -65,6 +65,16 @@ function deferred<T>() {
 }
 
 describe("useDesktopWorkspace", () => {
+  it("loads the installed application version independently of available updates", async () => {
+    const harness = serviceFor({
+      GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
+      CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.2.0" }),
+    });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.applicationVersion).toBe("1.2.0-rc.5"));
+    expect(result.current.model.update?.Version).toBe("1.2.0");
+  });
+
   it("loads all workspace data, filters mismatched events, stages actions, and cleans up subscriptions", async () => {
     const harness = serviceFor();
     const { result, unmount } = renderHook(() => useDesktopWorkspace(harness.service));

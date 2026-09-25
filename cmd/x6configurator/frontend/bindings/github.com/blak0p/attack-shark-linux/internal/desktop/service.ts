@@ -149,6 +149,14 @@ export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null>
     });
 }
 
+/**
+ * GetApplicationVersion reports the compiled installed-application version, not
+ * the device firmware version or an available update target.
+ */
+export function GetApplicationVersion(): $CancellablePromise<string> {
+    return $Call.ByID(2852758180);
+}
+
 export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnapshot> {
     return $Call.ByID(847781341).then(($result: any) => {
         return $$createType1($result);

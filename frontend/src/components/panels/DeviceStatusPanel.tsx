@@ -3,6 +3,7 @@ import type { Inventory } from "../../desktop-contract";
 
 export type DeviceStatusPanelProps = {
   connectionType?: string;
+  applicationVersion?: string;
   battery?: number | null;
   serial?: string;
   inventory?: Inventory | null;
@@ -14,6 +15,7 @@ export type DeviceStatusPanelProps = {
 
 export function DeviceStatusPanel({
   connectionType,
+  applicationVersion,
   battery,
   serial,
   errorCode,
@@ -32,6 +34,13 @@ export function DeviceStatusPanel({
     <article className="card device-status">
       <h2>Status</h2>
       <div className="rows">
+        <div className="row">
+          <label>
+            <strong>Application version</strong>
+            <span>Installed application</span>
+          </label>
+          <b>{applicationVersion?.trim() || "development build"}</b>
+        </div>
         <div className="row">
           <label>
             <strong>Interface</strong>

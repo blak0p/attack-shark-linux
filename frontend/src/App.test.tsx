@@ -122,6 +122,23 @@ const chooseLightingEffect = async (label: string) => {
 };
 
 describe("App", () => {
+  it("shows the installed application version in Device, not the update target or firmware", async () => {
+    const service = serviceFor(snapshot({ Firmware: "success" }), {
+      GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
+      CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.2.0" }),
+    });
+    render(<App service={service} />);
+    const device = await screen.findByRole("region", { name: "Device" });
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled application1.2.0-rc.5"));
+    expect(device.querySelector(".device-status b")).toHaveTextContent("1.2.0-rc.5");
+  });
+
+  it("labels an empty compiled version as a development build", async () => {
+    render(<App service={serviceFor(snapshot(), { GetApplicationVersion: vi.fn().mockResolvedValue("") })} />);
+    const device = await screen.findByRole("region", { name: "Device" });
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled applicationdevelopment build"));
+  });
+
   it("shows available connection and supplied battery information", async () => {
     render(<App service={serviceFor(snapshot())} />);
 

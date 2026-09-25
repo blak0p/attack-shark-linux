@@ -11,6 +11,17 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/update"
 )
 
+func TestInstalledApplicationVersionIsIndependentOfUpdateAvailability(t *testing.T) {
+	service := &Service{}
+	if got := service.GetApplicationVersion(); got != update.CurrentVersion {
+		t.Fatalf("GetApplicationVersion() = %q, want compiled version %q", got, update.CurrentVersion)
+	}
+	ConfigureUpdater(service, nil, nil)
+	if got := service.GetApplicationVersion(); got != update.CurrentVersion {
+		t.Fatalf("configured GetApplicationVersion() = %q, want compiled version %q", got, update.CurrentVersion)
+	}
+}
+
 func TestApplyVerifiedUpdateRetriesOnlyRelaunchAfterReplacement(t *testing.T) {
 	service := &Service{}
 	applies, launches := 0, 0
