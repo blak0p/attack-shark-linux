@@ -12,7 +12,10 @@ import (
 // UpdateInfo is the display-only update contract exported to Wails bindings.
 type UpdateInfo struct{ Version string }
 
-const updateOperationTimeout = 15 * time.Second
+const (
+	updateOperationTimeout = 15 * time.Second
+	updateApplyTimeout     = 3 * time.Minute
+)
 
 type updateState struct {
 	mu                  sync.Mutex
@@ -75,7 +78,7 @@ func (s *Service) ApplyVerifiedUpdate(ctx context.Context) error {
 		if state.apply == nil {
 			return errors.New("updates are unavailable")
 		}
-		bounded, cancel := context.WithTimeout(ctx, updateOperationTimeout)
+		bounded, cancel := context.WithTimeout(ctx, updateApplyTimeout)
 		defer cancel()
 		if err := state.apply(bounded, state.verified, true); err != nil {
 			return err

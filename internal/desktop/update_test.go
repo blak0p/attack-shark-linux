@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/update"
 )
@@ -82,6 +83,32 @@ func TestDesktopUpdateOperationsPropagateCallerCancellation(t *testing.T) {
 	cancelApply()
 	if err := <-applyResult; !errors.Is(err, context.Canceled) {
 		t.Fatalf("ApplyVerifiedUpdate() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestApplyVerifiedUpdateHasLongerBoundThanCheck(t *testing.T) {
+	service := &Service{}
+	ConfigureUpdater(service, nil, nil)
+	service.update.check = func(ctx context.Context) (*update.VerifiedUpdate, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 15*time.Second || time.Until(deadline) < 14*time.Second {
+			t.Errorf("check deadline = %v (present: %v), want about 15s", deadline, ok)
+		}
+		return nil, update.ErrNoUpdate
+	}
+	service.update.apply = func(ctx context.Context, _ *update.VerifiedUpdate, approved bool) error {
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining < 2*time.Minute || remaining > 3*time.Minute || !approved {
+			t.Errorf("apply deadline remaining = %v (present: %v, approved: %v), want 2-3m", remaining, ok, approved)
+		}
+		return nil
+	}
+	if _, err := service.CheckForUpdate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyVerifiedUpdate(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
