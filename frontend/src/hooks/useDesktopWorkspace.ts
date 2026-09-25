@@ -15,6 +15,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const [notice, setNotice] = useState("");
   const [resetConfirmation, setResetConfirmation] = useState(false);
   const [automaticApplyRequests, setAutomaticApplyRequests] = useState(0);
+  const [applicationVersion, setApplicationVersion] = useState<string>();
   const [update, setUpdate] = useState<WorkspaceModel["update"]>();
   const [updateApplying, setUpdateApplying] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -32,6 +33,11 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   useEffect(() => { refreshSelectedDeviceSnapshots(); }, [service]);
   useEffect(() => { void service.RefreshInventory().then((next) => { setInventory(next); refreshSelectedDeviceSnapshots(); }); }, [service]);
   useEffect(() => { selected.current = inventory?.Selected ?? null; }, [inventory]);
+  useEffect(() => {
+    let cancelled = false;
+    if (service.GetApplicationVersion) void service.GetApplicationVersion().then((version) => { if (!cancelled) setApplicationVersion(version); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [service]);
   useEffect(() => {
     let cancelled = false;
     if (service.CheckForUpdate) void service.CheckForUpdate().then((available) => { if (!cancelled && available) setUpdate(available); }).catch(() => {});
@@ -132,7 +138,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
     retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
   };
-		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, update, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
+		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, update, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0 }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {

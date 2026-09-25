@@ -41,6 +41,12 @@ func ConfigureUpdater(service *Service, updater *update.Updater, relaunch func()
 	service.update = state
 }
 
+// GetApplicationVersion reports the compiled installed-application version, not
+// the device firmware version or an available update target.
+func (s *Service) GetApplicationVersion() string {
+	return update.CurrentVersion
+}
+
 // CheckForUpdate verifies availability only. It never downloads, replaces, or relaunches.
 func (s *Service) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	s.mu.Lock()
