@@ -48,7 +48,7 @@ the latest stable release URL, without `--beta`:
   trap 'rm -f "$installer"' 0
   curl --fail --location --output "$installer" \
     https://github.com/blak0p/attack-shark-linux/releases/latest/download/install.sh &&
-    sh "$installer"
+    sh "$installer" --install-udev
 )
 ```
 
@@ -59,17 +59,19 @@ falls back to an RC or source from `main`. To rehearse an RC instead, download
 then explicitly select the beta channel:
 
 ```sh
-sh ./install.sh --beta
+sh ./install.sh --beta --install-udev
 ```
 
-The installer selects the newest valid signed release in the chosen channel;
-no version needs to be hardcoded. Obtain `install.sh` only from a trusted
-release asset. The installer writes the
-AppImage and absolute desktop entry under the current OS account's user-local
-data directories. Adding `--install-udev` is separate, requires explicit
-confirmation before `sudo`, and has a manual fallback. The installer-managed
-rule is exactly
-`60-attack-shark-x6-hidraw.rules`.
+Use `--install-udev` on the first interactive install so the X6 dongle can be
+accessed without running the app as root. The installer asks for confirmation
+before using `sudo` to install and reload the canonical
+`60-attack-shark-x6-hidraw.rules`; declining or running without a terminal
+leaves the rule untouched and prints manual instructions. The installer selects
+the newest valid signed release in the chosen channel; no version needs to be
+hardcoded. Obtain `install.sh` only from a trusted release asset. The AppImage
+and absolute desktop entry are installed under the current OS account's
+user-local data directories. Once the rule is installed, later AppImage updates
+do not ask again or change udev; repeat installs may omit `--install-udev`.
 
 The installed AppImage checks for a newer signed release and requires explicit
 user approval before replacement. An RC installation updates only to a newer
