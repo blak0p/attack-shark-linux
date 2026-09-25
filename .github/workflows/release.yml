@@ -116,7 +116,7 @@ jobs:
             image: ubuntu:24.04
             install: |
               apt-get update
-              apt-get install -y --no-install-recommends xvfb libgtk-4-1 libegl1
+              apt-get install -y --no-install-recommends xvfb libgtk-4-1 libegl1 libgles2
           - name: Arch Linux
             image: archlinux:latest
             install: |
@@ -125,7 +125,7 @@ jobs:
           - name: Fedora
             image: fedora:latest
             install: |
-              dnf install -y xorg-x11-server-Xvfb gtk4
+              dnf install -y xorg-x11-server-Xvfb gtk4 libGLES
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

@@ -28,7 +28,7 @@ fi
 
 echo "==> [Smoke Test] 2. Validating headless GUI startup under xvfb..."
 set +e
-gui_output=$(APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a timeout 5s "$APPIMAGE" 2>&1)
+gui_output=$(APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 xvfb-run -a timeout 5s "$APPIMAGE" 2>&1)
 gui_code=$?
 set -e
 
