@@ -116,7 +116,7 @@ jobs:
             image: ubuntu:24.04
             install: |
               apt-get update
-              apt-get install -y --no-install-recommends xvfb libgtk-4-1
+              apt-get install -y --no-install-recommends xvfb libgtk-4-1 libegl1
           - name: Arch Linux
             image: archlinux:latest
             install: |
