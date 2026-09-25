@@ -3,10 +3,11 @@
 Linux desktop configurator for the **Attack Shark X6** gaming mouse, built with
 Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 
-> **Status**: Beta. The release implementation includes a signed x86_64
-> AppImage and a release-asset installer with signed artifact verification.
-> Remote RC rehearsal and stable publication remain gated; this repository does not claim a published Latest
-> release. Not affiliated with or endorsed by Attack Shark.
+> **Releases:** Linux x86_64 AppImages and a user-local installer are available
+> from [GitHub Releases](https://github.com/blak0p/attack-shark-linux/releases).
+> The installer verifies signed release metadata and the AppImage digest; check
+> the release page for currently available stable and RC versions. Not
+> affiliated with or endorsed by Attack Shark.
 
 ## Features
 
@@ -39,8 +40,8 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
 ## Release channels and installation
 
 Normal installation selects the newest valid signed stable GitHub release.
-Once a stable release is published, fetch its immutable installer asset through
-the latest stable release URL, without `--beta`:
+For a published stable release, fetch its installer asset through the latest
+stable release URL, without `--beta`:
 
 ```sh
 (
@@ -52,8 +53,8 @@ the latest stable release URL, without `--beta`:
 )
 ```
 
-Until a stable release exists, this download fails; normal installation never
-falls back to an RC or source from `main`. To rehearse an RC instead, download
+If no signed stable release is available, normal installation fails rather than
+falling back to an RC or source from `main`. To rehearse an RC instead, download
 `install.sh` from a trusted RC asset on the
 [GitHub releases page](https://github.com/blak0p/attack-shark-linux/releases),
 then explicitly select the beta channel:
@@ -78,9 +79,10 @@ user approval before replacement. An RC installation updates only to a newer
 signed RC; a stable installation updates only to a newer signed stable release.
 Updates are confined to
 `~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage`; the updater
-never elevates and never changes udev rules. A stable release and the RC
-rehearsal are remote gates, so no live installer, update, or rehearsal evidence
-is claimed here.
+never elevates and never changes udev rules. The signed RC.4-to-RC.5 rehearsal
+verified AppImage replacement in an isolated account; the maintainer observed
+the in-app update card and relaunch. Real-device installation requires its own
+udev authorization and validation.
 
 ## Emergency recovery
 
