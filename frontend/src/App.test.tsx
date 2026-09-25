@@ -150,6 +150,28 @@ describe("App", () => {
     expect((await screen.findAllByRole("alert")).every((alert) => alert.textContent === message)).toBe(true);
   });
 
+  it("distinguishes selected inventory from a disconnected status read", async () => {
+    const service = serviceFor(snapshot({ Error: { Code: "device_disconnected" } }));
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Device available")).not.toBeInTheDocument();
+    expect(document.querySelector(".connection")).toHaveClass("offline");
+    expect(screen.getAllByRole("alert").every((alert) => alert.textContent?.includes("Mouse disconnected."))).toBe(true);
+    expect(screen.getByText("Serial alpha")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
+  });
+
+  it("keeps inventory errors authoritative over a successful status read", async () => {
+    const service = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: null, Error: { Code: "selection_required" } }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("selection required");
+  });
+
   it("requests live status on mount instead of trusting a hardware-free cached snapshot", async () => {
     const service = serviceFor(snapshot({ Connection: "", Battery: null }), {
       RefreshStatus: vi.fn().mockResolvedValue(snapshot({ Connection: "dongle", Battery: 84 })),
