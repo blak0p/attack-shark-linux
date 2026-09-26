@@ -1,7 +1,13 @@
 # Attack Shark Linux
 
+<a href="https://github.com/Gentleman-Programming/gentle-ai">
+  <img width="220" src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" />
+</a>
+
 Linux desktop configurator for the **Attack Shark X6** gaming mouse, built with
 Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
+
+![Attack Shark Linux - Performance View](docs/assets/screenshots/ui-performance.png)
 
 > **Releases:** Linux x86_64 AppImages and a user-local installer are available
 > from [GitHub Releases](https://github.com/blak0p/attack-shark-linux/releases).
@@ -26,6 +32,25 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
   devices retain it only for the current session.
 - **Serialless X6 sessions** — identifies and configures dongles without a
   usable serial.
+
+## Screenshots
+
+See [docs/user-guide.md](docs/user-guide.md) for detailed feature descriptions and setting guides.
+
+| Performance (DPI, Polling, Sleep) | Lighting (RGB Effects & Colors) |
+|:---:|:---:|
+| <a href="docs/assets/screenshots/ui-performance.png"><img src="docs/assets/screenshots/ui-performance.png" width="440" alt="Performance View" /></a> | <a href="docs/assets/screenshots/ui-lighting.png"><img src="docs/assets/screenshots/ui-lighting.png" width="440" alt="Lighting View" /></a> |
+
+| Controls (Sensor & Debounce) | Button Remapping |
+|:---:|:---:|
+| <a href="docs/assets/screenshots/ui-controls.png"><img src="docs/assets/screenshots/ui-controls.png" width="440" alt="Controls View" /></a> | <a href="docs/assets/screenshots/ui-button-remapping.png"><img src="docs/assets/screenshots/ui-button-remapping.png" width="440" alt="Button Remapping View" /></a> |
+
+<details>
+<summary><b>Device & Maintenance View</b></summary>
+<br>
+
+<a href="docs/assets/screenshots/ui-device.png"><img src="docs/assets/screenshots/ui-device.png" width="700" alt="Device View" /></a>
+</details>
 
 ## Prerequisites
 
@@ -142,6 +167,7 @@ go vet ./...         # static analysis
 
 | Doc | What it covers |
 |---|---|
+| [docs/user-guide.md](docs/user-guide.md) | Complete user guide and UI walkthrough with screenshots |
 | [docs/linux-usb-prerequisites.md](docs/linux-usb-prerequisites.md) | udev policy, build prerequisites, permission troubleshooting |
 | [docs/protocol-x6.md](docs/protocol-x6.md) | HID protocol decoded from `X6.exe` and validated on the dongle |
 | [docs/protocol-captures.md](docs/protocol-captures.md) | Captured report evidence (raw `.pcapng` in `captures/`) |
