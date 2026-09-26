@@ -4,6 +4,8 @@ export type PowerSettingsPanelProps = {
   firmwareStatus?: string;
   persistenceStatus?: string;
   retryAvailable?: boolean;
+  errorCode?: string;
+  feedbackFor?: (code: string) => string;
   disabled?: boolean;
   onChange: (value: number) => void;
   onRetry?: () => void;
@@ -15,6 +17,8 @@ export function PowerSettingsPanel({
   firmwareStatus,
   persistenceStatus,
   retryAvailable,
+  errorCode,
+  feedbackFor,
   disabled = false,
   onChange,
   onRetry,
@@ -41,7 +45,10 @@ export function PowerSettingsPanel({
         {firmwareStatus === "pending"
           ? "Applying…"
           : firmwareStatus === "failed"
-          ? "Key response time change failed"
+          ? <>
+              Key response time change failed
+              {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
+            </>
           : `Applied ${appliedValue ?? value} ms`}
         {persistenceStatus === "failed" && <span> Key response time was not saved.</span>}
         {retryAvailable && (

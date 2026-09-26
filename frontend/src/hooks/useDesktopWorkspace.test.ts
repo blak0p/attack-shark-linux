@@ -65,6 +65,16 @@ function deferred<T>() {
 }
 
 describe("useDesktopWorkspace", () => {
+  it("loads the installed application version independently of available updates", async () => {
+    const harness = serviceFor({
+      GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
+      CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.2.0" }),
+    });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.applicationVersion).toBe("1.2.0-rc.5"));
+    expect(result.current.model.update?.Version).toBe("1.2.0");
+  });
+
   it("loads all workspace data, filters mismatched events, stages actions, and cleans up subscriptions", async () => {
     const harness = serviceFor();
     const { result, unmount } = renderHook(() => useDesktopWorkspace(harness.service));
@@ -90,6 +100,25 @@ describe("useDesktopWorkspace", () => {
     expect(harness.unsubscribeConfiguration).toHaveBeenCalledOnce();
     expect(harness.unsubscribePolling).toHaveBeenCalledOnce();
 		expect(harness.unsubscribeRemap).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the verified update available after launch failure so approval can retry", async () => {
+    const apply = vi.fn().mockRejectedValueOnce(new Error("launch failed")).mockResolvedValueOnce(undefined);
+    const harness = serviceFor({
+      CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.2.0" }),
+      ApplyVerifiedUpdate: apply,
+    });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.update?.Version).toBe("1.2.0"));
+
+    await act(async () => result.current.actions.applyUpdate());
+    await waitFor(() => expect(result.current.model.updateError).toBe("launch failed"));
+    expect(result.current.model.updateApplying).toBe(false);
+    expect(result.current.model.update?.Version).toBe("1.2.0");
+
+    await act(async () => result.current.actions.applyUpdate());
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
+    expect(result.current.model.updateError).toBe("");
   });
 
   it("clears only the explicitly replaced DPI marker when staging remap", async () => {

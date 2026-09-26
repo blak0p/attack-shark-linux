@@ -14,6 +14,7 @@ import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
 import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { DeviceStatusPanel } from "./components/panels/DeviceStatusPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
+import { UpdateBanner } from "./components/UpdateBanner";
 export type {
   ConfigurationEvent,
   DesktopService,
@@ -26,7 +27,11 @@ export type {
 
 const identityLabel = (device: Device) => `Serial ${device.ID.Serial || "unavailable"}`;
 const feedbackFor = (code: string) =>
-  code === "stale_binding"
+  code === "permission_denied"
+    ? "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."
+    : code === "device_disconnected"
+    ? "Mouse disconnected. Reconnect the receiver or mouse, then try again."
+    : code === "stale_binding"
     ? "Device connection changed. Refresh the device list and select the mouse again before saving."
     : code.replaceAll("_", " ");
 const SWATCH_COLORS = ["#00FF00", "#FE5EF9", "#FF7F00", "#FFFF00"];
@@ -79,16 +84,21 @@ export function App({ service }: { service: DesktopService }) {
     normalSleep,
     remap,
     inventory,
+    applicationVersion,
     ready,
     notice,
     resetConfirmation,
     automaticApplyBusy,
+    update,
+    updateApplying,
+    updateError,
   } = model;
 
   if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
 
-  const connected = ready;
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
+  const connected = ready && !inventory?.Error.Code &&
+    snapshot.Error.Code !== "device_disconnected" && snapshot.Error.Code !== "permission_denied";
   const pending = snapshot.Pending;
   const stages = pending.DPI.map((dpi, index) => ({ index, dpi })).filter(
     ({ index }) => ((pending.StageMask ?? 0) >> index) & 1
@@ -200,6 +210,7 @@ export function App({ service }: { service: DesktopService }) {
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}
     >
+      {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
         id="performance"
@@ -225,6 +236,8 @@ export function App({ service }: { service: DesktopService }) {
               ready={ready}
               onStagePollingRate={actions.stagePollingRate}
               onRetry={actions.retryPollingPersistence}
+              errorCode={polling.Error.Code}
+              feedbackFor={feedbackFor}
             />
           )}
 
@@ -234,6 +247,8 @@ export function App({ service }: { service: DesktopService }) {
               ready={ready}
               onStage={actions.stageNormalSleep}
               onRetry={actions.retryNormalSleepPersistence}
+              errorCode={normalSleep.Error.Code}
+              feedbackFor={feedbackFor}
             />
           )}
         </div>
@@ -390,6 +405,8 @@ export function App({ service }: { service: DesktopService }) {
               firmwareStatus={debounce.Firmware}
               persistenceStatus={debounce.Persistence}
               retryAvailable={debounce.RetryAvailable}
+              errorCode={debounce.Error.Code}
+              feedbackFor={feedbackFor}
               disabled={!ready}
               onChange={actions.stageDebounce}
               onRetry={actions.retryDebouncePersistence}
@@ -412,6 +429,7 @@ export function App({ service }: { service: DesktopService }) {
             onStage={actions.stageRemap}
             onApply={actions.applyRemap}
             onDiscard={actions.discardRemap}
+            feedbackFor={feedbackFor}
           />
         )}
       </WorkspaceView>
@@ -425,6 +443,7 @@ export function App({ service }: { service: DesktopService }) {
       >
         <div className="stack">
           <DeviceStatusPanel
+            applicationVersion={applicationVersion}
             connectionType={snapshot.Connection}
             battery={snapshot.Battery}
             serial={inventory?.Selected?.ID.Serial || undefined}

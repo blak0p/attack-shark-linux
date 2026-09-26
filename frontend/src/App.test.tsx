@@ -122,6 +122,23 @@ const chooseLightingEffect = async (label: string) => {
 };
 
 describe("App", () => {
+  it("shows the installed application version in Device, not the update target or firmware", async () => {
+    const service = serviceFor(snapshot({ Firmware: "success" }), {
+      GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
+      CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.2.0" }),
+    });
+    render(<App service={service} />);
+    const device = await screen.findByRole("region", { name: "Device" });
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled application1.2.0-rc.5"));
+    expect(device.querySelector(".device-status b")).toHaveTextContent("1.2.0-rc.5");
+  });
+
+  it("labels an empty compiled version as a development build", async () => {
+    render(<App service={serviceFor(snapshot(), { GetApplicationVersion: vi.fn().mockResolvedValue("") })} />);
+    const device = await screen.findByRole("region", { name: "Device" });
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled applicationdevelopment build"));
+  });
+
   it("shows available connection and supplied battery information", async () => {
     render(<App service={serviceFor(snapshot())} />);
 
@@ -139,6 +156,38 @@ describe("App", () => {
     expect(screen.getByText("Battery unavailable")).toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent("device unavailable");
 	});
+
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("shows clear feedback for %s", async (code, message) => {
+    const service = serviceFor(snapshot({ Error: { Code: code } }));
+    render(<App service={service} />);
+
+    expect((await screen.findAllByRole("alert")).every((alert) => alert.textContent === message)).toBe(true);
+  });
+
+  it("distinguishes selected inventory from a disconnected status read", async () => {
+    const service = serviceFor(snapshot({ Error: { Code: "device_disconnected" } }));
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Device available")).not.toBeInTheDocument();
+    expect(document.querySelector(".connection")).toHaveClass("offline");
+    expect(screen.getAllByRole("alert").every((alert) => alert.textContent?.includes("Mouse disconnected."))).toBe(true);
+    expect(screen.getByText("Serial alpha")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
+  });
+
+  it("keeps inventory errors authoritative over a successful status read", async () => {
+    const service = serviceFor(snapshot(), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: null, Error: { Code: "selection_required" } }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByText("Device unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("selection required");
+  });
 
   it("requests live status on mount instead of trusting a hardware-free cached snapshot", async () => {
     const service = serviceFor(snapshot({ Connection: "", Battery: null }), {
@@ -303,6 +352,31 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 
     expect(await screen.findByRole("status", { name: "Firmware synchronization queued" })).toBeInTheDocument();
     expect(screen.queryByText("Firmware synchronization failed")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("renders actionable %s feedback in every affected panel", async (code, message) => {
+    const failed = { Firmware: "failed", Error: { Code: code } };
+    const service = serviceFor(snapshot(), {
+      GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot(failed)),
+      GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot(failed)),
+      GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleepSnapshot(failed)),
+      GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot(failed)),
+      RefreshInventory: vi.fn().mockResolvedValue({
+        Devices: [selectedDevice],
+        Selected: selectedDevice,
+        Error: { Code: code },
+      }),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByRole("status", { name: "Polling status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Normal sleep status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Key response time status" })).toHaveTextContent(message);
+    expect(screen.getByRole("status", { name: "Button remapping status" })).toHaveTextContent(message);
+    expect(document.querySelector(".device-status")).toHaveTextContent(message);
   });
 
   it("refreshes acknowledged colors without replacing editable pending controls", async () => {
@@ -744,15 +818,18 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("status", { name: "Lighting status" })).toHaveTextContent("Lighting applied");
   });
 
-  it("shows a lighting application failure without reporting success", async () => {
+  it.each([
+    ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
+    ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
+  ])("shows a lighting %s failure without reporting success", async (code, message) => {
     const service = serviceFor(snapshot(), {
-      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x10, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 1, Firmware: "failed", Error: { Code: "apply_failed" } }),
+      ApplyLighting: vi.fn().mockResolvedValue({ Pending: { Mode: 0x10, TemplateID: "fixed-green" }, Applied: null, Effects: [], Revision: 1, Firmware: "failed", Error: { Code: code } }),
     });
     render(<App service={service} />);
 
     await chooseLightingEffect("Fixed");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Lighting application failed: apply failed");
+    expect(await screen.findByRole("alert")).toHaveTextContent(`Lighting application failed: ${message}`);
     expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
   });
 

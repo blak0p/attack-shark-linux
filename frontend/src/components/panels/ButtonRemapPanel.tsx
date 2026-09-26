@@ -44,12 +44,14 @@ export function ButtonRemapPanel({
   onStage,
   onApply = () => {},
   onDiscard = () => {},
+  feedbackFor,
 }: {
   remap: Remap;
   ready: boolean;
   onStage(button: number, action: Action): void;
   onApply?(): void;
   onDiscard?(): void;
+  feedbackFor?: (code: string) => string;
 }) {
   return (
     <article
@@ -119,11 +121,14 @@ export function ButtonRemapPanel({
         </button>
       </div>
 
-      <div className="status" role="status">
+      <div className="status" role="status" aria-label="Button remapping status">
         {remap.Firmware === "success"
           ? "Button remapping applied"
           : remap.Firmware === "failed"
-          ? `Button remapping failed: ${remap.Error.Code}`
+          ? <>
+              Button remapping failed
+              {remap.Error.Code && feedbackFor && <>: <span role="alert">{feedbackFor(remap.Error.Code)}</span></>}
+            </>
           : "Remap draft pending confirmation"}
       </div>
     </article>
