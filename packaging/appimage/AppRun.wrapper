@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+this_dir="$(readlink -f "$(dirname "$0")")"
+export APPDIR="${APPDIR:-"$this_dir"}"
+
+if [ -f "$this_dir/usr/lib/libwebkit-relocate.so" ]; then
+    export LD_PRELOAD="$this_dir/usr/lib/libwebkit-relocate.so${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
+if [ -d "$this_dir/apprun-hooks" ]; then
+    for hook in "$this_dir"/apprun-hooks/*.sh; do
+        if [ -r "$hook" ]; then
+            . "$hook"
+        fi
+    done
+fi
+
+exec "$this_dir/AppRun.wrapped" "$@"

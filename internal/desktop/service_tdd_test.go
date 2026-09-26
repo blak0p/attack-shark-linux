@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"github.com/blak0p/attack-shark-linux/internal/x6"
@@ -55,6 +58,7 @@ type fakeHidrawCommand struct {
 	mu      sync.Mutex
 	calls   int
 	binding mouse.Binding
+	err     error
 }
 
 func (f *fakeHidrawCommand) SendAndAwaitBound(_ context.Context, binding mouse.Binding, _ []byte, continueReading func([]byte) bool) error {
@@ -62,6 +66,9 @@ func (f *fakeHidrawCommand) SendAndAwaitBound(_ context.Context, binding mouse.B
 	defer f.mu.Unlock()
 	f.calls++
 	f.binding = binding
+	if f.err != nil {
+		return f.err
+	}
 	continueReading([]byte{0x03, 0x10, 0x50, 0, 0x04})
 	return nil
 }
@@ -115,6 +122,63 @@ func TestExplicitApplyAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *tes
 	defer persistenceMu.Unlock()
 	if command.callCount() != 1 || persistCalls != 2 || retried.Persistence != "success" || retried.RetryAvailable {
 		t.Fatalf("retry result = %#v, writes=%d persists=%d; want persistence-only retry", retried, command.callCount(), persistCalls)
+	}
+}
+
+func TestErrorCodePreservesPersistenceAndNoUsableDeviceBeforeDisconnection(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status bool
+		want   ErrorCode
+	}{
+		{name: "persistence wrapped missing device", err: &x6.ServiceError{Kind: x6.PersistFailure, Err: fmt.Errorf("save: %w", os.ErrNotExist)}, want: PersistenceFailed},
+		{name: "no usable device wrapped missing device during apply", err: &x6.ServiceError{Kind: x6.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, want: DeviceUnavailable},
+		{name: "no usable device wrapped missing device during status", err: &x6.ServiceError{Kind: x6.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, status: true, want: DeviceUnavailable},
+		{name: "typed HID disconnect", err: &hidlinux.Error{Kind: hidlinux.Disconnected, Err: errors.New("device gone")}, want: DeviceDisconnected},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errorCode(tt.err, tt.status); got != tt.want {
+				t.Fatalf("errorCode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyLightingAndPollingRateClassifyDeviceAccessFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		err   error
+		apply func(*Service) ErrorCode
+		want  ErrorCode
+	}{
+		{name: "lighting permission denied", err: os.ErrPermission, apply: func(s *Service) ErrorCode { return s.ApplyLighting().Error.Code }, want: PermissionDenied},
+		{name: "lighting device disconnected", err: os.ErrNotExist, apply: func(s *Service) ErrorCode { return s.ApplyLighting().Error.Code }, want: DeviceDisconnected},
+		{name: "polling permission denied", err: os.ErrPermission, apply: func(s *Service) ErrorCode {
+			s.StagePollingRate(x6.PollingRate500)
+			return s.ApplyPollingRate(context.Background()).Error.Code
+		}, want: PermissionDenied},
+		{name: "polling device disconnected", err: os.ErrNotExist, apply: func(s *Service) ErrorCode {
+			s.StagePollingRate(x6.PollingRate500)
+			return s.ApplyPollingRate(context.Background()).Error.Code
+		}, want: DeviceDisconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			if err != nil {
+				t.Fatalf("NewProfileRegistry() error = %v", err)
+			}
+			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+				AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
+			service.RefreshInventory(context.Background())
+
+			got := tt.apply(service)
+			if got != tt.want {
+				t.Fatalf("apply error code = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -257,6 +321,62 @@ func TestServiceStagesWithoutWritingAndAppliesOnlyOnAcknowledgedSuccess(t *testi
 			got := service.ApplyDPI(context.Background())
 			if writer.calls != 1 || (got.Applied.DPI[0] == 1600) != tt.wantApplied || got.Pending.DPI[0] != 1600 {
 				t.Fatalf("ApplyDPI() = %#v, calls = %d", got, writer.calls)
+			}
+		})
+	}
+}
+
+func TestServiceClassifiesPermissionAndDisconnectedDeviceFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want ErrorCode
+	}{
+		{name: "permission denied", err: os.ErrPermission, want: PermissionDenied},
+		{name: "device disconnected", err: os.ErrNotExist, want: DeviceDisconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(statusFake{}, &writerFake{err: tt.err}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+
+			if got := service.ApplyDPI(context.Background()).Error.Code; got != tt.want {
+				t.Fatalf("ApplyDPI().Error.Code = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	service := New(statusFake{err: os.ErrNotExist}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if got := service.RefreshStatus(context.Background()).Error.Code; got != DeviceDisconnected {
+		t.Fatalf("RefreshStatus().Error.Code = %q, want %q", got, DeviceDisconnected)
+	}
+}
+
+func TestRefreshStatusClassifiesEACCESAsPermissionDenied(t *testing.T) {
+	service := New(statusFake{err: &os.PathError{Op: "read", Path: "/dev/hidraw0", Err: syscall.EACCES}}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+
+	if got := service.RefreshStatus(context.Background()).Error.Code; got != PermissionDenied {
+		t.Fatalf("RefreshStatus().Error.Code = %q, want %q", got, PermissionDenied)
+	}
+}
+
+func TestApplyRemapClassifiesDeviceAccessFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want ErrorCode
+	}{
+		{name: "permission denied", err: os.ErrPermission, want: PermissionDenied},
+		{name: "wrapped device disconnected", err: fmt.Errorf("write: %w", os.ErrNotExist), want: DeviceDisconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
+			service.RefreshInventory(context.Background())
+			if got := service.ApplyRemap(x6.DefaultRemapConfig()).Error.Code; got != tt.want {
+				t.Fatalf("ApplyRemap().Error.Code = %q, want %q", got, tt.want)
 			}
 		})
 	}

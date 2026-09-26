@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -256,6 +257,32 @@ func TestHidrawValidateDescriptorAcceptsOnlyX6StatusIdentity(t *testing.T) {
 	}
 	if _, err := backend.ValidateDescriptor(context.Background(), transport.Candidate{Path: "missing"}, wanted); !IsErrorKind(err, NotFound) {
 		t.Fatalf("ValidateDescriptor(unknown source) error = %v; want NotFound", err)
+	}
+}
+
+type failingHidrawOpener struct{ err error }
+
+func (o failingHidrawOpener) OpenNode(string) (hidrawNode, error) { return nil, o.err }
+
+func TestHidrawReadInterruptINClassifiesNodeAccessFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		kind ErrorKind
+	}{
+		{name: "permission denied", err: os.ErrPermission, kind: Permission},
+		{name: "wrapped missing device", err: fmt.Errorf("open hidraw: %w", os.ErrNotExist), kind: Disconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			backend, _ := hidrawBackendForFixture(t, failingHidrawOpener{err: tt.err})
+			if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+				t.Fatal(err)
+			}
+			err := backend.ReadInterruptIN(context.Background(), transport.InputSource{Path: "1:1-4"}, func([]byte) bool { return false })
+			if !IsErrorKind(err, tt.kind) || !errors.Is(err, tt.err) {
+				t.Fatalf("ReadInterruptIN() error = %v, want %s wrapping %v", err, tt.kind, tt.err)
+			}
+		})
 	}
 }
 

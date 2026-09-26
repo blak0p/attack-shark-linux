@@ -2,9 +2,10 @@
 
 The Linux HID adapter uses kernel-backed hidraw nodes for both passive status and
 DPI Apply. It does not use gousb/libusb, claim USB interfaces, or detach kernel
-drivers. Install the packaged udev policy so the active local-seat user can
+drivers. Install the canonical packaged udev policy so the active local-seat user can
 access the Attack Shark X6 hidraw node without running the app as root or making
-the device world-writable.
+the device world-writable. The release asset is
+`60-attack-shark-x6-hidraw.rules`; do not substitute an obsolete `99-` rule.
 
 ## Quick path: install the udev rule
 
@@ -23,8 +24,9 @@ The policy never requires root and must not be changed to world-writable `0666`.
 
 ## Build prerequisite
 
-Wails remains pinned to `github.com/wailsapp/wails/v3 v3.0.0-beta.5`; this
-document does not upgrade it. Build and run the fake-only hidraw tests with:
+The release packaging toolchain uses Wails
+`github.com/wailsapp/wails/v3 v3.0.0-beta.23`; this document does not upgrade
+it. Build and run the fake-only hidraw tests with:
 
 ```sh
 # Generate the assets embedded by cmd/x6configurator before Go checks or builds.
@@ -59,6 +61,17 @@ sudo udevadm trigger
 Log out and back in after joining the group. The tradeoff is deliberate: the
 group grants static membership-based access, whereas `uaccess` grants access per
 active local seat.
+
+## Release installer boundary
+
+The release-asset installer selects signed stable releases by default and signed
+RC releases only with `--beta`. Without a stable candidate, normal installation
+fails instead of falling back to an RC or `main`. It installs the AppImage under
+the current OS account's user-local data directory. Its optional udev flow is
+separate, requires explicit approval before `sudo`, and otherwise provides a
+manual fallback. The AppImage
+updater never elevates and never changes this udev policy; updates remain in
+the installed stable or RC channel.
 
 ## Permission-denied recovery
 
