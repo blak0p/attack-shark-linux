@@ -16,7 +16,9 @@ func TestReleaseWorkflowEnforcesCanonicalReleasePolicy(t *testing.T) {
 	workflow := string(workflowBytes)
 
 	requireExactOnce(t, workflow, "on:\n  push:\n    tags:\n      - 'v*'\n\npermissions:", "tag-only push trigger")
-	requireExactOnce(t, workflow, "permissions:\n  contents: write\n\njobs:", "contents: write-only permission")
+	requireExactOnce(t, workflow, "permissions:\n  contents: read\n\njobs:", "read-only default permission")
+	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n", "publisher-only write permission")
+	requireExactOnce(t, workflow, "contents: write", "single publisher write permission")
 
 	annotatedTag := workflowStep(t, workflow, "Verify annotated tag")
 	for _, required := range []string{
