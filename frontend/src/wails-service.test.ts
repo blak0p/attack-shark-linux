@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
+  GetApplicationVersion: vi.fn(),
+  CheckForUpdate: vi.fn(),
+  ApplyVerifiedUpdate: vi.fn(),
   GetSnapshot: vi.fn(),
   RefreshStatus: vi.fn(),
   StageDPI: vi.fn(),
@@ -40,6 +43,9 @@ describe("desktopService", () => {
   it("forwards each UI operation to its generated Wails binding", () => {
     const config = { DPI: [1600], ActiveStage: 0, StageMask: 1, LiftDistance: 1 };
 
+    expect(desktopService.GetApplicationVersion).toBe(bindings.GetApplicationVersion);
+    expect(desktopService.CheckForUpdate).toBe(bindings.CheckForUpdate);
+    expect(desktopService.ApplyVerifiedUpdate).toBe(bindings.ApplyVerifiedUpdate);
     expect(desktopService.GetSnapshot).toBe(bindings.GetSnapshot);
     expect(desktopService.RefreshStatus).toBe(bindings.RefreshStatus);
     expect(desktopService.StageDPI).toBe(bindings.StageDPI);

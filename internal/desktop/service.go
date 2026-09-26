@@ -17,6 +17,7 @@ type ErrorCode string
 
 const (
 	DeviceUnavailable    ErrorCode = "device_unavailable"
+	DeviceDisconnected   ErrorCode = "device_disconnected"
 	PermissionDenied     ErrorCode = "permission_denied"
 	StatusReadFailed     ErrorCode = "status_read_failed"
 	InvalidConfiguration ErrorCode = "invalid_configuration"
@@ -251,6 +252,7 @@ type Service struct {
 	remapPersistence    RemapPersistence
 	operationMu         sync.Mutex
 	reset               resetRunner
+	update              *updateState
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -706,7 +708,7 @@ func (s *Service) ApplyLighting() LightingSnapshot {
 		if errors.Is(err, mouse.ErrStaleBinding) {
 			return s.failLighting(state, StaleBinding)
 		}
-		return s.failLighting(state, ApplyFailed)
+		return s.failLighting(state, errorCode(err, false))
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -1248,7 +1250,7 @@ func (s *Service) applyPolling(ctx context.Context, binding Binding, revision ui
 	}
 	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewPollingOperation(), rate); err != nil {
 		state.mu.Lock()
-		state.firmware = "failed"
+		state.firmware, state.err = "failed", Error{Code: errorCode(err, false)}
 		state.mu.Unlock()
 		completed = true
 		return err
@@ -1409,11 +1411,17 @@ func errorCode(err error, status bool) ErrorCode {
 	if errors.Is(err, mouse.ErrStaleBinding) {
 		return StaleBinding
 	}
+	if x6.IsErrorKind(err, x6.PersistFailure) {
+		return PersistenceFailed
+	}
+	if x6.IsErrorKind(err, x6.NoUsableDevice) {
+		return DeviceUnavailable
+	}
 	if errors.Is(err, os.ErrPermission) {
 		return PermissionDenied
 	}
-	if x6.IsErrorKind(err, x6.PersistFailure) {
-		return PersistenceFailed
+	if hidlinux.IsErrorKind(err, hidlinux.Disconnected) || errors.Is(err, os.ErrNotExist) {
+		return DeviceDisconnected
 	}
 	if status && x6.IsErrorKind(err, x6.ReadFailure) {
 		return StatusReadFailed

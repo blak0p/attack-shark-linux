@@ -35,6 +35,17 @@
   font-weight: 500;
 }
 
+.top-bar .brand {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.top-bar .app-icon {
+  flex: none;
+}
+
 .app-icon {
   display: grid;
   width: 22px;
@@ -66,6 +77,48 @@
 .icon-button:hover:not(:disabled) {
   background: #40413d;
   color: var(--text);
+}
+
+.top-bar-actions, .window-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-bar-actions {
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.top-bar-children {
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.window-controls {
+  flex: none;
+}
+
+.window-control {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.window-control:hover {
+  background: #40413d;
+}
+
+.window-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Navigation Rail (Sidebar) */

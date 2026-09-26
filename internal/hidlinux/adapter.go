@@ -98,6 +98,8 @@ func classify(err error) error {
 		return &Error{Kind: Cancelled, Err: err}
 	case errors.Is(err, ErrDeviceDisconnected):
 		return &Error{Kind: Disconnected, Err: err}
+	case errors.Is(err, os.ErrNotExist):
+		return &Error{Kind: Disconnected, Err: err}
 	default:
 		return &Error{Kind: IO, Err: err}
 	}

@@ -6,6 +6,8 @@ export type PollingPanelProps = {
   ready?: boolean;
   onStagePollingRate?: (rate: number) => void;
   onRetry?: () => void;
+  errorCode?: string;
+  feedbackFor?: (code: string) => string;
   children?: ReactNode;
 };
 
@@ -14,6 +16,8 @@ export function PollingPanel({
   ready = true,
   onStagePollingRate,
   onRetry,
+  errorCode,
+  feedbackFor,
   children,
 }: PollingPanelProps) {
   if (children) {
@@ -59,7 +63,10 @@ export function PollingPanel({
             Applying…
           </>
         ) : snapshot.Firmware === "failed" ? (
-          <>Polling change failed</>
+          <>
+            Polling change failed
+            {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
+          </>
         ) : (
           <>Applied {snapshot.Applied} Hz</>
         )}
