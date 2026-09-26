@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import type { DeviceInventory } from "../../desktop-contract";
+import type { Inventory } from "../../desktop-contract";
 
 export type DeviceStatusPanelProps = {
   connectionType?: string;
+  applicationVersion?: string;
   battery?: number | null;
   serial?: string;
-  inventory?: DeviceInventory | null;
+  inventory?: Inventory | null;
   errorCode?: string;
   feedbackFor?: (code: string) => string;
   onSelectDevice?: (serial: string) => void;
@@ -14,8 +15,11 @@ export type DeviceStatusPanelProps = {
 
 export function DeviceStatusPanel({
   connectionType,
+  applicationVersion,
   battery,
   serial,
+  errorCode,
+  feedbackFor,
   children,
 }: DeviceStatusPanelProps) {
   if (children) {
@@ -30,6 +34,13 @@ export function DeviceStatusPanel({
     <article className="card device-status">
       <h2>Status</h2>
       <div className="rows">
+        <div className="row">
+          <label>
+            <strong>Application version</strong>
+            <span>Installed application</span>
+          </label>
+          <b>{applicationVersion?.trim() || "development build"}</b>
+        </div>
         <div className="row">
           <label>
             <strong>Interface</strong>
@@ -54,6 +65,9 @@ export function DeviceStatusPanel({
           <b>{serial || "unavailable"}</b>
         </div>
       </div>
+      {(errorCode === "permission_denied" || errorCode === "device_disconnected") && feedbackFor && (
+        <span role="alert">{feedbackFor(errorCode)}</span>
+      )}
     </article>
   );
 }

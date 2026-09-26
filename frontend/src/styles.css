@@ -38,6 +38,38 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   outline-offset: 2px;
 }
 
+.update-banner {
+  position: fixed;
+  top: calc(48px + 12px);
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  width: min(340px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--focus-ring);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0008;
+}
+
+.update-banner [role="alert"] {
+  flex-basis: 100%;
+}
+
+@media (max-width: 480px) {
+  .update-banner {
+    left: 12px;
+    width: auto;
+  }
+}
+
 .app-shell {
   display: flex;
   align-items: center;

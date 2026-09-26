@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Attack Shark X6 Configurator
+Comment=Configure the Attack Shark X6 gaming mouse
+Exec=attack-shark-linux
+Icon=attack-shark-x6
+Categories=Settings;HardwareSettings;
+Terminal=false
+StartupNotify=true
