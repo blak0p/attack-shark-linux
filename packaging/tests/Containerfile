@@ -1,0 +1,29 @@
+FROM docker.io/library/golang:1.25 AS go-toolchain
+
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GOPATH=/opt/go \
+    GOCACHE=/tmp/go-build \
+    GOMODCACHE=/opt/go/pkg/mod \
+    PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+        libgtk-4-dev \
+        libwebkitgtk-6.0-dev \
+        libsoup-3.0-dev \
+        pkg-config \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download && chmod -R a+rX /opt/go/pkg/mod
+
+# The runtime mount overlays /workspace; only the module cache is kept in the image.
