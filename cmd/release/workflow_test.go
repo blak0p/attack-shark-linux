@@ -17,7 +17,8 @@ func TestReleaseWorkflowEnforcesCanonicalReleasePolicy(t *testing.T) {
 
 	requireExactOnce(t, workflow, "on:\n  push:\n    tags:\n      - 'v*'\n\npermissions:", "tag-only push trigger")
 	requireExactOnce(t, workflow, "permissions:\n  contents: read\n\njobs:", "read-only default permission")
-	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n", "publisher-only write permission")
+	requireExactOnce(t, workflow, "  browser-e2e:\n    name: Browser tests (playwright)\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n", "read-only tag browser job")
+	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros, browser-e2e]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n", "browser-gated publisher-only write permission")
 	requireExactOnce(t, workflow, "contents: write", "single publisher write permission")
 
 	annotatedTag := workflowStep(t, workflow, "Verify annotated tag")
@@ -172,7 +173,7 @@ func TestReleaseWorkflowEnforcesMultiDistroMatrixSmokeTest(t *testing.T) {
 	}
 
 	// Ensure release job requires smoke-test-distros to pass before publishing
-	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros]", "release job depending on both build and smoke-test-distros")
+	requireExactOnce(t, workflow, "  release:\n    name: Publish GitHub Release\n    needs: [build, smoke-test-distros, browser-e2e]", "release job depending on build, smoke-test-distros and browser-e2e")
 
 	// Ensure smoke-test.sh exists and is executable
 	scriptPath := filepath.Join("..", "..", "packaging", "appimage", "smoke-test.sh")
