@@ -228,23 +228,14 @@ type remapState struct {
 }
 
 type Service struct {
-	status              StatusReader
-	writer              DPIWriter
-	store               AppliedStore
-	listener            StatusListener
-	events              EventSink
-	inventory           *mouse.TargetedService
-	migrate             func(Binding) error
-	devicePersistence   DevicePersistence
-	inventoryDevices    []Device
+	status   StatusReader
+	writer   DPIWriter
+	store    AppliedStore
+	listener StatusListener
+	events   EventSink
+	*inventoryComponent
 	mu                  sync.Mutex
 	legacy              *deviceState
-	states              map[DeviceID]*deviceState
-	sync                *SyncCoordinator
-	pollingStates       map[DeviceID]*pollingState
-	pollingSync         *PollingSyncCoordinator
-	pollingPersistence  PollingPersistence
-	settingsStates      map[DeviceID]*settingsState
 	settingsPersistence PollingPersistence
 	lightingStates      map[DeviceID]*lightingState
 	remapStates         map[DeviceID]*remapState
@@ -264,7 +255,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState), pollingStates: make(map[DeviceID]*pollingState), settingsStates: make(map[DeviceID]*settingsState), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), inventoryComponent: newInventoryComponent(), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -284,10 +275,7 @@ func (s *Service) AttachListener(listener StatusListener, events EventSink) *Ser
 func (s *Service) AttachInventory(inventory *mouse.TargetedService) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.inventory = inventory
-	s.inventoryDevices = nil
-	s.sync = NewSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyBound)
-	s.pollingSync = NewPollingSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyPollingBound)
+	s.inventoryComponent.attach(inventory, s)
 	return s
 }
 
@@ -302,7 +290,7 @@ func (s *Service) AttachResetRunner(runner resetRunner) *Service {
 func (s *Service) attachPollingAutomaticSave(scheduler SyncScheduler) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pollingSync = NewPollingSyncCoordinator(scheduler, s.bindingCurrent, s.applyPollingBound)
+	s.inventoryComponent.pollingSync = NewPollingSyncCoordinator(scheduler, s.bindingCurrent, s.applyPollingBound)
 	return s
 }
 
@@ -317,7 +305,7 @@ func (realSyncScheduler) After(delay time.Duration, f func()) SyncCancel {
 func (s *Service) attachAutomaticSave(scheduler SyncScheduler) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sync = NewSyncCoordinator(scheduler, s.bindingCurrent, s.applyBound)
+	s.inventoryComponent.sync = NewSyncCoordinator(scheduler, s.bindingCurrent, s.applyBound)
 	return s
 }
 
@@ -393,127 +381,12 @@ func (p devicePersistence) Save(binding Binding, config x6.DPIConfig) error {
 
 // RefreshInventory exposes all discovered devices and the explicit selection.
 func (s *Service) RefreshInventory(ctx context.Context) Inventory {
-	s.mu.Lock()
-	inventory := s.inventory
-	s.mu.Unlock()
-	if inventory == nil {
-		return Inventory{Error: Error{Code: DeviceUnavailable}}
-	}
-	if selected, ok := inventory.Selection(); ok {
-		s.cancelSync(selected)
-		s.cancelPollingSync(selected)
-	}
-	devices, err := inventory.Refresh(ctx)
-	if err != nil {
-		if err == mouse.ErrAmbiguousIdentity {
-			return Inventory{Devices: devices, Error: Error{Code: AmbiguousIdentity}}
-		}
-		return Inventory{Error: Error{Code: DeviceUnavailable}}
-	}
-	result := Inventory{Devices: devices}
-	for _, device := range devices {
-		if device.Warning == "ambiguous identity" {
-			result.Error = Error{Code: AmbiguousIdentity}
-			break
-		}
-	}
-	if selected, ok := inventory.Selection(); ok {
-		result.Selected = &selected
-		s.mu.Lock()
-		migrate := s.migrate
-		s.mu.Unlock()
-		if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
-			result.Error = Error{Code: MigrationFailed}
-		}
-	}
-	s.mu.Lock()
-	s.inventoryDevices = devices
-	for _, device := range devices {
-		if _, ok := s.states[device.ID]; !ok {
-			state := s.newStateFromLegacy()
-			if result.Selected != nil && result.Selected.SessionOnly && result.Selected.ID == device.ID {
-				state = newDeviceState(x6.DefaultDPIConfig(), x6.DefaultDPIConfig())
-			}
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.devicePersistence != nil {
-				if applied, err := s.devicePersistence.Load(*result.Selected); err == nil {
-					state = newDeviceState(applied, state.factory)
-				}
-			}
-			polling := newPollingState()
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.pollingPersistence != nil {
-				if config, err := s.pollingPersistence.Load(*result.Selected); err == nil {
-					polling = newPollingStateFromConfig(config)
-				}
-			}
-			s.pollingStates[device.ID] = polling
-			settings := newSettingsState()
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.settingsPersistence != nil {
-				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil {
-					settings = newSettingsStateFromConfig(config)
-				}
-			}
-			s.settingsStates[device.ID] = settings
-			s.states[device.ID] = state
-		}
-	}
-	if result.Selected != nil {
-		if state := s.states[result.Selected.ID]; state != nil {
-			state.mu.Lock()
-			state.observedStage, state.observedDPI = nil, nil
-			state.mu.Unlock()
-		}
-	}
-	s.mu.Unlock()
-	return result
+	return s.inventoryComponent.refresh(ctx, s)
 }
 
 // SelectDevice establishes an explicit binding for a previously inventoried device.
 func (s *Service) SelectDevice(id DeviceID) Inventory {
-	s.mu.Lock()
-	inventory := s.inventory
-	devices := append([]Device(nil), s.inventoryDevices...)
-	migrate := s.migrate
-	s.mu.Unlock()
-	if inventory != nil {
-		if previous, ok := inventory.Selection(); ok {
-			s.cancelSync(previous)
-			s.cancelPollingSync(previous)
-		}
-	}
-	if inventory == nil || inventory.Select(id) != nil {
-		return Inventory{Devices: devices, Error: Error{Code: SelectionRequired}}
-	}
-	selected, _ := inventory.Selection()
-	s.mu.Lock()
-	persistence := s.devicePersistence
-	state := s.states[selected.ID]
-	s.mu.Unlock()
-	if !selected.SessionOnly && persistence != nil && state != nil {
-		if applied, err := persistence.Load(selected); err == nil {
-			state.mu.Lock()
-			state.applied, state.pending = applied, applied
-			state.mu.Unlock()
-		}
-	}
-	if !selected.SessionOnly {
-		s.mu.Lock()
-		pollingPersistence, polling := s.pollingPersistence, s.pollingStates[selected.ID]
-		s.mu.Unlock()
-		if pollingPersistence != nil && polling != nil {
-			if config, err := pollingPersistence.Load(selected); err == nil {
-				next := newPollingStateFromConfig(config)
-				polling.mu.Lock()
-				polling.desired, polling.applied, polling.factory = next.desired, next.applied, next.factory
-				polling.persisted, polling.retry, polling.revision = next.persisted, next.retry, next.revision
-				polling.firmware, polling.persistence = next.firmware, next.persistence
-				polling.mu.Unlock()
-			}
-		}
-	}
-	if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
-		return Inventory{Devices: devices, Selected: &selected, Error: Error{Code: MigrationFailed}}
-	}
-	return Inventory{Devices: devices, Selected: &selected}
+	return s.inventoryComponent.selectDevice(id, s)
 }
 
 // StartListener runs the status listener until ctx is cancelled, forwarding
@@ -1150,21 +1023,11 @@ func (s *Service) bindingCurrent(binding Binding) bool {
 }
 
 func (s *Service) cancelSync(binding Binding) {
-	s.mu.Lock()
-	sync := s.sync
-	s.mu.Unlock()
-	if sync != nil {
-		sync.Cancel(binding)
-	}
+	s.inventoryComponent.cancelSync(binding, s)
 }
 
 func (s *Service) cancelPollingSync(binding Binding) {
-	s.mu.Lock()
-	sync := s.pollingSync
-	s.mu.Unlock()
-	if sync != nil {
-		sync.Cancel(binding)
-	}
+	s.inventoryComponent.cancelPollingSync(binding, s)
 }
 
 func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
@@ -1292,9 +1155,7 @@ func (s *Service) emitConfiguration(binding Binding, state *deviceState) {
 }
 
 func (s *Service) newStateFromLegacy() *deviceState {
-	s.legacy.mu.Lock()
-	defer s.legacy.mu.Unlock()
-	return newDeviceState(s.legacy.applied, s.legacy.factory)
+	return s.inventoryComponent.newStateFromLegacy(s)
 }
 
 func snapshotOf(state *deviceState) Snapshot {

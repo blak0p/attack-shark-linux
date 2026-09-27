@@ -110,6 +110,24 @@ func TestSelectionResolverTracksBindingAndRejectsStaleAttribution(t *testing.T) 
 	}
 }
 
+func TestInventoryComponentOwnsSelectionStateAndCancellation(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if service.inventoryComponent == nil || service.inventoryComponent.states == nil || service.inventoryComponent.pollingStates == nil || service.inventoryComponent.settingsStates == nil {
+		t.Fatal("inventory component must initialize per-device state maps")
+	}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	service.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
+	first := service.RefreshInventory(context.Background()).Selected
+	if first == nil || service.inventoryComponent.inventory == nil {
+		t.Fatal("inventory component did not retain the selected inventory")
+	}
+	second := service.RefreshInventory(context.Background()).Selected
+	if second == nil || *first == *second || service.bindingCurrent(*first) || !service.bindingCurrent(*second) {
+		t.Fatal("refresh must replace the immutable selection binding")
+	}
+}
+
 func intPtr(value int) *int { return &value }
 
 func TestAttributedListenerUpdatesAreRaceSafeForSelectedDevice(t *testing.T) {
