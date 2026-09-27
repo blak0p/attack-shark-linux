@@ -28,6 +28,15 @@ const (
 	RemapDPICycle      RemapAction = "dpi_cycle"
 	RemapDPIPlus       RemapAction = "dpi_plus"
 	RemapDPIMinus      RemapAction = "dpi_minus"
+	RemapBrowserCalculator RemapAction = "browser_calculator"
+	RemapBrowserEmail RemapAction = "browser_email"
+	RemapBrowserForward RemapAction = "browser_forward"
+	RemapBrowserBackward RemapAction = "browser_backward"
+	RemapBrowserStop RemapAction = "browser_stop"
+	RemapBrowserMyComputer RemapAction = "browser_my_computer"
+	RemapBrowserRefresh RemapAction = "browser_refresh"
+	RemapBrowserHome RemapAction = "browser_home"
+	RemapBrowserSearch RemapAction = "browser_search"
 )
 
 type RemapButton struct {
@@ -142,6 +151,15 @@ func remapActionID(action RemapAction) byte {
 		return 0x0e
 	case RemapDPIMinus:
 		return 0x0f
+	case RemapBrowserCalculator: return 0x1d
+	case RemapBrowserEmail: return 0x1e
+	case RemapBrowserForward: return 0x20
+	case RemapBrowserBackward: return 0x21
+	case RemapBrowserStop: return 0x22
+	case RemapBrowserMyComputer: return 0x23
+	case RemapBrowserRefresh: return 0x24
+	case RemapBrowserHome: return 0x25
+	case RemapBrowserSearch: return 0x26
 	default:
 		return 0
 	}
@@ -155,7 +173,9 @@ func isRemapAction(action RemapAction) bool {
 	switch action {
 	case RemapOff, RemapLeft, RemapRight, RemapMiddle, RemapForward, RemapBackward, RemapDoubleClick, RemapFire,
 		RemapMediaPlayer, RemapPlayPause, RemapStop, RemapPreviousTrack, RemapNextTrack, RemapVolumeUp, RemapVolumeDown, RemapMute,
-		RemapScrollUp, RemapScrollDown, RemapDPICycle, RemapDPIPlus, RemapDPIMinus:
+		RemapScrollUp, RemapScrollDown, RemapDPICycle, RemapDPIPlus, RemapDPIMinus,
+		RemapBrowserCalculator, RemapBrowserEmail, RemapBrowserForward, RemapBrowserBackward, RemapBrowserStop,
+		RemapBrowserMyComputer, RemapBrowserRefresh, RemapBrowserHome, RemapBrowserSearch:
 		return true
 	default:
 		return false

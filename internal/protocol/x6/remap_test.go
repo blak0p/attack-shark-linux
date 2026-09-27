@@ -36,7 +36,7 @@ func TestRemapAcceptsOnlyClosedActionsAndExactACK(t *testing.T) {
 			t.Fatalf("EncodeRemapReport(%q) error = %v", action, err)
 		}
 	}
-	for _, action := range []RemapAction{"shortcut", "browser_back", "macro", "unknown"} {
+	for _, action := range []RemapAction{"shortcut", "browser_favorites", "macro", "unknown"} {
 		invalid := DefaultRemapConfig()
 		invalid.Buttons[0].Action = action
 		if _, err := EncodeRemapReport(invalid); err == nil {
@@ -109,6 +109,40 @@ func TestMouseControlsUseExactIDsAndRespectPhysicalButtonPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBrowserActionsEncodeExactIDsAndZeroParameters(t *testing.T) {
+	for _, tt := range []struct { action RemapAction; id byte }{
+		{RemapBrowserCalculator, 0x1d}, {RemapBrowserEmail, 0x1e}, {RemapBrowserForward, 0x20},
+		{RemapBrowserBackward, 0x21}, {RemapBrowserStop, 0x22}, {RemapBrowserMyComputer, 0x23},
+		{RemapBrowserRefresh, 0x24}, {RemapBrowserHome, 0x25}, {RemapBrowserSearch, 0x26},
+	} {
+		t.Run(string(tt.action), func(t *testing.T) {
+			config := DefaultRemapConfig()
+			config.Buttons[0].Action = tt.action
+			report, err := EncodeRemapReport(config)
+			if err != nil { t.Fatal(err) }
+			if len(report) != 59 || report[0] != 0x08 || report[1] != 0x3b || report[2] != 0x01 { t.Fatalf("invalid report shape: %x", report) }
+			if report[3] != tt.id || report[4] != 0 || report[5] != 0 { t.Fatalf("action group = %x, want %02x0000", report[3:6], tt.id) }
+			checksum := 0
+			for _, value := range report[3:57] { checksum += int(value) }
+			if report[57] != byte(checksum>>8) || report[58] != byte(checksum) { t.Fatalf("checksum = %x, want %04x", report[57:59], checksum) }
+		})
+	}
+}
+
+func TestBrowserActionOnButtonSevenPreservesHiddenGroups(t *testing.T) {
+	config := DefaultRemapConfig()
+	config.Buttons[6].Action = RemapBrowserHome
+	report, err := EncodeRemapReport(config)
+	if err != nil { t.Fatal(err) }
+	if report[18] != 0x25 || report[19] != 0 || report[20] != 0 {
+		t.Fatalf("Button 7 group = %x, want 250000", report[18:21])
+	}
+	if report[27] != remapBaseline[27] || report[12] != remapBaseline[12] {
+		t.Fatal("Browser action changed hidden groups")
+	}
+	if MatchesRemapACK([]byte{0x03, 0x10, 0x50, 0x00, 0x1f}) { t.Fatal("accepted wrong ACK") }
 }
 
 func TestRemapDefaultsPreserveDPIMarkersAndReturnCopies(t *testing.T) {
