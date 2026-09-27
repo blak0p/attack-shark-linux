@@ -1,6 +1,6 @@
 import { GnomeSelect } from "./GnomeSelect";
 
-type Action = "off" | "left" | "right" | "middle" | "forward" | "backward" | "double_click" | "fire" | "media_player" | "play_pause" | "stop" | "previous_track" | "next_track" | "volume_up" | "volume_down" | "mute" | "scroll_up" | "scroll_down" | "dpi_cycle" | "dpi_plus" | "dpi_minus";
+import type { RemapAction as Action } from "../../desktop-contract";
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
 type Remap = {
   Pending: { Buttons: Button[] };
@@ -33,10 +33,20 @@ const labelFor = (action: Action) =>
     dpi_cycle: "DPI Cycle",
     dpi_plus: "DPI+",
     dpi_minus: "DPI−",
+    browser_calculator: "Calculator",
+    browser_email: "Email",
+    browser_forward: "Forward",
+    browser_backward: "Backward",
+    browser_stop: "Stop",
+    browser_my_computer: "My Computer",
+    browser_refresh: "Refresh",
+    browser_home: "Home",
+    browser_search: "Search",
   })[action];
 
 const isMultimedia = (action: Action) => ["media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"].includes(action);
 const isMouseControls = (action: Action) => ["scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"].includes(action);
+const isBrowser = (action: Action) => ["browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"].includes(action);
 
 export function ButtonRemapPanel({
   remap,
@@ -92,7 +102,7 @@ export function ButtonRemapPanel({
             options={remap.Actions.map((action) => ({
               value: action,
               label: labelFor(action),
-              group: isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
+              group: isBrowser(action) ? "Browser" : isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
               disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
             }))}
             onChange={(val) => {

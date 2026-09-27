@@ -21,6 +21,9 @@ const mouseControlsRemap = {
   Actions: [...multimediaRemap.Actions, "scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"],
 };
 
+const browserActions = ["browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
+const browserRemap = { ...mouseControlsRemap, Actions: [...mouseControlsRemap.Actions, ...browserActions] };
+
 afterEach(cleanup);
 
 describe("ButtonRemapPanel", () => {
@@ -102,6 +105,23 @@ describe("ButtonRemapPanel", () => {
     expect(onStage).toHaveBeenCalledTimes(6);
     expect(onStage).toHaveBeenNthCalledWith(1, 2, "media_player");
     expect(onStage).toHaveBeenNthCalledWith(6, 7, "media_player");
+  });
+
+  it("shows nine ordered Browser choices and stages Button 1 without applying", () => {
+    const onStage = vi.fn();
+    const onApply = vi.fn();
+    render(<ButtonRemapPanel remap={browserRemap as never} ready onStage={onStage} onApply={onApply} />);
+    fireEvent.click(screen.getByRole("button", { name: "Button 1 action" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    const menu = screen.getByRole("menu", { name: "Browser actions" });
+    expect(within(menu).getAllByRole("menuitem").map((entry) => entry.textContent)).toEqual([
+      "Calculator", "Email", "Forward", "Backward", "Stop", "My Computer", "Refresh", "Home", "Search",
+    ]);
+    const action = within(menu).getByRole("menuitem", { name: "Search" });
+    expect(action).toHaveAttribute("aria-disabled", "false");
+    fireEvent.click(action);
+    expect(onStage).toHaveBeenCalledWith(1, "browser_search");
+    expect(onApply).not.toHaveBeenCalled();
   });
 
   it("does not bubble selector keys into panel Apply or Discard shortcuts", () => {

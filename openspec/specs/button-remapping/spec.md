@@ -1,4 +1,4 @@
-# Delta Specification: Multimedia Button Remapping
+# Button Remapping Specification
 
 ## MODIFIED Requirements
 
@@ -15,7 +15,7 @@ The system MUST retain every existing Basic remap action in its existing order a
 7. Volume Down — `volume_down` — `0x1c`
 8. Mute — `mute` — `0x1a`
 
-The catalog order MUST NOT be derived from numeric wire-ID order. Browser/system actions, keyboard shortcuts, macros, and unknown values MUST remain unavailable and fail closed.
+After Basic, Multimedia, and Mouse Controls, the catalog MUST include exactly these Browser actions in product order: Calculator (`browser_calculator`, `0x1d`), Email (`browser_email`, `0x1e`), Forward (`browser_forward`, `0x20`), Backward (`browser_backward`, `0x21`), Stop (`browser_stop`, `0x22`), My Computer (`browser_my_computer`, `0x23`), Refresh (`browser_refresh`, `0x24`), Home (`browser_home`, `0x25`), and Search (`browser_search`, `0x26`). Browser Favorites (`0x1f`) is not supported. The catalog order MUST NOT be derived from numeric wire-ID order. Shortcuts, Favorites, macros, and unknown values MUST remain unavailable and fail closed.
 
 #### Scenario: Eligible action encodes its exact ID
 
@@ -26,20 +26,21 @@ The catalog order MUST NOT be derived from numeric wire-ID order. Browser/system
 
 #### Scenario: Excluded values fail closed
 
-- **GIVEN** a configuration includes shortcut `0x11`, browser/system `0x1d` through `0x26`, a macro, or an unknown action
+- **GIVEN** a configuration includes shortcut `0x11`, Browser Favorites `0x1f`, a macro, or an unknown action
 - **WHEN** it is validated
 - **THEN** validation rejects it before report encoding or device I/O
 
 ### Requirement: Selectors visibly separate Basic and Multimedia actions
 
-Every one of the seven remap selectors MUST visibly expose a Basic group and a Multimedia group. The groups MUST preserve the catalog order. Existing labels, staging, apply, discard, keyboard behavior, and readiness behavior MUST remain understandable and unchanged except for the added grouping and disabled choices.
+Every one of the seven remap selectors MUST visibly expose Basic, Multimedia, Mouse Controls, and Browser groups. The groups MUST preserve the catalog order. Existing labels, staging, apply, discard, keyboard behavior, and readiness behavior MUST remain understandable and unchanged except for the added grouping and disabled choices.
 
 #### Scenario: All selectors show both groups
 
 - **GIVEN** the remap panel is rendered
 - **WHEN** a physical-button selector is opened
-- **THEN** it exposes Basic and Multimedia groups
+- **THEN** it exposes Basic, Multimedia, Mouse Controls, and Browser groups
 - **AND** Multimedia contains exactly the eight ordered actions
+- **AND** Browser contains exactly the nine ordered actions, with no Favorites
 - **AND** no excluded category is rendered
 
 ### Requirement: Multimedia assignments are restricted by physical button
@@ -71,7 +72,7 @@ Buttons 2–7 MUST accept every Multimedia action. Button 1 MUST retain its exis
 
 `RemapConfig` MUST continue to contain exactly seven ordered physical buttons. Application-to-wire order MUST remain `[1, 2, 3, 7, 8, 5, 6]`. Reports MUST remain 59 bytes with header `08 3b 01`, eighteen three-byte groups, `00 00` simple-action parameters, and a big-endian additive checksum over bytes `[3:57]` in bytes `[57:59]`. Only `03 10 50 00 08` MUST be accepted as the acknowledgement.
 
-Adding Multimedia MAY change only the selected action byte and resulting checksum. It MUST NOT change report shape, hidden groups, parameters, mapping, checksum range/order, or ACK contract.
+Adding Multimedia or Browser MAY change only the selected action byte and resulting checksum. It MUST NOT change report shape, hidden groups, parameters, mapping, checksum range/order, or ACK contract.
 
 #### Scenario: Multimedia preserves report shape
 
@@ -88,7 +89,7 @@ Adding Multimedia MAY change only the selected action byte and resulting checksu
 
 ### Requirement: Explicit apply and recovery lifecycle remain unchanged
 
-Staging a valid Multimedia action MUST cause no device write. Only explicit `ApplyRemap` MAY authorize the existing bounded write. Applied state MUST advance only after the exact ACK. Existing persistence retry MUST not repeat hardware I/O. Discard MUST abandon the local draft without I/O. Factory reset MUST continue to restore the existing Basic default remap.
+Staging a valid Multimedia or Browser action MUST cause no device write. Only explicit `ApplyRemap` MAY authorize the existing bounded write. Applied state MUST advance only after the exact ACK. Existing persistence retry MUST not repeat hardware I/O. Discard MUST abandon the local draft without I/O. Factory reset MUST continue to restore the existing Basic default remap. Browser actions MUST be accepted on Buttons 1–7; the Button 1 Multimedia and Mouse Controls restrictions remain unchanged.
 
 #### Scenario: Staging is side-effect free
 

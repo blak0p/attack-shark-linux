@@ -133,7 +133,7 @@ The **Button remapping** view configures the physical buttons of the mouse. To p
 
 All 7 physical mouse controls can be assigned custom actions:
 
-1. **Button 1**: Left Click (*restricted to Basic actions to guarantee mouse usability*)
+1. **Button 1**: Left Click (*Multimedia and Mouse Controls actions are unavailable; Basic and Browser actions are available*)
 2. **Button 2**: Right Click
 3. **Button 3**: Middle Click (Scroll wheel click)
 4. **Button 4**: Forward (Front thumb button)
@@ -143,13 +143,16 @@ All 7 physical mouse controls can be assigned custom actions:
 
 ### 2. Available Action Library
 
-Each button can be assigned to actions grouped into three distinct categories:
+Each button can be assigned to actions grouped into four distinct categories:
 
 | Category | Actions |
 |---|---|
 | **Basic** | Left, Right, Middle, Forward, Backward, Double Click, Fire, Off |
 | **Multimedia** | Media Player, Play/Pause, Stop, Previous Track, Next Track, Volume Up, Volume Down, Mute |
 | **Mouse Controls** | Scroll Up, Scroll Down, DPI Cycle, DPI+, DPI− |
+| **Browser** | Calculator, Email, Forward, Backward, Stop, My Computer, Refresh, Home, Search |
+
+Browser Favorites is unavailable because its captured ID is uncertain. The Browser Forward and Backward actions are distinct from the Basic thumb-button Forward and Backward actions.
 
 ### 3. Draft Confirmation Workflow
 
@@ -157,7 +160,7 @@ Unlike performance sliders that auto-apply after a delay, button remapping uses 
 
 1. **Drafting**: Select new actions for any button using the dropdown menus. The summary text updates live to reflect the staged assignment.
 2. **Reviewing**: A draft status indicator (`Remap draft pending confirmation`) signals that changes have not yet been sent to the mouse.
-3. **Applying**: Click **Apply remap** (or press `Enter`) to compile and write the 56-byte report over hidraw. The status updates to `Button remapping applied`.
+3. **Applying**: Click **Apply remap** (or press `Enter`) to compile and write the 59-byte report over hidraw. The applied assignment advances only after the device acknowledges it. The status updates to `Button remapping applied`.
 4. **Discarding**: Click **Discard remap** (or press `Escape`) to cancel unapplied changes and restore the currently active configuration.
 
 ---

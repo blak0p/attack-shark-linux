@@ -170,6 +170,10 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 	valid := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	config := x6.DefaultRemapConfig()
 	config.Buttons[0].Action = x6.RemapFire
+	browser := x6.DefaultRemapConfig()
+	browser.Buttons[0].Action = x6.RemapBrowserSearch
+	favorites := x6.DefaultRemapConfig()
+	favorites.Buttons[0].Action = x6.RemapAction("browser_favorites")
 	buttonOneMouseControls := []x6.RemapConfig{}
 	for _, action := range []x6.RemapAction{x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus} {
 		blocked := x6.DefaultRemapConfig()
@@ -187,6 +191,24 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 		wantCalls int
 		wantSaves int
 	}{
+		{
+			name: "Browser Favorites rejects before command",
+			config: favorites,
+			wantCode: InvalidConfiguration,
+		},
+		{
+			name: "Browser Button 1 ACK failure retains applied state",
+			config: browser,
+			wantCode: ApplyFailed,
+			wantCalls: 1,
+		},
+		{
+			name: "Browser Button 1 acknowledged write",
+			config: browser,
+			ack: true,
+			wantCalls: 1,
+			wantSaves: 1,
+		},
 		{
 			name:      "invalid configuration rejects before command",
 			config:    x6.RemapConfig{},
@@ -292,13 +314,15 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 	}
 }
 
-func TestRemapSnapshotOrdersFreshBasicThenMultimediaCatalog(t *testing.T) {
+func TestRemapSnapshotOrdersFreshBasicMultimediaMouseAndBrowserCatalog(t *testing.T) {
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
 	first := service.GetRemapSnapshot()
 	want := []x6.RemapAction{
 		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
 		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
 		x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus,
+		x6.RemapBrowserCalculator, x6.RemapBrowserEmail, x6.RemapBrowserForward, x6.RemapBrowserBackward, x6.RemapBrowserStop,
+		x6.RemapBrowserMyComputer, x6.RemapBrowserRefresh, x6.RemapBrowserHome, x6.RemapBrowserSearch,
 	}
 	if len(first.Actions) != len(want) {
 		t.Fatalf("catalog length = %d, want %d", len(first.Actions), len(want))

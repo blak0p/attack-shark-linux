@@ -34,6 +34,15 @@ const (
 	RemapDPICycle      = protocol.RemapDPICycle
 	RemapDPIPlus       = protocol.RemapDPIPlus
 	RemapDPIMinus      = protocol.RemapDPIMinus
+	RemapBrowserCalculator = protocol.RemapBrowserCalculator
+	RemapBrowserEmail = protocol.RemapBrowserEmail
+	RemapBrowserForward = protocol.RemapBrowserForward
+	RemapBrowserBackward = protocol.RemapBrowserBackward
+	RemapBrowserStop = protocol.RemapBrowserStop
+	RemapBrowserMyComputer = protocol.RemapBrowserMyComputer
+	RemapBrowserRefresh = protocol.RemapBrowserRefresh
+	RemapBrowserHome = protocol.RemapBrowserHome
+	RemapBrowserSearch = protocol.RemapBrowserSearch
 )
 
 func DefaultRemapConfig() RemapConfig { return protocol.DefaultRemapConfig() }
