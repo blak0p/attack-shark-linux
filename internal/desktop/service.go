@@ -541,7 +541,7 @@ func (s *Service) handleStatusEvent(event x6.StatusEvent) {
 	devices := len(s.inventoryDevices)
 	s.mu.Unlock()
 	if inventory != nil {
-		selected, ok := inventory.Selection()
+		selected, ok := (selectionResolver{s}).selected()
 		if !ok || devices != 1 {
 			return
 		}
@@ -561,8 +561,8 @@ func (s *Service) handleAttributedStatusEvent(event StatusEvent) {
 	if inventory == nil {
 		return
 	}
-	selected, ok := inventory.Selection()
-	if !ok || selected.ID != event.ID || selected.Path != event.Path || selected.InventoryRevision != event.InventoryRevision {
+	selected, ok := (selectionResolver{s}).attributed(event)
+	if !ok {
 		return
 	}
 	s.mu.Lock()
@@ -1065,7 +1065,7 @@ func (s *Service) currentState() *deviceState {
 	if inventory == nil {
 		return legacy
 	}
-	selected, ok := inventory.Selection()
+	selected, ok := (selectionResolver{s}).selected()
 	if !ok {
 		return legacy
 	}
@@ -1086,7 +1086,7 @@ func (s *Service) currentPollingState() *pollingState {
 	if inventory == nil {
 		return newPollingState()
 	}
-	selected, ok := inventory.Selection()
+	selected, ok := (selectionResolver{s}).selected()
 	if !ok {
 		return newPollingState()
 	}
@@ -1142,18 +1142,11 @@ func (s *Service) currentRemapState() *remapState {
 }
 
 func (s *Service) selectedBinding() (Binding, bool) {
-	s.mu.Lock()
-	inventory := s.inventory
-	s.mu.Unlock()
-	if inventory == nil {
-		return Binding{}, false
-	}
-	return inventory.Selection()
+	return (selectionResolver{s}).selected()
 }
 
 func (s *Service) bindingCurrent(binding Binding) bool {
-	selected, ok := s.selectedBinding()
-	return ok && selected == binding
+	return (selectionResolver{s}).current(binding)
 }
 
 func (s *Service) cancelSync(binding Binding) {

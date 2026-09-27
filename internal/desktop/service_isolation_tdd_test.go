@@ -63,6 +63,53 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 	}
 }
 
+func TestSelectionResolverTracksBindingAndRejectsStaleAttribution(t *testing.T) {
+	alpha := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	bravo := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo", Path: "/dev/hidraw1"}
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(
+		mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, nil),
+	)
+	resolver := selectionResolver{service: service}
+	if _, ok := resolver.selected(); ok {
+		t.Fatal("selection reported before inventory refresh")
+	}
+	devices := service.RefreshInventory(context.Background()).Devices
+	if len(devices) != 2 {
+		t.Fatalf("devices = %d; want 2", len(devices))
+	}
+	alphaBinding := service.SelectDevice(devices[0].ID).Selected
+	if alphaBinding == nil {
+		t.Fatal("alpha selection missing")
+	}
+	if selected, ok := resolver.selected(); !ok || selected != *alphaBinding || !resolver.current(*alphaBinding) {
+		t.Fatalf("selected = %+v, ok = %v; want alpha binding", selected, ok)
+	}
+	current := StatusEvent{ID: alphaBinding.ID, Path: alphaBinding.Path, InventoryRevision: alphaBinding.InventoryRevision}
+	if selected, ok := resolver.attributed(current); !ok || selected != *alphaBinding {
+		t.Fatalf("attributed = %+v, ok = %v; want alpha binding", selected, ok)
+	}
+	stale := current
+	stale.InventoryRevision++
+	if _, ok := resolver.attributed(stale); ok {
+		t.Fatal("event from another inventory revision was accepted")
+	}
+	bravoBinding := service.SelectDevice(devices[1].ID).Selected
+	if bravoBinding == nil || !resolver.current(*bravoBinding) || resolver.current(*alphaBinding) {
+		t.Fatal("binding did not follow device selection")
+	}
+	if _, ok := resolver.attributed(current); ok {
+		t.Fatal("event from previous device was accepted")
+	}
+	service.RefreshInventory(context.Background())
+	if resolver.current(*bravoBinding) {
+		t.Fatal("binding from previous inventory revision remained current")
+	}
+}
+
 func intPtr(value int) *int { return &value }
 
 func TestAttributedListenerUpdatesAreRaceSafeForSelectedDevice(t *testing.T) {
