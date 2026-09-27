@@ -11,14 +11,13 @@ import (
 // at inventory boundaries. Service.mu protects these fields; never hold it
 // while querying TargetedService or cancelling scheduled writes.
 type inventoryComponent struct {
-	inventory          *mouse.TargetedService
-	inventoryDevices   []Device
-	migrate            func(Binding) error
-	devicePersistence  DevicePersistence
-	pollingStates      map[DeviceID]*pollingState
-	pollingSync        *PollingSyncCoordinator
-	pollingPersistence PollingPersistence
-	settingsStates     map[DeviceID]*settingsState
+	inventory         *mouse.TargetedService
+	inventoryDevices  []Device
+	migrate           func(Binding) error
+	devicePersistence DevicePersistence
+	pollingStates     map[DeviceID]*pollingState // compatibility view; pollingComponent owns entries
+	pollingSync       *PollingSyncCoordinator    // reset orchestration uses this coordinator
+	settingsStates    map[DeviceID]*settingsState
 }
 
 func newInventoryComponent() *inventoryComponent {
@@ -33,7 +32,8 @@ func (c *inventoryComponent) attach(inventory *mouse.TargetedService, s *Service
 	c.inventory = inventory
 	c.inventoryDevices = nil
 	s.dpiComponent.attachSync(realSyncScheduler{})
-	c.pollingSync = NewPollingSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyPollingBound)
+	s.pollingComponent.attachSync(realSyncScheduler{})
+	c.pollingSync = s.pollingComponent.sync
 }
 
 func (c *inventoryComponent) refresh(ctx context.Context, s *Service) Inventory {
@@ -83,13 +83,7 @@ func (c *inventoryComponent) refresh(ctx context.Context, s *Service) Inventory 
 					state = newDeviceState(applied, state.factory)
 				}
 			}
-			polling := newPollingState()
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.pollingPersistence != nil {
-				if config, err := s.pollingPersistence.Load(*result.Selected); err == nil {
-					polling = newPollingStateFromConfig(config)
-				}
-			}
-			s.pollingStates[device.ID] = polling
+			s.pollingComponent.initDevice(device.ID, result.Selected)
 			settings := newSettingsState()
 			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.settingsPersistence != nil {
 				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil {
@@ -138,32 +132,9 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 			state.mu.Unlock()
 		}
 	}
-	if !selected.SessionOnly {
-		s.mu.Lock()
-		pollingPersistence, polling := s.pollingPersistence, s.pollingStates[selected.ID]
-		s.mu.Unlock()
-		if pollingPersistence != nil && polling != nil {
-			if config, err := pollingPersistence.Load(selected); err == nil {
-				next := newPollingStateFromConfig(config)
-				polling.mu.Lock()
-				polling.desired, polling.applied, polling.factory = next.desired, next.applied, next.factory
-				polling.persisted, polling.retry, polling.revision = next.persisted, next.retry, next.revision
-				polling.firmware, polling.persistence = next.firmware, next.persistence
-				polling.mu.Unlock()
-			}
-		}
-	}
+	s.pollingComponent.selectDevice(selected)
 	if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
 		return Inventory{Devices: devices, Selected: &selected, Error: Error{Code: MigrationFailed}}
 	}
 	return Inventory{Devices: devices, Selected: &selected}
-}
-
-func (c *inventoryComponent) cancelPollingSync(binding Binding, s *Service) {
-	s.mu.Lock()
-	sync := s.pollingSync
-	s.mu.Unlock()
-	if sync != nil {
-		sync.Cancel(binding)
-	}
 }
