@@ -228,11 +228,10 @@ type remapState struct {
 }
 
 type Service struct {
-	status   StatusReader
-	writer   DPIWriter
-	store    AppliedStore
-	listener StatusListener
-	events   EventSink
+	status StatusReader
+	writer DPIWriter
+	store  AppliedStore
+	*listenerComponent
 	*inventoryComponent
 	mu                  sync.Mutex
 	legacy              *deviceState
@@ -255,7 +254,7 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), inventoryComponent: newInventoryComponent(), lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}, lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -264,10 +263,7 @@ func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service
 // AttachListener wires the always-on status listener and the frontend event
 // sink. It does not start listening; call StartListener with a context.
 func (s *Service) AttachListener(listener StatusListener, events EventSink) *Service {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.listener = listener
-	s.events = events
+	s.listenerComponent.attach(s, listener, events)
 	return s
 }
 
@@ -393,65 +389,20 @@ func (s *Service) SelectDevice(id DeviceID) Inventory {
 // every dongle-pushed status report into the service state and the frontend.
 // It is a no-op when no listener has been attached.
 func (s *Service) StartListener(ctx context.Context) {
-	s.mu.Lock()
-	listener := s.listener
-	s.mu.Unlock()
-	if listener == nil {
-		return
-	}
-	go func() {
-		_ = listener.Listen(ctx, s.handleStatusEvent)
-	}()
+	s.listenerComponent.start(ctx, s)
 }
 
 // handleStatusEvent folds one dongle-pushed report into the shared state and
 // emits the delta to the frontend. The listener callback is serialized by
 // Listen, so only the state lock is needed here.
 func (s *Service) handleStatusEvent(event x6.StatusEvent) {
-	battery, stage := statusDelta(event)
-	s.mu.Lock()
-	inventory := s.inventory
-	devices := len(s.inventoryDevices)
-	s.mu.Unlock()
-	if inventory != nil {
-		selected, ok := (selectionResolver{s}).selected()
-		if !ok || devices != 1 {
-			return
-		}
-		s.handleAttributedStatusEvent(StatusEvent{ID: selected.ID, Path: selected.Path, InventoryRevision: selected.InventoryRevision, Connection: string(event.Connection), Battery: battery, ActiveStage: stage})
-		return
-	}
-	s.foldStatusEvent(s.legacy, StatusEvent{Connection: string(event.Connection), Battery: battery, ActiveStage: stage}, "x6:status")
+	s.listenerComponent.handleStatusEvent(s, event)
 }
 
 // handleAttributedStatusEvent accepts listener data only for the currently
 // selected immutable binding and its inventory revision.
 func (s *Service) handleAttributedStatusEvent(event StatusEvent) {
-	s.mu.Lock()
-	inventory := s.inventory
-	sink := s.events
-	s.mu.Unlock()
-	if inventory == nil {
-		return
-	}
-	selected, ok := (selectionResolver{s}).attributed(event)
-	if !ok {
-		return
-	}
-	s.mu.Lock()
-	state := s.states[event.ID]
-	s.mu.Unlock()
-	if state == nil {
-		return
-	}
-	if validStage(event.ActiveStage) {
-		s.cancelSync(selected)
-	}
-	s.foldStatusEvent(state, event, "mouse:status")
-	if validStage(event.ActiveStage) {
-		s.emitConfiguration(selected, state)
-	}
-	_ = sink
+	s.listenerComponent.handleAttributedStatusEvent(s, event)
 }
 
 func statusDelta(event x6.StatusEvent) (*int, *int) {
@@ -468,25 +419,7 @@ func statusDelta(event x6.StatusEvent) (*int, *int) {
 }
 
 func (s *Service) foldStatusEvent(state *deviceState, event StatusEvent, eventName string) {
-	state.mu.Lock()
-	state.connection = x6.Connection(event.Connection)
-	if event.Battery != nil {
-		value := *event.Battery
-		state.battery = &value
-	}
-	if validStage(event.ActiveStage) {
-		state.pending = state.applied
-		stage := *event.ActiveStage
-		state.observedStage = &stage
-		state.observedDPI = mappedDPI(state.applied, stage)
-	}
-	state.mu.Unlock()
-	s.mu.Lock()
-	sink := s.events
-	s.mu.Unlock()
-	if sink != nil {
-		sink.Emit(eventName, event)
-	}
+	s.listenerComponent.foldStatusEvent(s, state, event, eventName)
 }
 func (s *Service) GetSnapshot() Snapshot {
 	return snapshotOf(s.currentState())
@@ -714,12 +647,7 @@ func (s *Service) RetryRemapPersistence() RemapSnapshot {
 }
 
 func (s *Service) emitRemapConfiguration(binding Binding, snapshot RemapSnapshot) {
-	s.mu.Lock()
-	sink := s.events
-	s.mu.Unlock()
-	if sink != nil {
-		sink.Emit("mouse:remap-configuration", RemapConfigurationEvent{Binding: binding, Snapshot: snapshot})
-	}
+	s.listenerComponent.emit(s, "mouse:remap-configuration", RemapConfigurationEvent{Binding: binding, Snapshot: snapshot})
 }
 
 func (s *Service) failRemap(state *remapState, code ErrorCode) RemapSnapshot {
@@ -1137,21 +1065,11 @@ func (s *Service) applyPolling(ctx context.Context, binding Binding, revision ui
 }
 
 func (s *Service) emitPollingConfiguration(binding Binding, snapshot PollingSnapshot) {
-	s.mu.Lock()
-	sink := s.events
-	s.mu.Unlock()
-	if sink != nil {
-		sink.Emit("mouse:polling-configuration", PollingConfigurationEvent{Binding: binding, Snapshot: snapshot})
-	}
+	s.listenerComponent.emit(s, "mouse:polling-configuration", PollingConfigurationEvent{Binding: binding, Snapshot: snapshot})
 }
 
 func (s *Service) emitConfiguration(binding Binding, state *deviceState) {
-	s.mu.Lock()
-	sink := s.events
-	s.mu.Unlock()
-	if sink != nil {
-		sink.Emit("mouse:configuration", ConfigurationEvent{Binding: binding, Snapshot: snapshotOf(state)})
-	}
+	s.listenerComponent.emitConfiguration(s, binding, state)
 }
 
 func (s *Service) newStateFromLegacy() *deviceState {

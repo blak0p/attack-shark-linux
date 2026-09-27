@@ -59,6 +59,23 @@ func (f *eventSinkFake) snapshot() (bool, []StatusEvent) {
 	return f.emitted, f.events
 }
 
+func TestListenerComponentOwnsAttachmentAndEventSink(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if service.listenerComponent == nil {
+		t.Fatal("New must initialize listener ownership")
+	}
+	listener := newListenerFake()
+	sink := &eventSinkFake{}
+	service.AttachListener(listener, sink)
+	if service.listenerComponent.listener != listener || service.listenerComponent.events != sink {
+		t.Fatal("AttachListener must retain listener and sink in the listener component")
+	}
+	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, BatteryAvailable: true, BatteryPercent: 42})
+	if emitted, events := sink.snapshot(); !emitted || len(events) != 1 || events[0].Battery == nil || *events[0].Battery != 42 {
+		t.Fatalf("listener component emission = %v, %+v; want one battery delta", emitted, events)
+	}
+}
+
 func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
 	listener := newListenerFake()
