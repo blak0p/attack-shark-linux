@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "../src/App";
-import type { DesktopService, DPIConfig } from "../src/desktop-contract";
+import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction } from "../src/desktop-contract";
 import "../src/styles.css";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
@@ -23,7 +23,19 @@ const polling = (rate = 1000, failed = false) => ({
   Firmware: failed ? "failed" : "success", Persistence: "success",
 });
 type DeviceID = (typeof ids)[number]["ID"];
-const calls: Array<{ operation: string; destination: DeviceID; requested?: DeviceID; value?: number }> = [];
+const calls: Array<{ operation: string; destination: DeviceID; requested?: DeviceID; value?: number; config?: RemapConfig }> = [];
+const remapFactory = (): RemapConfig => ({ Buttons: [
+  { Button: 1, Action: "left", PreservedDefault: "" },
+  { Button: 2, Action: "right", PreservedDefault: "" },
+  { Button: 3, Action: "middle", PreservedDefault: "" },
+  { Button: 4, Action: "forward", PreservedDefault: "" },
+  { Button: 5, Action: "backward", PreservedDefault: "" },
+  { Button: 6, Action: null, PreservedDefault: "DPI+" },
+  { Button: 7, Action: null, PreservedDefault: "DPI-" },
+] });
+const actions: RemapAction[] = ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire", "browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
+const remaps = new Map(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
+const remapSnapshot = () => structuredClone(remaps.get(selected.ID.Serial)!);
 let selected = ids[0];
 let currentPolling = polling();
 let currentDPI = snapshot();
@@ -77,7 +89,14 @@ const service = {
   GetDebounceSnapshot: async () => ({ Desired: 8, Applied: 8, Persisted: 8, Factory: 8, Revision: 0, Error: { Code: "" } }),
   GetLightingSnapshot: async () => ({ Pending: { Mode: 0, TemplateID: "off" }, Applied: null, Effects: [], Revision: 0, Error: { Code: "" } }),
   GetNormalSleepSnapshot: async () => ({ Pending: 0.5, Applied: 0.5, Persisted: 0.5, Revision: 0, Error: { Code: "" } }),
-  GetRemapSnapshot: async () => ({ Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] }, Actions: [], Revision: 0, Error: { Code: "" } }),
+  GetRemapSnapshot: async () => remapSnapshot(),
+  ApplyRemap: async (config: RemapConfig) => {
+    if (config.Buttons.length !== 7 || config.Buttons.some((button, index) => button.Button !== index + 1 || (button.Action !== null && !actions.includes(button.Action)))) throw new Error("Invalid mock remap draft");
+    calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
+    const updated = { ...remapSnapshot(), Pending: structuredClone(config), Applied: structuredClone(config), Revision: remaps.get(selected.ID.Serial)!.Revision + 1, Firmware: "success" };
+    remaps.set(selected.ID.Serial, updated);
+    return remapSnapshot();
+  },
   OnStatusEvent: () => () => {}, OnConfiguration: () => () => {},
   OnPollingConfiguration: () => () => {}, OnRemapConfiguration: () => () => {},
 };
@@ -90,6 +109,6 @@ const guarded = new Proxy(service, {
 }) as unknown as DesktopService;
 Object.assign(window, { __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
-  dpiSnapshot: () => structuredClone(currentDPI),
+  dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });
 createRoot(document.getElementById("root")!).render(<App service={guarded} />);
