@@ -3,7 +3,6 @@ package desktop
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -233,8 +232,8 @@ type Service struct {
 	store  AppliedStore
 	*listenerComponent
 	*inventoryComponent
+	*dpiComponent
 	mu                  sync.Mutex
-	legacy              *deviceState
 	settingsPersistence PollingPersistence
 	lightingStates      map[DeviceID]*lightingState
 	remapStates         map[DeviceID]*remapState
@@ -254,7 +253,9 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	return &Service{status: status, writer: writer, store: store, legacy: newDeviceState(applied, factory), inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}, lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	s := &Service{status: status, writer: writer, store: store, inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}, lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	s.dpiComponent = &dpiComponent{service: s, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState)}
+	return s
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	return New(status, writer, store)
@@ -301,7 +302,7 @@ func (realSyncScheduler) After(delay time.Duration, f func()) SyncCancel {
 func (s *Service) attachAutomaticSave(scheduler SyncScheduler) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.inventoryComponent.sync = NewSyncCoordinator(scheduler, s.bindingCurrent, s.applyBound)
+	s.dpiComponent.attachSync(scheduler)
 	return s
 }
 
@@ -441,21 +442,7 @@ func (s *Service) RefreshStatus(ctx context.Context) Snapshot {
 	state.err = Error{}
 	return snapshotLocked(state)
 }
-func (s *Service) StageDPI(config DPIConfig) Snapshot {
-	state := s.currentState()
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	next := fromDTO(config)
-	if _, err := x6.EncodeDPIReport(next); err != nil {
-		state.err = Error{Code: InvalidConfiguration}
-		return snapshotLocked(state)
-	}
-	state.pending = next
-	state.revision++
-	state.err = Error{}
-	state.firmware, state.persistence, state.retry = "pending", "", nil
-	return snapshotLocked(state)
-}
+func (s *Service) StageDPI(config DPIConfig) Snapshot { return s.dpiComponent.stage(config) }
 
 // GetPollingSnapshot reports desired, acknowledged, and persistence state; it
 // deliberately does not claim a live hardware observation.
@@ -772,113 +759,16 @@ func (s *Service) reconcileFactoryReset() {
 	remap.mu.Unlock()
 }
 
-func (s *Service) RetryPersistence() Snapshot {
-	binding, ok := s.selectedBinding()
-	if !ok || binding.SessionOnly {
-		return s.GetSnapshot()
-	}
-	state := s.currentState()
-	state.mu.Lock()
-	retry := state.retry
-	state.mu.Unlock()
-	if retry == nil {
-		return s.GetSnapshot()
-	}
-	s.mu.Lock()
-	persistence := s.devicePersistence
-	s.mu.Unlock()
-	if persistence == nil || persistence.Save(binding, *retry) != nil {
-		state.mu.Lock()
-		state.persistence = "failed"
-		state.err = Error{Code: PersistenceFailed}
-		state.mu.Unlock()
-		return s.GetSnapshot()
-	}
-	state.mu.Lock()
-	state.persistence, state.retry, state.err = "success", nil, Error{}
-	state.mu.Unlock()
-	return s.GetSnapshot()
-}
-func (s *Service) ApplyDPI(ctx context.Context) Snapshot {
-	s.operationMu.Lock()
-	defer s.operationMu.Unlock()
-	state := s.currentState()
-	state.applyMu.Lock()
-	defer state.applyMu.Unlock()
-	state.mu.Lock()
-	pending := state.pending
-	state.mu.Unlock()
-	s.mu.Lock()
-	inventory := s.inventory
-	s.mu.Unlock()
-	if inventory != nil {
-		if err := inventory.Stage(pending); err != nil {
-			return s.applyFailure(err)
-		}
-		if err := inventory.Apply(ctx); err != nil {
-			return s.applyFailure(err)
-		}
-		if binding, ok := inventory.Selection(); ok {
-			s.mu.Lock()
-			persistence := s.devicePersistence
-			s.mu.Unlock()
-			if !binding.SessionOnly && persistence != nil {
-				if err := persistence.Save(binding, pending); err != nil {
-					state.mu.Lock()
-					retry := pending
-					state.applied, state.firmware, state.persistence, state.retry, state.err = pending, "success", "failed", &retry, Error{Code: PersistenceFailed}
-					snapshot := snapshotLocked(state)
-					state.mu.Unlock()
-					return snapshot
-				}
-			}
-			s.cancelSync(binding)
-		}
-	} else if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
-		return s.applyFailure(err)
-	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.applied = pending
-	state.firmware, state.persistence, state.err = "success", "success", Error{}
-	return snapshotLocked(state)
-}
+func (s *Service) RetryPersistence() Snapshot            { return s.dpiComponent.retryPersistence() }
+func (s *Service) ApplyDPI(ctx context.Context) Snapshot { return s.dpiComponent.apply(ctx) }
 
-func (s *Service) applyFailure(err error) Snapshot {
-	slog.Error("apply DPI failed", "error", err, "classification", applyErrorClassification(err))
-	state := s.currentState()
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.err = Error{Code: errorCode(err, false)}
-	return snapshotLocked(state)
-}
+func (s *Service) applyFailure(err error) Snapshot { return s.dpiComponent.applyFailure(err) }
 
 func newDeviceState(applied, factory x6.DPIConfig) *deviceState {
 	return &deviceState{applied: applied, pending: applied, factory: factory}
 }
 
-func (s *Service) currentState() *deviceState {
-	s.mu.Lock()
-	inventory := s.inventory
-	legacy := s.legacy
-	states := s.states
-	s.mu.Unlock()
-	if inventory == nil {
-		return legacy
-	}
-	selected, ok := (selectionResolver{s}).selected()
-	if !ok {
-		return legacy
-	}
-	s.mu.Lock()
-	state := states[selected.ID]
-	if state == nil {
-		state = s.newStateFromLegacy()
-		states[selected.ID] = state
-	}
-	s.mu.Unlock()
-	return state
-}
+func (s *Service) currentState() *deviceState { return s.dpiComponent.currentState() }
 
 func (s *Service) currentPollingState() *pollingState {
 	s.mu.Lock()
@@ -950,55 +840,14 @@ func (s *Service) bindingCurrent(binding Binding) bool {
 	return (selectionResolver{s}).current(binding)
 }
 
-func (s *Service) cancelSync(binding Binding) {
-	s.inventoryComponent.cancelSync(binding, s)
-}
+func (s *Service) cancelSync(binding Binding) { s.dpiComponent.cancelSync(binding) }
 
 func (s *Service) cancelPollingSync(binding Binding) {
 	s.inventoryComponent.cancelPollingSync(binding, s)
 }
 
 func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
-	if !s.bindingCurrent(binding) {
-		return mouse.ErrStaleBinding
-	}
-	state := s.currentState()
-	defer s.emitConfiguration(binding, state)
-	state.mu.Lock()
-	if state.revision != revision {
-		state.mu.Unlock()
-		return mouse.ErrRevisionChanged
-	}
-	state.mu.Unlock()
-	s.mu.Lock()
-	inventory, persistence := s.inventory, s.devicePersistence
-	s.mu.Unlock()
-	if err := inventory.ApplyBound(context.Background(), binding, config); err != nil {
-		state.mu.Lock()
-		state.firmware, state.err = "failed", Error{Code: errorCode(err, false)}
-		state.mu.Unlock()
-		return err
-	}
-	state.mu.Lock()
-	if state.revision != revision {
-		state.mu.Unlock()
-		return mouse.ErrRevisionChanged
-	}
-	state.applied, state.firmware, state.err = config, "success", Error{}
-	state.mu.Unlock()
-	if !pollingPersistenceAllowed(binding) || persistence == nil {
-		return nil
-	}
-	if err := persistence.Save(binding, config); err != nil {
-		state.mu.Lock()
-		state.persistence, state.retry, state.err = "failed", &config, Error{Code: PersistenceFailed}
-		state.mu.Unlock()
-		return nil
-	}
-	state.mu.Lock()
-	state.persistence = "success"
-	state.mu.Unlock()
-	return nil
+	return s.dpiComponent.applyBound(binding, revision, config)
 }
 
 func pollingPersistenceAllowed(binding Binding) bool { return !binding.SessionOnly }
@@ -1072,9 +921,7 @@ func (s *Service) emitConfiguration(binding Binding, state *deviceState) {
 	s.listenerComponent.emitConfiguration(s, binding, state)
 }
 
-func (s *Service) newStateFromLegacy() *deviceState {
-	return s.inventoryComponent.newStateFromLegacy(s)
-}
+func (s *Service) newStateFromLegacy() *deviceState { return s.dpiComponent.newStateFromLegacy() }
 
 func snapshotOf(state *deviceState) Snapshot {
 	state.mu.Lock()

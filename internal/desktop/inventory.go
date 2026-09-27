@@ -15,8 +15,6 @@ type inventoryComponent struct {
 	inventoryDevices   []Device
 	migrate            func(Binding) error
 	devicePersistence  DevicePersistence
-	states             map[DeviceID]*deviceState
-	sync               *SyncCoordinator
 	pollingStates      map[DeviceID]*pollingState
 	pollingSync        *PollingSyncCoordinator
 	pollingPersistence PollingPersistence
@@ -25,7 +23,6 @@ type inventoryComponent struct {
 
 func newInventoryComponent() *inventoryComponent {
 	return &inventoryComponent{
-		states:         make(map[DeviceID]*deviceState),
 		pollingStates:  make(map[DeviceID]*pollingState),
 		settingsStates: make(map[DeviceID]*settingsState),
 	}
@@ -35,7 +32,7 @@ func newInventoryComponent() *inventoryComponent {
 func (c *inventoryComponent) attach(inventory *mouse.TargetedService, s *Service) {
 	c.inventory = inventory
 	c.inventoryDevices = nil
-	c.sync = NewSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyBound)
+	s.dpiComponent.attachSync(realSyncScheduler{})
 	c.pollingSync = NewPollingSyncCoordinator(realSyncScheduler{}, s.bindingCurrent, s.applyPollingBound)
 }
 
@@ -162,15 +159,6 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 	return Inventory{Devices: devices, Selected: &selected}
 }
 
-func (c *inventoryComponent) cancelSync(binding Binding, s *Service) {
-	s.mu.Lock()
-	sync := s.sync
-	s.mu.Unlock()
-	if sync != nil {
-		sync.Cancel(binding)
-	}
-}
-
 func (c *inventoryComponent) cancelPollingSync(binding Binding, s *Service) {
 	s.mu.Lock()
 	sync := s.pollingSync
@@ -178,10 +166,4 @@ func (c *inventoryComponent) cancelPollingSync(binding Binding, s *Service) {
 	if sync != nil {
 		sync.Cancel(binding)
 	}
-}
-
-func (c *inventoryComponent) newStateFromLegacy(s *Service) *deviceState {
-	s.legacy.mu.Lock()
-	defer s.legacy.mu.Unlock()
-	return newDeviceState(s.legacy.applied, s.legacy.factory)
 }

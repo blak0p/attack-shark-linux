@@ -16,6 +16,36 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
+func TestDPIComponentOwnsStateAndCoordinator(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if service.dpiComponent.legacy == nil || service.dpiComponent.states == nil {
+		t.Fatal("DPI component must own legacy and device states")
+	}
+	if service.dpiComponent.currentState() != service.dpiComponent.legacy {
+		t.Fatal("legacy fallback must use component-owned state")
+	}
+	service.attachAutomaticSave(&fakeSyncScheduler{})
+	if service.dpiComponent.sync == nil {
+		t.Fatal("DPI component must own its sync coordinator")
+	}
+}
+
+func TestDPIComponentOwnsLegacyStageAndApply(t *testing.T) {
+	writer := &writerFake{}
+	service := New(statusFake{}, writer, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if service.dpiComponent == nil {
+		t.Fatal("DPI collaborator not initialized")
+	}
+	config := service.GetSnapshot().Pending
+	config.DPI[0] = 1600
+	if staged := service.StageDPI(config); staged.Pending.DPI[0] != 1600 {
+		t.Fatalf("staged DPI = %d, want 1600", staged.Pending.DPI[0])
+	}
+	if applied := service.ApplyDPI(context.Background()); applied.Applied.DPI[0] != 1600 || writer.calls != 1 {
+		t.Fatalf("apply = %+v, writer calls = %d", applied, writer.calls)
+	}
+}
+
 type statusFake struct {
 	status x6.Status
 	err    error

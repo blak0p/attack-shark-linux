@@ -112,7 +112,7 @@ func TestSelectionResolverTracksBindingAndRejectsStaleAttribution(t *testing.T) 
 
 func TestInventoryComponentOwnsSelectionStateAndCancellation(t *testing.T) {
 	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
-	if service.inventoryComponent == nil || service.inventoryComponent.states == nil || service.inventoryComponent.pollingStates == nil || service.inventoryComponent.settingsStates == nil {
+	if service.inventoryComponent == nil || service.dpiComponent.states == nil || service.inventoryComponent.pollingStates == nil || service.inventoryComponent.settingsStates == nil {
 		t.Fatal("inventory component must initialize per-device state maps")
 	}
 	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
