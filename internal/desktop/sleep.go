@@ -27,6 +27,13 @@ func newSettingsStateFromConfig(c x6.DeviceConfig) *settingsState {
 	}
 	return s
 }
+func (s *settingsState) reset() {
+	s.replace(x6.DeviceConfig{})
+	s.mu.Lock()
+	s.persistedNormal, s.persistedResponse = nil, nil
+	s.normalPersistence, s.responsePersistence = "", ""
+	s.mu.Unlock()
+}
 func (s *settingsState) replace(c x6.DeviceConfig) {
 	next := newSettingsStateFromConfig(c)
 	s.mu.Lock()
@@ -44,6 +51,9 @@ func (s *Service) currentSettingsState() *settingsState {
 	if !ok {
 		return newSettingsState()
 	}
+	return s.settingsStateForBinding(b)
+}
+func (s *Service) settingsStateForBinding(b Binding) *settingsState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.settingsStates[b.ID] == nil {
@@ -68,6 +78,8 @@ func normalSleepSnapshot(st *settingsState) NormalSleepSnapshot {
 }
 func (s *Service) StageNormalSleep(minutes float64) NormalSleepSnapshot {
 	st := s.currentSettingsState()
+	st.applyMu.Lock()
+	defer st.applyMu.Unlock()
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if x6.ValidateNormalSleepMinutes(minutes) != nil {
@@ -80,8 +92,10 @@ func (s *Service) StageNormalSleep(minutes float64) NormalSleepSnapshot {
 	st.normalError = Error{}
 	return normalSleepSnapshot(st)
 }
-func (s *Service) ApplyNormalSleep() NormalSleepSnapshot            { return s.applySettings(true) }
-func (s *Service) RetryNormalSleepPersistence() NormalSleepSnapshot { return s.persistSettings(true) }
+func (s *Service) ApplyNormalSleep() NormalSleepSnapshot { return s.applySettings(true) }
+func (s *Service) RetryNormalSleepPersistence() NormalSleepSnapshot {
+	return s.persistSettings(true, true)
+}
 
 func (s *Service) GetDebounceSnapshot() DebounceSnapshot {
 	st := s.currentSettingsState()
@@ -99,6 +113,8 @@ func debounceSnapshot(st *settingsState) DebounceSnapshot {
 }
 func (s *Service) StageDebounce(ms int) DebounceSnapshot {
 	st := s.currentSettingsState()
+	st.applyMu.Lock()
+	defer st.applyMu.Unlock()
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if x6.ValidateResponseTime(ms) != nil {
@@ -116,19 +132,20 @@ func (s *Service) ApplyDebounce() DebounceSnapshot {
 	return s.GetDebounceSnapshot()
 }
 func (s *Service) RetryDebouncePersistence() DebounceSnapshot {
-	s.persistSettings(false)
+	s.persistSettings(false, true)
 	return s.GetDebounceSnapshot()
 }
 
 func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 	b, ok := s.selectedBinding()
-	st := s.currentSettingsState()
 	if !ok {
+		st := newSettingsState()
 		st.mu.Lock()
 		st.normalError = Error{Code: SelectionRequired}
 		defer st.mu.Unlock()
 		return normalSleepSnapshot(st)
 	}
+	st := s.settingsStateForBinding(b)
 	st.applyMu.Lock()
 	defer st.applyMu.Unlock()
 	st.mu.Lock()
@@ -173,24 +190,66 @@ func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 		st.responseError = Error{}
 	}
 	st.mu.Unlock()
-	return s.persistSettings(normal)
+	captured := x6.DeviceConfig{NormalSleepMinutes: minutes, ResponseTimeMs: ms}
+	return s.persistSettingsBound(b, st, normal, false, &captured)
 }
-func (s *Service) persistSettings(normal bool) NormalSleepSnapshot {
+func (s *Service) persistSettings(normal bool, retry ...bool) NormalSleepSnapshot {
 	b, ok := s.selectedBinding()
-	st := s.currentSettingsState()
-	if !ok || b.SessionOnly {
-		return s.GetNormalSleepSnapshot()
+	if !ok {
+		return normalSleepSnapshotLocked(newSettingsState())
+	}
+	st := s.settingsStateForBinding(b)
+	st.applyMu.Lock()
+	defer st.applyMu.Unlock()
+	return s.persistSettingsBound(b, st, normal, len(retry) != 0 && retry[0], nil)
+}
+func normalSleepSnapshotLocked(st *settingsState) NormalSleepSnapshot {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return normalSleepSnapshot(st)
+}
+func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, retry bool, applied *x6.DeviceConfig) NormalSleepSnapshot {
+	if b.SessionOnly {
+		return normalSleepSnapshotLocked(st)
 	}
 	s.mu.Lock()
 	p := s.settingsPersistence
 	s.mu.Unlock()
 	if p == nil {
-		return s.GetNormalSleepSnapshot()
+		return normalSleepSnapshotLocked(st)
 	}
 	st.mu.Lock()
 	c := x6.DeviceConfig{NormalSleepMinutes: st.normalSleep, ResponseTimeMs: st.responseTimeMs}
+	if applied != nil {
+		if normal {
+			c.NormalSleepMinutes = applied.NormalSleepMinutes
+		} else {
+			c.ResponseTimeMs = applied.ResponseTimeMs
+		}
+	}
+	if retry {
+		if normal {
+			if st.retryNormal == nil {
+				st.mu.Unlock()
+				return normalSleepSnapshotLocked(st)
+			}
+			c.NormalSleepMinutes = *st.retryNormal
+		} else {
+			if st.retryResponse == nil {
+				st.mu.Unlock()
+				return normalSleepSnapshotLocked(st)
+			}
+			c.ResponseTimeMs = *st.retryResponse
+		}
+	}
 	st.mu.Unlock()
-	if err := p.Save(b, c); err != nil {
+	if err := s.saveDeviceConfig(b, p, func(config *x6.DeviceConfig) {
+		if normal {
+			config.NormalSleepMinutes = c.NormalSleepMinutes
+		} else {
+			config.ResponseTimeMs = c.ResponseTimeMs
+		}
+	}); err != nil {
 		st.mu.Lock()
 		if normal {
 			v := c.NormalSleepMinutes
@@ -204,7 +263,7 @@ func (s *Service) persistSettings(normal bool) NormalSleepSnapshot {
 			st.responseError = Error{Code: PersistenceFailed}
 		}
 		st.mu.Unlock()
-		return s.GetNormalSleepSnapshot()
+		return normalSleepSnapshotLocked(st)
 	}
 	st.mu.Lock()
 	if normal {
@@ -212,12 +271,14 @@ func (s *Service) persistSettings(normal bool) NormalSleepSnapshot {
 		st.persistedNormal = &v
 		st.retryNormal = nil
 		st.normalPersistence = "success"
+		st.normalError = Error{}
 	} else {
 		v := c.ResponseTimeMs
 		st.persistedResponse = &v
 		st.retryResponse = nil
 		st.responsePersistence = "success"
+		st.responseError = Error{}
 	}
 	st.mu.Unlock()
-	return s.GetNormalSleepSnapshot()
+	return normalSleepSnapshotLocked(st)
 }

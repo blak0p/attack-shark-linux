@@ -227,6 +227,7 @@ type Service struct {
 	pollingComponent    *pollingComponent
 	mu                  sync.Mutex
 	settingsPersistence PollingPersistence
+	configMu            sync.Mutex
 	lightingStates      map[DeviceID]*lightingState
 	remapStates         map[DeviceID]*remapState
 	legacyRemap         *remapState
@@ -312,7 +313,11 @@ func (s *Service) AttachMigrator(migrate func(Binding) error) *Service {
 func (s *Service) AttachDevicePersistence(load func(Binding) (x6.DPIConfig, error), save func(Binding, x6.DPIConfig) error) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.devicePersistence = devicePersistence{load: load, save: save}
+	s.devicePersistence = devicePersistence{load: load, save: func(binding Binding, config x6.DPIConfig) error {
+		s.configMu.Lock()
+		defer s.configMu.Unlock()
+		return save(binding, config)
+	}}
 	return s
 }
 
@@ -342,6 +347,21 @@ type devicePersistence struct {
 type pollingPersistence struct {
 	load func(Binding) (x6.DeviceConfig, error)
 	save func(Binding, x6.DeviceConfig) error
+}
+
+// saveDeviceConfig serializes read-modify-write across the shared device record.
+func (s *Service) saveDeviceConfig(binding Binding, persistence PollingPersistence, update func(*x6.DeviceConfig)) error {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	config, err := persistence.Load(binding)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		config = x6.DefaultDeviceConfig()
+	}
+	update(&config)
+	return persistence.Save(binding, config)
 }
 
 func (p pollingPersistence) Load(binding Binding) (x6.DeviceConfig, error) {
@@ -583,7 +603,7 @@ func (s *Service) applyRemapBound(binding Binding, revision uint64, pending x6.R
 		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
 		return nil
 	}
-	if err := persistence.Save(binding, x6.DeviceConfig{Remap: &pending}); err != nil {
+	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &pending }); err != nil {
 		state.mu.Lock()
 		retry := cloneRemapConfig(pending)
 		state.retry, state.persistence, state.err = &retry, "failed", Error{Code: PersistenceFailed}
@@ -618,7 +638,7 @@ func (s *Service) RetryRemapPersistence() RemapSnapshot {
 	if persistence == nil || binding.SessionOnly {
 		return remapSnapshotOf(state)
 	}
-	if err := persistence.Save(binding, x6.DeviceConfig{Remap: &retry}); err != nil {
+	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &retry }); err != nil {
 		return s.failRemap(state, PersistenceFailed)
 	}
 	state.mu.Lock()

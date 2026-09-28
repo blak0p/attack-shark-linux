@@ -240,21 +240,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		return config, err
 	}
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
-		combined := x6.DefaultDeviceConfig()
-		if err := deviceStore.Load(binding.ID, binding.ProfileID, &combined); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		combined.PollingRate = config.PollingRate
-		if config.NormalSleepMinutes != 0 {
-			combined.NormalSleepMinutes = config.NormalSleepMinutes
-		}
-		if config.ResponseTimeMs != 0 {
-			combined.ResponseTimeMs = config.ResponseTimeMs
-		}
-		if config.Remap != nil {
-			combined.Remap = config.Remap
-		}
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, combined)
+		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
 	}
 	service := desktop.Compose(status, writer, store).
 		AttachInventory(inventory).

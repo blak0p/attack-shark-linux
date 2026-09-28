@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"context"
+	"errors"
+	"os"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/x6"
@@ -133,6 +135,20 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 		}
 	}
 	s.pollingComponent.selectDevice(selected)
+	if !selected.SessionOnly {
+		s.mu.Lock()
+		settingsPersistence, settings := s.settingsPersistence, s.settingsStates[selected.ID]
+		s.mu.Unlock()
+		if settingsPersistence != nil && settings != nil {
+			settings.applyMu.Lock()
+			if config, err := settingsPersistence.Load(selected); err == nil {
+				settings.replace(config)
+			} else if errors.Is(err, os.ErrNotExist) {
+				settings.reset()
+			}
+			settings.applyMu.Unlock()
+		}
+	}
 	if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
 		return Inventory{Devices: devices, Selected: &selected, Error: Error{Code: MigrationFailed}}
 	}

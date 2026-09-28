@@ -117,7 +117,7 @@ func (c *pollingComponent) retryPersistence() PollingSnapshot {
 	s.mu.Lock()
 	persistence := c.persistence
 	s.mu.Unlock()
-	if persistence == nil || persistence.Save(binding, x6.DeviceConfig{PollingRate: *retry}) != nil {
+	if persistence == nil || s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = *retry }) != nil {
 		state.mu.Lock()
 		state.persistence = "failed"
 		state.mu.Unlock()
@@ -198,7 +198,7 @@ func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revi
 		completed = true
 		return nil
 	}
-	if err := persistence.Save(binding, x6.DeviceConfig{PollingRate: rate}); err != nil {
+	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = rate }); err != nil {
 		state.mu.Lock()
 		state.retry, state.persistence = &rate, "failed"
 		state.mu.Unlock()
