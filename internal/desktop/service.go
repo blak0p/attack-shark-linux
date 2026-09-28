@@ -228,7 +228,7 @@ type Service struct {
 	mu                  sync.Mutex
 	settingsPersistence PollingPersistence
 	configMu            sync.Mutex
-	lightingStates      map[DeviceID]*lightingState
+	lightingComponent   *lightingComponent
 	remapStates         map[DeviceID]*remapState
 	legacyRemap         *remapState
 	remapPersistence    RemapPersistence
@@ -246,9 +246,10 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	if err != nil {
 		factory = x6.DefaultDPIConfig()
 	}
-	s := &Service{status: status, writer: writer, store: store, inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}, lightingStates: make(map[DeviceID]*lightingState), remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	s := &Service{status: status, writer: writer, store: store, inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}, remapStates: make(map[DeviceID]*remapState), legacyRemap: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
 	s.dpiComponent = &dpiComponent{service: s, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState)}
 	s.pollingComponent = &pollingComponent{service: s, states: s.inventoryComponent.pollingStates}
+	s.lightingComponent = &lightingComponent{service: s, states: make(map[DeviceID]*lightingState)}
 	return s
 }
 func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
@@ -467,69 +468,16 @@ func (s *Service) GetPollingSnapshot() PollingSnapshot {
 // GetLightingSnapshot reports staged and acknowledged lighting state without
 // claiming a live hardware read.
 func (s *Service) GetLightingSnapshot() LightingSnapshot {
-	return lightingSnapshotOf(s.currentLightingState())
+	return s.lightingComponent.snapshot()
 }
 
 // StageLighting updates only the selected device's pending state.
 func (s *Service) StageLighting(selection x6.LightingSelection) LightingSnapshot {
-	state := s.currentLightingState()
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if err := x6.NewLightingOperation().Validate(selection); err != nil {
-		state.err = Error{Code: InvalidConfiguration}
-		return lightingSnapshotLocked(state)
-	}
-	state.pending = selection
-	state.revision++
-	state.firmware = "pending"
-	state.err = Error{}
-	return lightingSnapshotLocked(state)
+	return s.lightingComponent.stage(selection)
 }
 
 // ApplyLighting writes the staged catalog vector through one validated binding.
-func (s *Service) ApplyLighting() LightingSnapshot {
-	binding, ok := s.selectedBinding()
-	state := s.currentLightingState()
-	if !ok {
-		return s.failLighting(state, SelectionRequired)
-	}
-	state.applyMu.Lock()
-	defer state.applyMu.Unlock()
-	state.mu.Lock()
-	selection, revision := state.pending, state.revision
-	state.mu.Unlock()
-	if !s.bindingCurrent(binding) {
-		return s.failLighting(state, StaleBinding)
-	}
-	s.mu.Lock()
-	inventory := s.inventory
-	s.mu.Unlock()
-	if inventory == nil {
-		return s.failLighting(state, StaleBinding)
-	}
-	settingsState := s.currentSettingsState()
-	settingsState.mu.Lock()
-	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
-	settingsState.mu.Unlock()
-	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewLightingSettingsOperation(), settings); err != nil {
-		if errors.Is(err, mouse.ErrStaleBinding) {
-			return s.failLighting(state, StaleBinding)
-		}
-		return s.failLighting(state, errorCode(err, false))
-	}
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if state.revision != revision {
-		state.firmware = "failed"
-		state.err = Error{Code: ApplyFailed}
-		return lightingSnapshotLocked(state)
-	}
-	applied := selection
-	state.applied = &applied
-	state.firmware = "success"
-	state.err = Error{}
-	return lightingSnapshotLocked(state)
-}
+func (s *Service) ApplyLighting() LightingSnapshot { return s.lightingComponent.apply() }
 
 // GetRemapSnapshot reports local remap truth; the device has no remap readback.
 func (s *Service) GetRemapSnapshot() RemapSnapshot { return remapSnapshotOf(s.currentRemapState()) }
@@ -658,14 +606,6 @@ func (s *Service) failRemap(state *remapState, code ErrorCode) RemapSnapshot {
 	return remapSnapshotLocked(state)
 }
 
-func (s *Service) failLighting(state *lightingState, code ErrorCode) LightingSnapshot {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.firmware = "failed"
-	state.err = Error{Code: code}
-	return lightingSnapshotLocked(state)
-}
-
 func (s *Service) StagePollingRate(rate x6.PollingRate) PollingSnapshot {
 	return s.pollingComponent.stage(rate)
 }
@@ -727,20 +667,7 @@ func newDeviceState(applied, factory x6.DPIConfig) *deviceState {
 
 func (s *Service) currentState() *deviceState { return s.dpiComponent.currentState() }
 
-func (s *Service) currentLightingState() *lightingState {
-	binding, ok := s.selectedBinding()
-	if !ok {
-		return newLightingState()
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	state := s.lightingStates[binding.ID]
-	if state == nil {
-		state = newLightingState()
-		s.lightingStates[binding.ID] = state
-	}
-	return state
-}
+func (s *Service) currentLightingState() *lightingState { return s.lightingComponent.currentState() }
 
 func newRemapState(applied, factory x6.RemapConfig) *remapState {
 	return &remapState{applied: cloneRemapConfig(applied), pending: cloneRemapConfig(applied), factory: cloneRemapConfig(factory)}
@@ -803,25 +730,6 @@ func snapshotOf(state *deviceState) Snapshot {
 
 func snapshotLocked(state *deviceState) Snapshot {
 	return Snapshot{Connection: string(state.connection), Battery: state.battery, Applied: ToDTO(state.applied), Pending: ToDTO(state.pending), Factory: ToDTO(state.factory), Revision: state.revision, Error: state.err, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, ObservedStage: state.observedStage, ObservedDPI: state.observedDPI}
-}
-
-func newLightingState() *lightingState {
-	return &lightingState{pending: x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen}}
-}
-
-func lightingSnapshotOf(state *lightingState) LightingSnapshot {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	return lightingSnapshotLocked(state)
-}
-
-func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
-	var applied *x6.LightingSelection
-	if state.applied != nil {
-		copy := *state.applied
-		applied = &copy
-	}
-	return LightingSnapshot{Pending: state.pending, Applied: applied, Effects: x6.LightingEffects(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
 }
 
 func remapSnapshotOf(state *remapState) RemapSnapshot {

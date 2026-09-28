@@ -20,11 +20,61 @@ type gatedSettingsCommand struct {
 }
 
 func (c *gatedSettingsCommand) SendAndAwaitBound(_ context.Context, _ mouse.Binding, report []byte, continueReading func([]byte) bool) error {
-	if c.reports != nil { c.reports <- append([]byte(nil), report...) }
+	if c.reports != nil {
+		c.reports <- append([]byte(nil), report...)
+	}
 	close(c.entered)
 	<-c.release
 	continueReading([]byte{0x03, 0x10, 0x50, 0, 0x04})
 	return nil
+}
+
+func TestSleepApplyUsesLightingForCapturedBinding(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidates := []transport.Candidate{
+		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"},
+		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "beta", Path: "/dev/hidraw1"},
+	}
+	command := &gatedSettingsCommand{entered: make(chan struct{}), release: make(chan struct{}), reports: make(chan []byte, 2)}
+	close(command.release)
+	target := mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command)
+	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(target)
+	devices := s.RefreshInventory(context.Background()).Devices
+	a, b := devices[0].ID, devices[1].ID
+	s.SelectDevice(a)
+	s.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
+	s.SelectDevice(b)
+	s.StageLighting(x6.LightingSelection{Mode: x6.LightingColorBreathing, TemplateID: x6.LightingTemplateColorBreathingOne})
+	s.SelectDevice(a)
+	// The first write establishes A's expected wire vector without relying on packet layout.
+	readReport := func() []byte {
+		t.Helper()
+		select {
+		case report := <-command.reports:
+			return report
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for lighting settings report")
+			return nil
+		}
+	}
+	s.ApplyNormalSleep()
+	want := readReport()
+	command.entered = make(chan struct{})
+	s.lightingComponent.beforeSettingsLightingRead = func() {
+		if err := target.Select(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.lightingComponent.afterSettingsLightingRead = func() {
+		if err := target.Select(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.ApplyNormalSleep()
+	got := readReport()
+	if string(got) != string(want) {
+		t.Fatalf("A binding paired with B lighting: got report %v, want A report %v", got, want)
+	}
 }
 
 func TestSettingsApplyKeepsOriginalBindingAcrossSelection(t *testing.T) {
@@ -69,7 +119,9 @@ func TestSettingsApplyKeepsOriginalBindingAcrossSelection(t *testing.T) {
 func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 	for _, normal := range []bool{true, false} {
 		name := "debounce"
-		if normal { name = "normal sleep" }
+		if normal {
+			name = "normal sleep"
+		}
 		t.Run(name, func(t *testing.T) {
 			registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
@@ -117,7 +169,11 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 			staged := make(chan struct{})
 			go func() {
 				close(stageStarted)
-				if normal { s.StageNormalSleep(18) } else { s.StageDebounce(4) }
+				if normal {
+					s.StageNormalSleep(18)
+				} else {
+					s.StageDebounce(4)
+				}
 				close(staged)
 			}()
 			wait(stageStarted, "stage goroutine start")

@@ -151,10 +151,16 @@ func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 	st.mu.Lock()
 	minutes, ms := st.normalSleep, st.responseTimeMs
 	st.mu.Unlock()
-	lighting := s.currentLightingState()
+	if hook := s.lightingComponent.beforeSettingsLightingRead; hook != nil {
+		hook()
+	}
+	lighting := s.lightingComponent.stateForBinding(b)
 	lighting.mu.Lock()
 	selection := lighting.pending
 	lighting.mu.Unlock()
+	if hook := s.lightingComponent.afterSettingsLightingRead; hook != nil {
+		hook()
+	}
 	s.mu.Lock()
 	inventory := s.inventory
 	s.mu.Unlock()
