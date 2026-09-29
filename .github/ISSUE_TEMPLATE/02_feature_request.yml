@@ -7,6 +7,20 @@ body:
     attributes:
       value: |
         Thanks for suggesting a feature! For larger changes, please consider starting a [Discussion](https://github.com/blak0p/attack-shark-linux/discussions) first.
+        
+        **Note:** This project is currently focused on the Attack Shark X6. Features for other Attack Shark models can be suggested here, but we encourage discussing device support separately in a [Device Support issue](https://github.com/blak0p/attack-shark-linux/issues/new?template=03_device_support.yml).
+
+  - type: dropdown
+    id: device_scope
+    attributes:
+      label: Device scope
+      description: Is this feature for the currently supported X6, or for another Attack Shark model?
+      options:
+        - "Attack Shark X6 (currently supported)"
+        - "Other Attack Shark model"
+        - "Not device-specific / General improvement"
+    validations:
+      required: true
 
   - type: textarea
     id: problem
