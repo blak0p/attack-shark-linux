@@ -46,6 +46,67 @@ func TestDPIComponentOwnsLegacyStageAndApply(t *testing.T) {
 	}
 }
 
+func TestDPIComponentRefreshStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		status x6.Status
+		err    error
+		want   ErrorCode
+	}{
+		{name: "success", status: x6.Status{Connection: "wireless", BatteryAvailable: true, BatteryPercent: 73}},
+		{name: "unavailable battery", status: x6.Status{Connection: "wired"}},
+		{name: "permission denied", err: fmt.Errorf("status: %w", syscall.EACCES), want: PermissionDenied},
+		{name: "disconnected", err: os.ErrNotExist, want: DeviceDisconnected},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(statusFake{status: tt.status, err: tt.err}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+			state := service.dpiComponent.currentState()
+			battery := 42
+			state.battery, state.connection, state.err = &battery, "previous", Error{Code: PersistenceFailed}
+			before := service.GetSnapshot()
+			got := service.dpiComponent.refreshStatus(context.Background())
+			if got.Error.Code != tt.want {
+				t.Fatalf("error = %q, want %q", got.Error.Code, tt.want)
+			}
+			wantBattery, wantConnection := 42, "previous"
+			if tt.err == nil {
+				wantConnection = string(tt.status.Connection)
+				if tt.status.BatteryAvailable {
+					wantBattery = tt.status.BatteryPercent
+				}
+			}
+			if got.Battery == nil || *got.Battery != wantBattery || got.Connection != wantConnection {
+				t.Fatalf("status = %+v, want connection %q battery %d", got, wantConnection, wantBattery)
+			}
+			if got.Applied != before.Applied || got.Pending != before.Pending || got.Revision != before.Revision {
+				t.Fatal("status refresh changed DPI configuration")
+			}
+		})
+	}
+}
+
+func TestDPIComponentReconcileFactoryReset(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	state := service.dpiComponent.currentState()
+	pending := state.pending
+	pending.DPI[0] = 1600
+	state.pending, state.retry, state.revision = pending, &pending, 9
+	state.firmware, state.persistence, state.err = "failed", "failed", Error{Code: PersistenceFailed}
+	before := service.GetSnapshot()
+	service.dpiComponent.reconcileFactoryReset()
+	got := service.GetSnapshot()
+	defaults := ToDTO(x6.DocumentedResetDPIConfig())
+	if got.Applied != defaults || got.Pending != defaults || got.Revision != 10 {
+		t.Fatalf("reset configuration = %+v", got)
+	}
+	if got.Firmware != "success" || got.Persistence != "success" || got.RetryAvailable || got.Error.Code != "" {
+		t.Fatalf("reset outcome = %+v", got)
+	}
+	if got.Factory != before.Factory || got.Connection != before.Connection || got.Battery != before.Battery {
+		t.Fatal("reset changed unrelated snapshot state")
+	}
+}
+
 type statusFake struct {
 	status x6.Status
 	err    error

@@ -18,6 +18,34 @@ type dpiComponent struct {
 	sync    *SyncCoordinator
 }
 
+func (c *dpiComponent) refreshStatus(ctx context.Context) Snapshot {
+	status, err := c.service.status.Status(ctx)
+	state := c.currentState()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err != nil {
+		state.err = Error{Code: errorCode(err, true)}
+		return snapshotLocked(state)
+	}
+	state.connection = status.Connection
+	if status.BatteryAvailable {
+		battery := status.BatteryPercent
+		state.battery = &battery
+	}
+	state.err = Error{}
+	return snapshotLocked(state)
+}
+
+func (c *dpiComponent) reconcileFactoryReset() {
+	state := c.currentState()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	factory := x6.DocumentedResetDPIConfig()
+	state.applied, state.pending = factory, factory
+	state.revision++
+	state.firmware, state.persistence, state.retry, state.err = "success", "success", nil, Error{}
+}
+
 func (c *dpiComponent) attachSync(scheduler SyncScheduler) {
 	c.sync = NewSyncCoordinator(scheduler, c.service.bindingCurrent, c.applyBound)
 }

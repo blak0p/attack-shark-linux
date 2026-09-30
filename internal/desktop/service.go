@@ -432,21 +432,7 @@ func (s *Service) GetSnapshot() Snapshot {
 	return snapshotOf(s.currentState())
 }
 func (s *Service) RefreshStatus(ctx context.Context) Snapshot {
-	status, err := s.status.Status(ctx)
-	state := s.currentState()
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if err != nil {
-		state.err = Error{Code: errorCode(err, true)}
-		return snapshotLocked(state)
-	}
-	state.connection = status.Connection
-	if status.BatteryAvailable {
-		battery := status.BatteryPercent
-		state.battery = &battery
-	}
-	state.err = Error{}
-	return snapshotLocked(state)
+	return s.dpiComponent.refreshStatus(ctx)
 }
 func (s *Service) StageDPI(config DPIConfig) Snapshot { return s.dpiComponent.stage(config) }
 
@@ -518,13 +504,7 @@ func (s *Service) ResetToFactory(ctx context.Context) ResetResult {
 }
 
 func (s *Service) reconcileFactoryReset() {
-	state := s.currentState()
-	state.mu.Lock()
-	factory := x6.DocumentedResetDPIConfig()
-	state.applied, state.pending = factory, factory
-	state.revision++
-	state.firmware, state.persistence, state.retry, state.err = "success", "success", nil, Error{}
-	state.mu.Unlock()
+	s.dpiComponent.reconcileFactoryReset()
 
 	s.pollingComponent.reconcileFactoryReset()
 
