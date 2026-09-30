@@ -1,8 +1,9 @@
-FROM docker.io/library/golang:1.25 AS go-toolchain
+FROM docker.io/library/golang:1.27.1 AS go-toolchain
 
 FROM docker.io/library/ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    GOTOOLCHAIN=local \
     GOPATH=/opt/go \
     GOCACHE=/tmp/go-build \
     GOMODCACHE=/opt/go/pkg/mod \

@@ -3,7 +3,9 @@ schema: spec-driven
 artifact_store: hybrid
 
 context: |
-  Tech stack: Go 1.25 backend with Wails v3 desktop composition and React/Vite frontend.
+  Tech stack: Go 1.27.1 backend with Wails v3.0.0-beta.25 desktop composition and React/Vite frontend.
+  Build alignment: backend module, Wails CLI and frontend runtime share beta.25;
+  CI, rootless test container and Ubuntu AppImage builder pin Go 1.27.1.
   Architecture: pure X6 protocol in internal/protocol/x6; typed X6 adapter in internal/x6;
   HID binding and transport in internal/hidlinux/internal/transport; selected-device orchestration
   in internal/desktop; handwritten frontend contracts under frontend/src; generated bindings are
