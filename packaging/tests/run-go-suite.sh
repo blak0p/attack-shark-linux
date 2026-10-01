@@ -2,7 +2,7 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-image=localhost/attack-shark-go-tests:1.25-ubuntu24.04
+image=localhost/attack-shark-go-tests:1.27.1-ubuntu24.04
 
 if ! command -v podman >/dev/null 2>&1; then
     echo 'Rootless Podman is required; no host packages will be installed.' >&2
@@ -32,8 +32,8 @@ podman run --rm --network none --read-only \
     "$image" sh -ec '
         version=$(go env GOVERSION)
         case "$version" in
-            go1.25.*) ;;
-            *) echo "Expected Go 1.25, found $version" >&2; exit 1 ;;
+            go1.27.1) ;;
+            *) echo "Expected Go 1.27.1, found $version" >&2; exit 1 ;;
         esac
         for package in gtk4 webkitgtk-6.0 libsoup-3.0; do
             pkg-config --exists "$package" || {

@@ -528,8 +528,48 @@ func TestReleasePackagingInjectsOnlyNormalizedPublicBuildContract(t *testing.T) 
 	if err != nil {
 		t.Fatalf("read module definition: %v", err)
 	}
-	if !strings.Contains(string(module), "github.com/wailsapp/wails/v3 v3.0.0-beta.23") {
-		t.Fatal("Go module must align with the beta.23 packaging CLI")
+	if !strings.Contains(string(module), "github.com/wailsapp/wails/v3 v3.0.0-beta.25") {
+		t.Fatal("Go module must align with the beta.25 packaging CLI")
+	}
+}
+
+// Keep the toolchain and Wails release train coordinated across every build route.
+func TestBuildVersionAlignment(t *testing.T) {
+	contracts := []struct {
+		path string
+		pins []string
+	}{
+		{"../../go.mod", []string{"go 1.27.1", "github.com/wailsapp/wails/v3 v3.0.0-beta.25", "golang.org/x/sys v0.48.0"}},
+		{"../../frontend/package.json", []string{`"@wailsio/runtime":"3.0.0-beta.25"`}},
+		{"../../frontend/package-lock.json", []string{`"@wailsio/runtime": "3.0.0-beta.25"`, `"version": "3.0.0-beta.25"`}},
+		{"../../.github/workflows/test.yml", []string{"go-version: '1.27.1'"}},
+		{"../../.github/workflows/codeql.yml", []string{"go-version: '1.27.1'"}},
+		{"../../.github/workflows/release.yml", []string{"go-version: '1.27.1'", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25"}},
+		{"../../packaging/tests/Containerfile", []string{"FROM docker.io/library/golang:1.27.1 AS go-toolchain", "COPY --from=go-toolchain /usr/local/go /usr/local/go"}},
+		{"../../packaging/tests/run-go-suite.sh", []string{"attack-shark-go-tests:1.27.1-ubuntu24.04", "go1.27.1) ;;", "Expected Go 1.27.1", "--network none", "--read-only"}},
+		{"../../packaging/appimage/Containerfile", []string{"FROM docker.io/library/golang:1.27.1 AS go-toolchain", "COPY --from=go-toolchain /usr/local/go /usr/local/go", "PATH=/usr/local/go/bin:", "GOTOOLCHAIN=local", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25"}},
+		{"../../README.md", []string{"Go 1.27.1", "v3.0.0-beta.25"}},
+		{"../../CONTRIBUTING.md", []string{"Go 1.27.1", "v3.0.0-beta.25"}},
+		{"../../docs/linux-usb-prerequisites.md", []string{"Go 1.27.1", "v3.0.0-beta.25"}},
+		{"../../openspec/config.yaml", []string{"Go 1.27.1", "strict_tdd: true"}},
+	}
+	for _, contract := range contracts {
+		t.Run(contract.path, func(t *testing.T) {
+			contents, err := os.ReadFile(contract.path)
+			if err != nil {
+				t.Fatalf("read build contract: %v", err)
+			}
+			for _, pin := range contract.pins {
+				if !strings.Contains(string(contents), pin) {
+					t.Errorf("build contract must contain %q", pin)
+				}
+			}
+			for _, stale := range []string{"1.25", "1.26", "beta.23", "beta.24", "golang:latest", "golang-go"} {
+				if strings.Contains(string(contents), stale) {
+					t.Errorf("build contract contains stale or floating pin %q", stale)
+				}
+			}
+		})
 	}
 }
 
@@ -565,7 +605,7 @@ func TestRootlessUbuntuAppImageContainerRoute(t *testing.T) {
 		"libwebkitgtk-6.0-dev",
 		"libwebkitgtk-6.0-4",
 		"libayatana-appindicator3-dev",
-		"go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23",
+		"go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25",
 	} {
 		if !strings.Contains(string(containerfile), want) {
 			t.Errorf("AppImage builder containerfile must contain %q", want)

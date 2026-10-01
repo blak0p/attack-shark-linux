@@ -24,9 +24,12 @@ The policy never requires root and must not be changed to world-writable `0666`.
 
 ## Build prerequisite
 
-The release packaging toolchain uses Wails
-`github.com/wailsapp/wails/v3 v3.0.0-beta.23`; this document does not upgrade
-it. Build and run the fake-only hidraw tests with:
+The release packaging toolchain uses Go 1.27.1 and Wails
+`github.com/wailsapp/wails/v3 v3.0.0-beta.25`, with the CLI and frontend runtime
+pinned to the same Wails version. Both Ubuntu builders copy Go 1.27.1 from the
+versioned upstream image rather than installing Ubuntu's older Go package.
+GTK4 and WebKitGTK 6 remain required native build dependencies.
+Build and run the fake-only hidraw tests with:
 
 ```sh
 # Generate the assets embedded by cmd/x6configurator before Go checks or builds.
