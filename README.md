@@ -140,8 +140,8 @@ profiles are stored on the mouse.
 ## Building
 
 Requirements: Go 1.27.1, Node.js 22 (for the frontend), and [Task](https://taskfile.dev).
-The backend, CLI, and frontend runtime are pinned to Wails v3.0.0-beta.25.
-Install the matching CLI with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25`.
+The backend, CLI, and frontend runtime are pinned to Wails v3.0.0-beta.26.
+Install the matching CLI with `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26`.
 CI and both Ubuntu builders use Go 1.27.1; update the complete chain together,
 not just `go.mod`. The builders copy the explicit upstream Go image toolchain
 while retaining Ubuntu's GTK4 and WebKitGTK 6 native dependencies.
