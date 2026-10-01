@@ -10,6 +10,13 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
+func TestLightingOwnerTracksSelectedState(t *testing.T) {
+	service := newLightingService(t, &lightingCommandFake{})
+	if service.lightingComponent == nil || service.lightingComponent.currentState() != service.currentLightingState() {
+		t.Fatal("lighting owner does not retain selected device state")
+	}
+}
+
 func TestLightingStageUsesPerDevicePendingStateWithoutIO(t *testing.T) {
 	command := &lightingCommandFake{}
 	service := newLightingService(t, command)

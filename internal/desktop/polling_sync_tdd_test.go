@@ -11,6 +11,22 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
+func TestPollingComponentOwnsSelectedStateAndPreservesSleepPersistence(t *testing.T) {
+	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	if service.pollingComponent == nil || service.pollingComponent.states == nil {
+		t.Fatal("polling component must own initialized per-device state")
+	}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	service.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
+	service.RefreshInventory(context.Background())
+	service.StageNormalSleep(12)
+	service.StagePollingRate(x6.PollingRate500)
+	if got := service.GetNormalSleepSnapshot().Pending; got != 12 {
+		t.Fatalf("sleep pending = %v; want 12 after polling stage", got)
+	}
+}
+
 func TestPollingSyncCoordinatorCoalescesLatestTargetedRevision(t *testing.T) {
 	scheduler := &fakeSyncScheduler{}
 	var calls []pollingCall
