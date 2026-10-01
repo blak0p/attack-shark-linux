@@ -43,8 +43,8 @@ codebase.
 
 **Requirements:** Go 1.27.1 · Node.js 22 · the X6 dongle (for manual device testing).
 
-Use Wails v3.0.0-beta.25 for the backend, CLI, and frontend runtime:
-`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25`.
+Use Wails v3.0.0-beta.26 for the backend, CLI, and frontend runtime:
+`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26`.
 When upgrading Go or Wails, align the module, runtime lockfile, CI workflows,
 test container/version guard, AppImage builder, and these documented requirements.
 `TestBuildVersionAlignment` protects the supported build chain; do not bypass it
