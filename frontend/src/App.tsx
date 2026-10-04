@@ -14,6 +14,7 @@ import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
 import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { DeviceStatusPanel } from "./components/panels/DeviceStatusPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
+import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 export type {
   ConfigurationEvent,
@@ -94,7 +95,20 @@ export function App({ service }: { service: DesktopService }) {
     updateError,
   } = model;
 
-  if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
+  const macroWorkspace = (
+    <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
+      <MacroManagerPanel service={service} />
+    </WorkspaceView>
+  );
+
+  if (!snapshot) return (
+    <WorkspaceShell deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
+      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
+      connectionStatus={<p className="connection offline">Device configuration loading</p>}>
+      {macroWorkspace}
+      <WorkspaceView id="performance" title="Performance"><p role="status">Loading configuration…</p></WorkspaceView>
+    </WorkspaceShell>
+  );
 
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
   const connected = ready && !inventory?.Error.Code &&
@@ -210,6 +224,7 @@ export function App({ service }: { service: DesktopService }) {
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}
     >
+      {macroWorkspace}
       {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView

@@ -75,6 +75,7 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   let pendingLighting = lightingSnapshot().Pending;
 
   return {
+  ListMacros: vi.fn().mockResolvedValue([]), ReadMacro: vi.fn(), CreateMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
       GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot()),
@@ -95,7 +96,7 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
       ApplyNormalSleep: vi.fn().mockResolvedValue(normalSleepSnapshot({ Firmware: "success" })),
       RetryNormalSleepPersistence: vi.fn().mockResolvedValue(normalSleepSnapshot()),
 	StageLighting: vi.fn().mockImplementation(async (selection) => { pendingLighting = selection; return lightingSnapshot({ Pending: selection, Revision: 1 }); }),
-	StageRemap: vi.fn().mockResolvedValue(remapSnapshot()),
+	ApplyRemap: vi.fn().mockResolvedValue(remapSnapshot()),
 	ApplyLighting: vi.fn().mockImplementation(async () => lightingSnapshot({ Pending: pendingLighting, Applied: pendingLighting, Firmware: "success" })),
 	RetryRemapPersistence: vi.fn().mockResolvedValue(remapSnapshot()),
   RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
@@ -122,6 +123,40 @@ const chooseLightingEffect = async (label: string) => {
 };
 
 describe("App", () => {
+  it("navigates to the shared library without selected/connected devices or device writes", async () => {
+    const service = serviceFor(snapshot({ Error: { Code: "device_disconnected" } }), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "device_disconnected" } }),
+      CreateMacro: vi.fn().mockResolvedValue({ id: "local", name: "Offline", events: [] }),
+    });
+    render(<App service={service} />);
+    fireEvent.click(await screen.findByRole("link", { name: "Macros" }));
+    expect(screen.getByRole("region", { name: "Macros" })).toHaveAttribute("data-active", "true");
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+    expect(await screen.findByRole("button", { name: "Offline · 0 events" })).toBeInTheDocument();
+    expect(service.ApplyDPI).not.toHaveBeenCalled();
+    expect(service.ApplyPollingRate).not.toHaveBeenCalled();
+    expect(service.ApplyRemap).not.toHaveBeenCalled();
+    expect(service.StageDPI).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("link", { name: "Device" }));
+    fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+    expect(screen.getByLabelText("Macro name")).toHaveValue("Offline");
+  });
+
+  it("keeps the library usable while device configuration is still loading", async () => {
+    const pending = deferred<Snapshot>();
+    const service = serviceFor(snapshot(), { RefreshStatus: vi.fn().mockReturnValue(pending.promise) });
+    render(<App service={service} />);
+    fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New macro" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Keep draft" } });
+    await act(async () => pending.resolve(snapshot()));
+    expect(screen.getByLabelText("Macro name")).toHaveValue("Keep draft");
+    expect(screen.getByRole("region", { name: "Macros" })).toHaveAttribute("data-active", "true");
+    expect(service.ListMacros).toHaveBeenCalledTimes(1);
+  });
   it("shows the installed application version in Device, not the update target or firmware", async () => {
     const service = serviceFor(snapshot({ Firmware: "success" }), {
       GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
@@ -577,7 +612,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     render(<App service={serviceFor(snapshot())} />);
 
     await screen.findByText("Device available");
-	 expect(screen.queryByRole("button", { name: /macro|profile/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Macros" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New macro" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /profile|record|play|import|export/i })).not.toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });

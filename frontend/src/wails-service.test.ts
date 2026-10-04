@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
+  ListMacros: vi.fn(), CreateMacro: vi.fn(), ReadMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
   GetApplicationVersion: vi.fn(),
   CheckForUpdate: vi.fn(),
   ApplyVerifiedUpdate: vi.fn(),
@@ -40,6 +41,25 @@ vi.mock("@wailsio/runtime", () => runtime);
 import { desktopService } from "./wails-service";
 
 describe("desktopService", () => {
+  it("maps local macro CRUD to generated APIs with lowercase JSON fields and no device apply", async () => {
+    const events = [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 15 }];
+    const macro = { id: "stable", name: "Clicks", events };
+    bindings.ListMacros.mockResolvedValue([macro]);
+    bindings.ReadMacro.mockResolvedValue(macro);
+    bindings.CreateMacro.mockResolvedValue(macro);
+    bindings.UpdateMacro.mockResolvedValue(macro);
+    expect(await desktopService.ListMacros()).toEqual([macro]);
+    expect(await desktopService.ReadMacro("stable")).toEqual(macro);
+    expect(await desktopService.CreateMacro("Clicks", events)).toEqual(macro);
+    expect(await desktopService.UpdateMacro("stable", "Clicks", events)).toEqual(macro);
+    await desktopService.DeleteMacro("stable");
+    expect(bindings.ReadMacro).toHaveBeenCalledWith("stable");
+    expect(bindings.CreateMacro).toHaveBeenCalledWith("Clicks", events);
+    expect(bindings.UpdateMacro).toHaveBeenCalledWith("stable", "Clicks", events);
+    expect(bindings.DeleteMacro).toHaveBeenCalledWith("stable");
+    expect(bindings.ApplyRemap).not.toHaveBeenCalled();
+    expect(bindings.ApplyDPI).not.toHaveBeenCalled();
+  });
   it("forwards each UI operation to its generated Wails binding", () => {
     const config = { DPI: [1600], ActiveStage: 0, StageMask: 1, LiftDistance: 1 };
 

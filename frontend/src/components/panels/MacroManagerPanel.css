@@ -1,0 +1,43 @@
+.macro-manager {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.macro-library, .macro-detail { min-width: 0; }
+.macro-library .card-head { flex-wrap: wrap; gap: 10px; }
+.macro-cards { display: grid; gap: 10px; margin: 16px 0; }
+.macro-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.macro-card span { color: var(--muted); font-size: 12px; }
+.macro-card[aria-pressed="true"] { border-color: var(--accent); background: var(--rail); }
+.macro-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.macro-card:disabled { opacity: .5; cursor: not-allowed; }
+.macro-name { display: grid; gap: 8px; }
+.macro-name input {
+  width: 100%; min-width: 0; padding: 10px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--rail); color: var(--text); font: inherit;
+}
+.macro-name input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.macro-events { margin: 16px 0; }
+.macro-events li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.macro-empty { padding: 24px 0; color: var(--muted); }
+.macro-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.macro-error { color: var(--danger); overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .macro-manager { grid-template-columns: minmax(0, 1fr); }
+}

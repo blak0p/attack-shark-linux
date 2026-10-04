@@ -24,6 +24,7 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
   const unsubscribeConfiguration = vi.fn();
   const unsubscribePolling = vi.fn(); const unsubscribeRemap = vi.fn();
   const service: DesktopService = {
+    ListMacros: vi.fn().mockResolvedValue([]), ReadMacro: vi.fn(), CreateMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
     GetSnapshot: vi.fn().mockResolvedValue(snapshot()),
     GetPollingSnapshot: vi.fn().mockResolvedValue(polling()),
     GetDebounceSnapshot: vi.fn().mockResolvedValue(debounce()),
@@ -45,6 +46,7 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
     RetryNormalSleepPersistence: vi.fn().mockResolvedValue(normalSleep()),
 		StageLighting: vi.fn().mockResolvedValue(lighting()),
 		ApplyLighting: vi.fn().mockResolvedValue(lighting()),
+    ApplyRemap: vi.fn().mockResolvedValue(remap()),
 		RetryRemapPersistence: vi.fn().mockResolvedValue(remap()),
     ResetToFactory: vi.fn().mockResolvedValue({ Lanes: [], Cleanup: { Lane: "cleanup", State: "success", Code: "" }, Error: { Code: "" }, RetryAvailable: false }),
     RetryPersistence: vi.fn().mockResolvedValue(snapshot()),

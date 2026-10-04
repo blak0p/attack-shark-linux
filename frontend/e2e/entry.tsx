@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "../src/App";
-import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction } from "../src/desktop-contract";
+import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent } from "../src/desktop-contract";
 import "../src/styles.css";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
@@ -43,8 +43,30 @@ let failNext = false;
 const record = (operation: string, value?: number, requested?: DeviceID) => {
   calls.push({ operation, destination: { ...selected.ID }, ...(requested ? { requested: { ...requested } } : {}), ...(value === undefined ? {} : { value }) });
 };
-const inventory = () => ({ Devices: ids, Selected: selected, Error: { Code: "" } });
+const offline = new URLSearchParams(window.location.search).has("offline");
+if (offline) currentDPI = { ...currentDPI, Error: { Code: "device_disconnected" } };
+const inventory = () => ({ Devices: offline ? [] : ids, Selected: offline ? null : selected, Error: { Code: "" } });
+const macros = new Map<string, Macro>();
+const macroCalls: string[] = [];
+let macroID = 0;
+const readMacro = (id: string) => {
+  const macro = macros.get(id);
+  if (!macro) throw new Error("Macro not found");
+  return structuredClone(macro);
+};
 const service = {
+  ListMacros: async () => [...macros.values()].map((macro) => structuredClone(macro)),
+  ReadMacro: async (id: string) => readMacro(id),
+  CreateMacro: async (name: string, events: MacroEvent[]) => {
+    const macro = { id: `macro-${++macroID}`, name, events: structuredClone(events) };
+    macros.set(macro.id, macro); macroCalls.push("CreateMacro"); return structuredClone(macro);
+  },
+  UpdateMacro: async (id: string, name: string, events: MacroEvent[]) => {
+    readMacro(id);
+    const macro = { id, name, events: structuredClone(events) };
+    macros.set(id, macro); macroCalls.push("UpdateMacro"); return structuredClone(macro);
+  },
+  DeleteMacro: async (id: string) => { readMacro(id); macros.delete(id); macroCalls.push("DeleteMacro"); },
   GetApplicationVersion: undefined, CheckForUpdate: undefined,
   RefreshStatus: async () => currentDPI, GetSnapshot: async () => currentDPI,
   RefreshInventory: async () => inventory(),
@@ -107,7 +129,7 @@ const guarded = new Proxy(service, {
     return Reflect.get(target, key);
   },
 }) as unknown as DesktopService;
-Object.assign(window, { __routingTest: {
+Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)) }, __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
   dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });

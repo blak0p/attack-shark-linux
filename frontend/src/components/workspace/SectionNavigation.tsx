@@ -5,6 +5,7 @@ const sections: Array<{ id: WorkspaceViewId; label: string; glyph: string }> = [
   { id: "lighting", label: "Lighting", glyph: "☼" },
   { id: "controls", label: "Controls", glyph: "⌁" },
   { id: "remapping", label: "Button remapping", glyph: "↺" },
+  { id: "macros", label: "Macros", glyph: "≡" },
   { id: "device", label: "Device", glyph: "▣" },
 ];
 
