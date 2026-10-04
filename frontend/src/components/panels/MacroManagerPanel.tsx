@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 import { useMacroLibrary } from "../../hooks/useMacroLibrary";
+import { exportMacroFile, MAX_MACRO_FILE_BYTES } from "../../macros/macro-file";
 import "./MacroManagerPanel.css";
 
 export function MacroManagerPanel({ service }: { service: MacroLibraryService }) {
@@ -58,6 +59,25 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
     library.appendRecordedEvents(current.events);
     setRecordingMessage(`${current.events.length} recorded events appended to draft. Save explicitly to keep them.`);
   };
+  const upload = (file?: File) => {
+    if (!file || editorDisabled) return;
+    void library.importFile(async () => {
+      if (file.size > MAX_MACRO_FILE_BYTES) throw new Error("Macro JSON file is too large (local file safety budget: 1 MiB).");
+      return file.text();
+    });
+  };
+  const download = () => {
+    if (!library.savedMacro || editorDisabled) return;
+    try {
+      const text = exportMacroFile(library.savedMacro);
+      const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      try {
+        const link = document.createElement("a");
+        link.href = url; link.download = "macro.json";
+        link.click();
+      } finally { URL.revokeObjectURL(url); }
+    } catch (failure) { library.reportFileError(failure); }
+  };
   return (
     <div className="macro-manager" aria-busy={busy}>
       <article className="card macro-library" aria-label="Macro library">
@@ -66,6 +86,11 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
           <button type="button" className="button primary" disabled={busy || loading} onClick={() => { discardRecording(); library.newMacro(); }}>New macro</button>
         </div>
         <p className="hint">Shared across devices. Available offline.</p>
+        <label className="macro-name">Import macro JSON
+          <input type="file" accept=".json,application/json" disabled={editorDisabled}
+            onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; upload(file); }} />
+        </label>
+        <p className="hint">One version-1 JSON macro per file, up to 1 MiB (local file safety budget, not a device limit). Import creates a new copy, even with a duplicate name; existing macros are never replaced.</p>
         {loading && <p role="status">Loading library…</p>}
         {!loading && loaded && macros.length === 0 && <p className="hint">No macros in your library yet.</p>}
         <div className="macro-cards">
@@ -82,6 +107,8 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
       <article className="card macro-detail" aria-label="Macro details">
         <h2>{draft?.id ? "Macro details" : "New macro"}</h2>
         <p className="hint">Save to library only. Device assignment comes later.</p>
+        <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
+        <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
         {reading && <p role="status">Loading macro…</p>}
         {!draft ? <p className="macro-empty">Select a macro or create a new one.</p> : (
           <>

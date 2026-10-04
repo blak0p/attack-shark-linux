@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MacroManagerPanel } from "./MacroManagerPanel";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("records only armed zone input in order, appends on stop and persists only on explicit save", async () => {
   const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
@@ -207,6 +207,96 @@ it("does not mutate loaded library events before save and resets invalid edits o
   fireEvent.click(card);
   await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   expect(screen.getByLabelText("Event 1 delay (ms)")).toHaveValue("12");
+});
+
+const upload = (text: string) => {
+  const file = new File([text], "macro.json", { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => text });
+  fireEvent.change(screen.getByLabelText("Import macro JSON"), { target: { files: [file] } });
+};
+const fileText = JSON.stringify({ version: 1, name: "Clicks", events: [{ type: "mouse_left", action: "up", delay_ms: 5 }] });
+
+it("imports duplicates as new copies, preserves drafts on validation/storage errors and never calls device APIs", async () => {
+  const device = vi.fn();
+  const service = { ...serviceFor({ CreateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (name, events) => ({ id: "fresh", name, events })) }), ApplyRemap: device };
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  fireEvent.change(await screen.findByLabelText("Macro name"), { target: { value: "Unsaved" } });
+  upload("{");
+  expect(await screen.findByRole("alert")).toHaveTextContent("JSON");
+  expect(service.CreateMacro).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved");
+  upload(fileText);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved");
+  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
+  upload(fileText);
+  await screen.findByRole("button", { name: "Clicks · 1 events" });
+  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
+  expect(service.CreateMacro).toHaveBeenLastCalledWith("Clicks", [{ type: "mouse_left", action: "up", delay_ms: 5 }]);
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+  expect(service.DeleteMacro).not.toHaveBeenCalled();
+  expect(device).not.toHaveBeenCalled();
+});
+
+it("rejects oversized uploads before reading and preserves the library on file read errors", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  const input = screen.getByLabelText("Import macro JSON");
+  const file = new File([], "large.json");
+  const read = vi.fn().mockRejectedValue(new Error("File unreadable"));
+  Object.defineProperty(file, "size", { configurable: true, value: 1024 * 1024 + 1 });
+  Object.defineProperty(file, "text", { value: read });
+  fireEvent.change(input, { target: { files: [file] } });
+  expect(await screen.findByRole("alert")).toHaveTextContent("too large");
+  expect(read).not.toHaveBeenCalled();
+  Object.defineProperty(file, "size", { value: 0 });
+  fireEvent.change(input, { target: { files: [file] } });
+  expect(await screen.findByRole("alert")).toHaveTextContent("File unreadable");
+  expect(service.CreateMacro).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
+});
+
+it("locks pending imports and ignores a file read after service replacement", async () => {
+  let resolve!: (text: string) => void;
+  const pending = new Promise<string>((done) => { resolve = done; });
+  const first = serviceFor();
+  const second = serviceFor({ ListMacros: vi.fn().mockResolvedValue([]) });
+  const view = render(<MacroManagerPanel service={first} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  const file = new File([], "macro.json");
+  Object.defineProperty(file, "text", { value: () => pending });
+  fireEvent.change(screen.getByLabelText("Import macro JSON"), { target: { files: [file] } });
+  expect(screen.getByLabelText("Import macro JSON")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "New macro" })).toBeDisabled();
+  view.rerender(<MacroManagerPanel service={second} />);
+  await screen.findByText("No macros in your library yet.");
+  await act(async () => resolve(fileText));
+  expect(first.CreateMacro).not.toHaveBeenCalled();
+  expect(second.CreateMacro).not.toHaveBeenCalled();
+  expect(screen.getByText("No macros in your library yet.")).toBeInTheDocument();
+});
+
+it("downloads only the saved macro without ID, not unsaved editor changes", async () => {
+  let blob!: Blob;
+  vi.stubGlobal("URL", class extends URL {
+    static createObjectURL = vi.fn((value: Blob) => { blob = value; return "blob:macro"; });
+    static revokeObjectURL = vi.fn();
+  });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  fireEvent.change(await screen.findByLabelText("Macro name"), { target: { value: "Unsaved" } });
+  fireEvent.change(screen.getByLabelText("Event 1 delay (ms)"), { target: { value: "99" } });
+  fireEvent.click(screen.getByRole("button", { name: "Export saved macro" }));
+  const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob); });
+  expect(JSON.parse(text)).toEqual({ version: 1, name: "Clicks", events: macro().events });
+  expect(screen.getByText(/Unsaved editor changes are not exported/)).toBeInTheDocument();
+  expect(click).toHaveBeenCalledTimes(1);
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:macro");
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
 });
 
 const macro = (id = "one", name = "Clicks"): Macro => ({ id, name, events: [

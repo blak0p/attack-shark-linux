@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Macro, MacroLibraryService } from "../desktop-contract";
+import { importMacroFile } from "../macros/macro-file";
 
 type DraftEvent = Omit<Macro["events"][number], "delay_ms"> & { delay_ms: number | string };
 type Draft = { id?: string; name: string; events: DraftEvent[] };
@@ -59,7 +60,10 @@ export function useMacroLibrary(service: MacroLibraryService) {
     setReading(true); setError(""); setNotice(""); setConfirmation(false);
     try {
       const next = await service.ReadMacro(id);
-      if (generation === epoch.current && request === readRequest.current) setDraft(next);
+      if (generation === epoch.current && request === readRequest.current) {
+        setDraft(next);
+        setMacros((current) => current.map((macro) => macro.id === next.id ? next : macro));
+      }
     } catch (failure) {
       if (generation === epoch.current && request === readRequest.current) setError(errorMessage(failure));
     } finally {
@@ -95,7 +99,30 @@ export function useMacroLibrary(service: MacroLibraryService) {
     }
   };
 
+  const importFile = async (readText: () => Promise<string>) => {
+    if (submitting.current || reading || loading || confirmation) return;
+    submitting.current = true;
+    const generation = epoch.current;
+    ++readRequest.current;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const copy = importMacroFile(await readText());
+      if (generation !== epoch.current) return;
+      const next = await service.CreateMacro(copy.name, copy.events);
+      if (generation !== epoch.current) return;
+      setMacros((current) => [...current, next]);
+      setDraft(next); setNotice("Imported as a new local macro. No device changes made.");
+    } catch (failure) {
+      if (generation === epoch.current) setError(errorMessage(failure));
+    } finally {
+      if (generation === epoch.current) { submitting.current = false; setBusy(false); }
+    }
+  };
+
   return {
+    importFile,
+    reportFileError: (failure: unknown) => setError(errorMessage(failure)),
+    savedMacro: macros.find((macro) => macro.id === draft?.id),
     macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError,
     appendRecordedEvents: (recorded: Macro["events"]) => editEvents((events) => [...events, ...recorded.map((event) => ({ ...event }))]),
     addEvent: () => editEvents((events) => [...events, { type: "mouse_left", action: "down", delay_ms: 0 }]),
