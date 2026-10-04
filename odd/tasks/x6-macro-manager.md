@@ -22,11 +22,14 @@ The app currently exposes a closed hardware remap catalog, without local macro d
 - Preserve pre-existing dirty task notes and untracked metadata/design directories.
 - No publishing, PR, merge, device writes or automatic destructive actions.
 - Branch: feat/x6-macro-manager, created from feat/refactor-integration-v1-3-0 at 280d604.
-- Commits require explicit user request under session safety policy. Until then, tasks with successful checks remain pending commit rather than fully closed.
+- User explicitly authorized work-unit commits for this feature on 2026-10-04; no push or unrelated files.
 
 ## Work units
-- [ ] XM-1: Define and persist a shared local macro library with stable IDs, validated events, CRUD, and atomic JSON storage. Status: implementation and focused checks passed; native review acknowledged; pending explicit commit authorization.
-- [ ] XM-2: Expose the library via desktop services and integrate list/create/rename/delete/view into workspace UI with tests.
+- [x] XM-1: Define and persist a shared local macro library with stable IDs, validated events, CRUD, and atomic JSON storage. Commit: f7b8b491e98b118b40dd5a0e7de3da012856daad.
+- [ ] XM-2a: Expose shared library CRUD via desktop service, initialize a single instance in startup and regenerate bindings with tests. Status: in_progress; user approved the exact ten additional generator dependency/event paths on 2026-10-04.
+- [ ] XM-2b: Integrate list/create/rename/delete/view in the workspace manager UI using the approved visual reference and tests.
+
+XM-2 was split into desktop and UI units to avoid one oversized multi-area change; its user-facing scope is unchanged.
 - [ ] XM-3: Add event editor, scoped recording, and validated import/export with tests and user-facing errors.
 - [ ] XM-4: Preserve capture evidence and implement a capture-backed encoder/decoder for verified left/right events and fixed-repeat values; document unsupported timing/ranges.
 - [ ] XM-5: Integrate per-device fixed-repeat assignment and staged apply/upload, with error handling and mocked transport tests.
@@ -58,8 +61,8 @@ The app currently exposes a closed hardware remap catalog, without local macro d
 - XM-1: internal/macros/library.go, library_test.go, domain_test.go added (~498 lines). API Open/List/Create/Read/Update/Delete; local left/right down/up events with nonnegative delay_ms, stable IDs, atomic versioned JSON persistence, defensive copies, single-instance concurrency.
 - XM-1 RED: missing API compile failure observed by writer; GREEN: 15 tests passed. go test -race ./internal/macros -count=1, go vet ./internal/macros and git diff --check passed. Parent spot check go test ./internal/macros -count=1 passed (15 tests).
 - XM-1 review: review-dd6d8cab4e0cdb01 approved; exact acknowledgement burned authority for target sha256:fb73c13b90ca8d05fc33cb873f4930471cdcb702975d66e77361e61c0f3409c3. Informational advisory R3-premature-completion concerns pre-existing unrelated refactor task note; not edited by this feature.
-- XM-1 limitations: no cross-process coordination or directory-entry crash durability guarantee; no UI/startup/device wiring. Full repo suites/build/browser/physical checks pending later units. Commit: pending explicit authorization.
+- XM-1 limitations: no cross-process coordination or directory-entry crash durability guarantee; no UI/startup/device wiring. Full repo suites/build/browser/physical checks pending later units. Commit: f7b8b491e98b118b40dd5a0e7de3da012856daad (source/tests plus feature tracking only; unrelated changes preserved).
 - Engram mirror and visible todo must stay synchronized after each task transition.
 
 ## Next step
-Obtain explicit authorization for work-unit commits, close XM-1 without unrelated files, then implement XM-2 desktop/library manager integration. No device writes.
+Resume XM-2a with approved generated output paths. Existing Podman image localhost/attack-shark-beta26-appimage:verify-mupfv4rx verified to contain Go1.27.1, wails3, GTK4 4.14.5, WebKitGTK2.52.6 and libsoup3.4.4. User prefers reuse with --rm; inventory contained images, no retained containers. Writer authorized offline startup-package check with read-only repository/host module-cache mounts and tmpfs build cache. Generation may use same existing image with the repository mount writable only for approved paths. No host installs, new image builds/pulls or cleanup/prune. Image module-cache completeness unknown; host cached modules mounted read-only. Separate frontend binding root still needs usage assessment. No device writes or push.

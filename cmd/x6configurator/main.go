@@ -242,7 +242,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
 		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
 	}
-	service := desktop.Compose(status, writer, store).
+	service := desktop.Compose(status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
