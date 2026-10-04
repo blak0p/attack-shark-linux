@@ -1,17 +1,69 @@
-import type { MacroLibraryService } from "../../desktop-contract";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import type { Macro, MacroLibraryService } from "../../desktop-contract";
 import { useMacroLibrary } from "../../hooks/useMacroLibrary";
 import "./MacroManagerPanel.css";
 
 export function MacroManagerPanel({ service }: { service: MacroLibraryService }) {
   const library = useMacroLibrary(service);
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
-  const editorDisabled = busy || reading || loading || confirmation;
+  const unavailable = busy || reading || loading || confirmation;
+  const [armed, setArmed] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState("");
+  const [recordingError, setRecordingError] = useState("");
+  const zone = useRef<HTMLDivElement>(null);
+  const session = useRef<{ events: Macro["events"]; held: Set<number>; last?: number } | undefined>(undefined);
+  const editorDisabled = unavailable || armed;
+
+  const discardRecording = (message = "Recording discarded. Draft unchanged.") => {
+    if (!session.current) return;
+    session.current = undefined;
+    setArmed(false); setRecordingMessage(""); setRecordingError(message);
+  };
+  // No global listeners: focus/exit guards belong only to the visible zone.
+  useEffect(() => {
+    discardRecording();
+  }, [service, draft?.id, reading, loading, confirmation]);
+  useEffect(() => () => { session.current = undefined; }, []);
+
+  const armRecording = () => {
+    if (!draft || unavailable) return;
+    session.current = { events: [], held: new Set() };
+    setArmed(true); setRecordingError(""); setRecordingMessage("Recording armed. Click only inside the zone.");
+    zone.current?.focus();
+  };
+  const record = (event: MouseEvent<HTMLDivElement>, action: "down" | "up") => {
+    const current = session.current;
+    if (!current || unavailable || (event.button !== 0 && event.button !== 2)) return;
+    if ((action === "down") === current.held.has(event.button)) return;
+    if (action === "down") event.currentTarget.focus();
+    event.preventDefault();
+    const now = performance.now();
+    // First delay is zero; subsequent delays precede their event and round to local whole ms.
+    const delay = current.last === undefined ? 0 : Math.round(now - current.last);
+    if (!Number.isFinite(now) || (current.last !== undefined && now < current.last) || !Number.isSafeInteger(delay) || delay < 0) {
+      discardRecording("Recording discarded: invalid local clock interval. Draft unchanged.");
+      return;
+    }
+    if (action === "down") current.held.add(event.button); else current.held.delete(event.button);
+    current.events.push({ type: event.button === 0 ? "mouse_left" : "mouse_right", action, delay_ms: delay });
+    current.last = now;
+    setRecordingMessage(`Recording armed · ${current.events.length} captured events (not saved).`);
+  };
+  const stopRecording = () => {
+    const current = session.current;
+    if (!current) return;
+    if (current.held.size) { discardRecording("Recording discarded: a mouse button was not released inside the zone. Draft unchanged."); return; }
+    session.current = undefined;
+    setArmed(false); setRecordingError("");
+    library.appendRecordedEvents(current.events);
+    setRecordingMessage(`${current.events.length} recorded events appended to draft. Save explicitly to keep them.`);
+  };
   return (
     <div className="macro-manager" aria-busy={busy}>
       <article className="card macro-library" aria-label="Macro library">
         <div className="card-head">
           <h2>Macro library</h2>
-          <button type="button" className="button primary" disabled={busy || loading} onClick={library.newMacro}>New macro</button>
+          <button type="button" className="button primary" disabled={busy || loading} onClick={() => { discardRecording(); library.newMacro(); }}>New macro</button>
         </div>
         <p className="hint">Shared across devices. Available offline.</p>
         {loading && <p role="status">Loading library…</p>}
@@ -20,7 +72,7 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
           {macros.map((macro) => (
             <button type="button" key={macro.id} className="macro-card" disabled={busy || loading}
               aria-pressed={draft?.id === macro.id} aria-label={`${macro.name} · ${macro.events.length} events`}
-              onClick={() => library.select(macro.id)}>
+              onClick={() => { discardRecording(); library.select(macro.id); }}>
               <strong>{macro.name}</strong><span>{macro.events.length} events · Local library</span>
             </button>
           ))}
@@ -37,6 +89,25 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
               <input className="input" value={draft.name} disabled={editorDisabled}
                 onChange={(event) => library.rename(event.target.value)} />
             </label>
+            <section className="group" aria-label="Local browser recording">
+              <h3>Local browser recording</h3>
+              <p className="hint">Left/right mouse only, inside the zone below. Stop appends balanced events to this draft; an incomplete session is discarded. No hardware capture or verified X6 playback timing.</p>
+              <p className="hint">First delay is 0 ms; later delays are rounded elapsed local milliseconds. Leaving with a button held or losing zone focus discards the session.</p>
+              <div className="macro-actions">
+                <button type="button" className="button" disabled={unavailable || armed} onClick={armRecording}>Arm recording</button>
+                <button type="button" className="button" disabled={!armed} onMouseDown={(event) => event.preventDefault()} onClick={stopRecording}>Stop recording</button>
+              </div>
+              <div ref={zone} role="region" aria-label="Mouse recording zone" tabIndex={0}
+                className={`macro-recording-zone${armed ? " armed" : ""}`}
+                onMouseDown={(event) => record(event, "down")} onMouseUp={(event) => record(event, "up")}
+                onMouseLeave={() => { if (session.current?.held.size) discardRecording(); }}
+                onBlur={() => discardRecording()}
+                onContextMenu={(event) => { if (session.current) event.preventDefault(); }}>
+                {armed ? "Recording armed — press and release here" : "Recording disarmed"}
+              </div>
+              {recordingMessage && <p role="status">{recordingMessage}</p>}
+              {recordingError && <p role="alert" className="macro-error">{recordingError}</p>}
+            </section>
             <section className="group macro-events" aria-label="Ordered events">
               <h3>Events · {draft.events.length}</h3>
               <p className="hint">Ordered left/right press and release events. Delays are local milliseconds, not verified device timing.</p>

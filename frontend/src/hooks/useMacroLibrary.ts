@@ -97,6 +97,7 @@ export function useMacroLibrary(service: MacroLibraryService) {
 
   return {
     macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError,
+    appendRecordedEvents: (recorded: Macro["events"]) => editEvents((events) => [...events, ...recorded.map((event) => ({ ...event }))]),
     addEvent: () => editEvents((events) => [...events, { type: "mouse_left", action: "down", delay_ms: 0 }]),
     updateEvent: (index: number, update: Partial<DraftEvent>) => editEvents((events) => events.map((event, position) => position === index ? { ...event, ...update } : event)),
     removeEvent: (index: number) => editEvents((events) => events.filter((_, position) => position !== index)),

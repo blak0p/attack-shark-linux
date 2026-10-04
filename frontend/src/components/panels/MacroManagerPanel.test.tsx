@@ -4,7 +4,120 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MacroManagerPanel } from "./MacroManagerPanel";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it("records only armed zone input in order, appends on stop and persists only on explicit save", async () => {
+  const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
+  let now = 100;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
+  fireEvent.mouseDown(zone, { button: 0 }); fireEvent.mouseUp(zone, { button: 0 });
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  expect(screen.getByRole("button", { name: "Save to library" })).toBeDisabled();
+  fireEvent.mouseDown(document.body, { button: 0 });
+  fireEvent.mouseDown(screen.getByRole("button", { name: "Stop recording" }), { button: 0 });
+  fireEvent.mouseDown(zone, { button: 1 }); fireEvent.mouseUp(zone, { button: 1 });
+  fireEvent.mouseUp(zone, { button: 2 });
+  fireEvent.mouseDown(zone, { button: 0 }); fireEvent.mouseDown(zone, { button: 0 });
+  now = 112.6; fireEvent.mouseDown(zone, { button: 2 });
+  now = 140; fireEvent.mouseUp(zone, { button: 0 });
+  now = 160; fireEvent.mouseUp(zone, { button: 2 });
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.getByLabelText("Event 3 delay (ms)")).toHaveValue("0");
+  expect(screen.getByLabelText("Event 4 delay (ms)")).toHaveValue("13");
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await screen.findByText("Saved to library. No device changes made.");
+  expect(service.UpdateMacro).toHaveBeenLastCalledWith("one", "Clicks", [...macro().events,
+    { type: "mouse_left", action: "down", delay_ms: 0 },
+    { type: "mouse_right", action: "down", delay_ms: 13 },
+    { type: "mouse_left", action: "up", delay_ms: 27 },
+    { type: "mouse_right", action: "up", delay_ms: 20 },
+  ]);
+});
+
+it("discards unbalanced sessions on stop, zone exit and focus loss", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  for (const interrupt of [() => fireEvent.click(screen.getByRole("button", { name: "Stop recording" })),
+    () => fireEvent.mouseLeave(zone), () => fireEvent.blur(zone)]) {
+    fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+    fireEvent.mouseDown(zone, { button: 0 });
+    interrupt();
+    expect(screen.getByRole("alert")).toHaveTextContent("discarded");
+    expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
+    fireEvent.mouseUp(zone, { button: 0 });
+    expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
+  }
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+it("keeps balanced sessions on zone exit, resets the clock on rearm and rejects invalid clock intervals", async () => {
+  const service = serviceFor();
+  let now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  fireEvent.mouseDown(zone, { button: 2 });
+  now = 0.4; fireEvent.mouseUp(zone, { button: 2 });
+  fireEvent.mouseLeave(zone);
+  expect(screen.getByRole("button", { name: "Stop recording" })).toBeEnabled();
+  const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+  fireEvent(zone, menu);
+  expect(menu.defaultPrevented).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.getByLabelText("Event 4 delay (ms)")).toHaveValue("0");
+  for (const invalid of [-1, NaN, Infinity, Number.MAX_SAFE_INTEGER * 2]) {
+    now = 100;
+    fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+    fireEvent.mouseDown(zone, { button: 0 });
+    now = invalid; fireEvent.mouseUp(zone, { button: 0 });
+    expect(screen.getByRole("alert")).toHaveTextContent("invalid local clock interval");
+    expect(screen.queryByLabelText("Event 5 button")).not.toBeInTheDocument();
+  }
+  now = 1000;
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  fireEvent.mouseDown(zone, { button: 0 });
+  now = 1001; fireEvent.mouseUp(zone, { button: 0 });
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.getByLabelText("Event 5 delay (ms)")).toHaveValue("0");
+  expect(screen.getByLabelText("Event 6 delay (ms)")).toHaveValue("1");
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+it("disarms and discards recording on selection, service replacement and unmount", async () => {
+  const service = serviceFor();
+  const view = render(<MacroManagerPanel service={service} />);
+  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
+  fireEvent.click(card);
+  let zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  fireEvent.mouseDown(zone, { button: 0 });
+  fireEvent.click(card);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
+  fireEvent.mouseUp(zone, { button: 0 });
+  expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  view.rerender(<MacroManagerPanel service={serviceFor()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  fireEvent.mouseDown(zone, { button: 2 });
+  view.unmount();
+  fireEvent.mouseUp(document.body, { button: 2 });
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
 
 it("edits, adds, reorders and removes local events before saving the same ID and name", async () => {
   const service = serviceFor();

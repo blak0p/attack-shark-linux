@@ -49,6 +49,21 @@
 .macro-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .macro-error { color: var(--danger); overflow-wrap: anywhere; }
 
+.macro-recording-zone {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--rail);
+  color: var(--muted);
+  user-select: none;
+  text-align: center;
+}
+.macro-recording-zone.armed { border-color: var(--accent); color: var(--text); }
+.macro-recording-zone:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
 @media (max-width: 900px) {
   .macro-manager { grid-template-columns: minmax(0, 1fr); }
 }
