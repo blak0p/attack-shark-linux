@@ -34,6 +34,17 @@
 .macro-name input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .macro-events { margin: 16px 0; }
 .macro-events li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.macro-event-fields { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.macro-event-fields label { display: grid; gap: 6px; flex: 1 1 130px; min-width: 0; }
+.macro-event-fields input, .macro-event-fields select {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 8px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--rail); color: var(--text); font: inherit;
+}
+.macro-event-fields input:focus-visible, .macro-event-fields select:focus-visible {
+  outline: 2px solid var(--focus-ring); outline-offset: 2px;
+}
+.macro-event-fields input[aria-invalid="true"] { border-color: var(--danger); }
 .macro-empty { padding: 24px 0; color: var(--muted); }
 .macro-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .macro-error { color: var(--danger); overflow-wrap: anywhere; }

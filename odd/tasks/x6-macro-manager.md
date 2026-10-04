@@ -30,7 +30,11 @@ The app currently exposes a closed hardware remap catalog, without local macro d
 - [x] XM-2b: Integrate list/create/rename/delete/view in the workspace manager UI using the approved visual reference and tests. Commit: a9e9acec55ee81ac164d3a55b4cdb4285953a479.
 
 XM-2 was split into desktop and UI units to avoid one oversized multi-area change; its user-facing scope is unchanged.
-- [ ] XM-3: Add event editor, scoped recording, and validated import/export with tests and user-facing errors.
+- [ ] XM-3a: Edit ordered left/right press/release events and nonnegative local delays with save/error UX and tests.
+- [ ] XM-3b: Add explicitly armed editor-scoped browser recording of left/right press/release pairs with monotonic measured delays, lifecycle cleanup and tests; never global/hardware capture.
+- [ ] XM-3c: Export one versioned JSON macro without ID and import it as a validated new local copy with a fresh ID, preserving existing macros; test invalid input and errors.
+
+XM-3 was split into three reviewable work units because editor, recording and file exchange are distinct behaviors. Recording only captures actions inside a visible editor area; measured delays are local input data, not verified X6 playback timing.
 - [ ] XM-4: Preserve capture evidence and implement a capture-backed encoder/decoder for verified left/right events and fixed-repeat values; document unsupported timing/ranges.
 - [ ] XM-5: Integrate per-device fixed-repeat assignment and staged apply/upload, with error handling and mocked transport tests.
 - [ ] XM-6: Run end-to-end UI checks, backend/frontend suites and builds; review the bounded candidates and document physical-device checks still pending.
@@ -69,4 +73,4 @@ XM-2 was split into desktop and UI units to avoid one oversized multi-area chang
 - Engram mirror and visible todo must stay synchronized after each task transition.
 
 ## Next step
-XM-2b closed on feat/x6-macro-manager: source/tests commit a9e9acec55ee81ac164d3a55b4cdb4285953a479 after native review acknowledgement. No push or device writes. Next unfinished unit is XM-3 (event editor, scoped recording and validated import/export); do not start without resuming feature context and reconciling the worktree. Preserve the unrelated dirty refactor task note and untracked metadata/design files. Full physical checks, timing and count-width gaps remain pending. Reuse existing verified Podman image with --rm and read-only cached modules; no new image/host installs/prune.
+XM-2b closed. User selected editor-scoped recording and one-macro JSON copy import; XM-3 split into XM-3a/b/c to protect review focus. Start XM-3a only, then verify/review/commit before the next unit. Preserve unrelated dirty refactor task note and untracked metadata/design files. No push or device writes. Full physical checks, timing and count-width gaps remain pending. Reuse existing verified Podman image with --rm and read-only cached modules; no new image/host installs/prune.

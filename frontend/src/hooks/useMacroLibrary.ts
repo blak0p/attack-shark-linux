@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Macro, MacroLibraryService } from "../desktop-contract";
 
-type Draft = { id?: string; name: string; events: Macro["events"] };
+type DraftEvent = Omit<Macro["events"][number], "delay_ms"> & { delay_ms: number | string };
+type Draft = { id?: string; name: string; events: DraftEvent[] };
+// Preserve numeric precision across the JavaScript/JSON boundary; this is not a device timing limit.
+const validDelay = (value: number | string) => String(value).trim() !== "" && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function useMacroLibrary(service: MacroLibraryService) {
@@ -18,6 +21,14 @@ export function useMacroLibrary(service: MacroLibraryService) {
   const readRequest = useRef(0);
   const listRequest = useRef(0);
   const submitting = useRef(false);
+  const invalidEvent = draft?.events.findIndex((event) => !validDelay(event.delay_ms)) ?? -1;
+  const validationError = invalidEvent < 0 ? "" : `Event ${invalidEvent + 1} delay must be a nonnegative whole number of milliseconds.`;
+
+  const editEvents = (update: (events: DraftEvent[]) => DraftEvent[]) => {
+    if (submitting.current || reading || loading || confirmation) return;
+    setDraft((current) => current && { ...current, events: update(current.events) });
+    setError(""); setNotice("");
+  };
 
   const load = async () => {
     const generation = epoch.current;
@@ -57,7 +68,7 @@ export function useMacroLibrary(service: MacroLibraryService) {
   };
 
   const mutate = async (remove: boolean) => {
-    if (!draft || submitting.current || reading || loading || (!remove && !draft.name.trim()) || (remove && !confirmation)) return;
+    if (!draft || submitting.current || reading || loading || (!remove && (!draft.name.trim() || validationError)) || (remove && !confirmation)) return;
     submitting.current = true;
     const generation = epoch.current;
     ++readRequest.current;
@@ -69,9 +80,10 @@ export function useMacroLibrary(service: MacroLibraryService) {
         setMacros((current) => current.filter((macro) => macro.id !== draft.id));
         setDraft(undefined); setConfirmation(false); setNotice("Macro deleted from library.");
       } else {
+        const events = draft.events.map((event) => ({ ...event, delay_ms: Number(event.delay_ms) }));
         const next = draft.id
-          ? await service.UpdateMacro(draft.id, draft.name, draft.events)
-          : await service.CreateMacro(draft.name, draft.events);
+          ? await service.UpdateMacro(draft.id, draft.name, events)
+          : await service.CreateMacro(draft.name, events);
         if (generation !== epoch.current) return;
         setMacros((current) => draft.id ? current.map((macro) => macro.id === next.id ? next : macro) : [...current, next]);
         setDraft(next); setNotice("Saved to library. No device changes made.");
@@ -84,7 +96,17 @@ export function useMacroLibrary(service: MacroLibraryService) {
   };
 
   return {
-    macros, draft, loading, loaded, reading, busy, error, confirmation, notice,
+    macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError,
+    addEvent: () => editEvents((events) => [...events, { type: "mouse_left", action: "down", delay_ms: 0 }]),
+    updateEvent: (index: number, update: Partial<DraftEvent>) => editEvents((events) => events.map((event, position) => position === index ? { ...event, ...update } : event)),
+    removeEvent: (index: number) => editEvents((events) => events.filter((_, position) => position !== index)),
+    moveEvent: (index: number, direction: -1 | 1) => editEvents((events) => {
+      const target = index + direction;
+      if (index < 0 || index >= events.length || target < 0 || target >= events.length) return events;
+      const next = [...events];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    }),
     reload: () => { if (!submitting.current) void load(); },
     select: (id: string) => void select(id),
     newMacro: () => {

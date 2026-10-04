@@ -5,6 +5,97 @@ import { MacroManagerPanel } from "./MacroManagerPanel";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
 afterEach(cleanup);
+
+it("edits, adds, reorders and removes local events before saving the same ID and name", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByLabelText("Event 1 button");
+  expect(screen.getByRole("button", { name: "Move event 1 up" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Move event 2 down" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Event 1 button"), { target: { value: "mouse_right" } });
+  fireEvent.change(screen.getByLabelText("Event 1 action"), { target: { value: "up" } });
+  fireEvent.change(screen.getByLabelText("Event 1 delay (ms)"), { target: { value: "56" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add event" }));
+  expect(screen.getByLabelText("Event 3 delay (ms)")).toHaveValue("0");
+  fireEvent.click(screen.getByRole("button", { name: "Move event 3 up" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move event 2 up" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move event 1 down" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove event 3" }));
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
+    { type: "mouse_right", action: "up", delay_ms: 56 },
+    { type: "mouse_left", action: "down", delay_ms: 0 },
+  ]));
+});
+
+it("rejects invalid delays locally and retains edited events for retry after a save failure", async () => {
+  const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const delay = await screen.findByLabelText("Event 1 delay (ms)");
+  for (const value of ["", "-1", "1.5", "abc", "Infinity"]) {
+    fireEvent.change(delay, { target: { value } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Event 1 delay must be a nonnegative whole number of milliseconds.");
+    expect(screen.getByRole("button", { name: "Save to library" })).toBeDisabled();
+  }
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+  fireEvent.change(delay, { target: { value: "0" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
+  expect(delay).toHaveValue("0");
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await screen.findByText("Saved to library. No device changes made.");
+  expect(service.UpdateMacro).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Remove event 2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove event 1" }));
+  expect(screen.queryByText("Saved to library. No device changes made.")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenLastCalledWith("one", "Clicks", []));
+});
+it("creates edited events locally and locks event controls during save and delete confirmation", async () => {
+  let resolve!: (value: Macro) => void;
+  const pending = new Promise<Macro>((done) => { resolve = done; });
+  const service = serviceFor({ CreateMacro: vi.fn().mockReturnValue(pending) });
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "New events" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add event" }));
+  fireEvent.change(screen.getByLabelText("Event 1 delay (ms)"), { target: { value: "1000000" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  const events = [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 1000000 }];
+  expect(service.CreateMacro).toHaveBeenCalledWith("New events", events);
+  expect(screen.getByRole("button", { name: "Add event" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Remove event 1" })).toBeDisabled();
+  expect(screen.getByLabelText("Event 1 delay (ms)")).toBeDisabled();
+  expect(screen.getByLabelText("Event 1 button")).toBeDisabled();
+  expect(screen.getByLabelText("Event 1 action")).toBeDisabled();
+  await act(async () => resolve({ id: "new", name: "New events", events }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
+  expect(screen.getByRole("button", { name: "Add event" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Remove event 1" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Add event" })).toBeEnabled();
+});
+
+it("does not mutate loaded library events before save and resets invalid edits on selection", async () => {
+  const original = macro();
+  const service = serviceFor({ ReadMacro: vi.fn().mockResolvedValue(original), ListMacros: vi.fn().mockResolvedValue([original]) });
+  render(<MacroManagerPanel service={service} />);
+  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
+  fireEvent.click(card);
+  fireEvent.change(await screen.findByLabelText("Event 1 delay (ms)"), { target: { value: "-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Move event 1 down" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Event 2 delay");
+  expect(original.events).toEqual(macro().events);
+  fireEvent.click(card);
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  expect(screen.getByLabelText("Event 1 delay (ms)")).toHaveValue("12");
+});
+
 const macro = (id = "one", name = "Clicks"): Macro => ({ id, name, events: [
   { type: "mouse_left", action: "down", delay_ms: 12 },
   { type: "mouse_right", action: "up", delay_ms: 34 },
