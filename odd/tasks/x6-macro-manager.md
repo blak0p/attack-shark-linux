@@ -18,7 +18,7 @@ The app currently exposes a closed hardware remap catalog, without local macro d
 ## Constraints and non-goals
 - No toggle or hold execution modes; no unsupported firmware semantics inferred from X3.
 - Separate local storage from existing device configuration and HID writes.
-- Delay units, complete repeat field width/range, event limits and persistence/playback are unverified.
+- Delay units, complete repeat field width/range, event limits and persistence/playback are unverified. User reports the vendor X6 app accepts 255 and refuses higher input; this establishes a UI upper bound, not protocol or playback acceptance.
 - Preserve pre-existing dirty task notes and untracked metadata/design directories.
 - No publishing, PR, merge, device writes or automatic destructive actions.
 - Branch: feat/x6-macro-manager, created from feat/refactor-integration-v1-3-0 at 280d604.
@@ -35,8 +35,11 @@ XM-2 was split into desktop and UI units to avoid one oversized multi-area chang
 - [x] XM-3c: Export one versioned JSON macro without ID and import it as a validated new local copy with a fresh ID, preserving existing macros; test invalid input and errors. Commit: 4c73a3c1d951a0dab1739a3fa41732778d9e9353.
 
 XM-3 was split into three reviewable work units because editor, recording and file exchange are distinct behaviors. Recording only captures actions inside a visible editor area; measured delays are local input data, not verified X6 playback timing.
-- [ ] XM-4: Preserve capture evidence and implement a capture-backed encoder/decoder for verified left/right events and fixed-repeat values; document unsupported timing/ranges.
-- [ ] XM-5: Integrate per-device fixed-repeat assignment and staged apply/upload, with error handling and mocked transport tests.
+- [ ] XM-4a: Preserve selected decoded report 0x09 blocks and source hashes/frame provenance from X6 macro captures in a report-based evidence directory, without modifying originals.
+- [ ] XM-4b: Implement a pure offline capture-backed left/right macro encoder/decoder and exact-byte tests. Accept the decided UI range 1–255 for the observed one-byte template while documenting interpolation beyond captured values and rejecting unsupported timing/event layouts; no device writes.
+
+XM-4 was split into evidence and codec work units to keep binary protocol inference reviewable. The user confirmed 255 as the vendor app UI maximum; captured payloads currently prove values 1, 2, 3 and 5. A 255 capture, if supplied, will test the extrapolation rather than reopen the UI-range decision.
+- [ ] XM-5: Integrate per-device fixed-repeat assignment and staged apply/upload, with error handling and mocked transport tests. Clearly label the numeric UI range as 1–255 (user-observed vendor app maximum); distinguish UI allowance from capture-verified device behavior.
 - [ ] XM-6: Run end-to-end UI checks, backend/frontend suites and builds; review the bounded candidates and document physical-device checks still pending.
 
 ## Acceptance criteria and checks
@@ -57,6 +60,7 @@ XM-3 was split into three reviewable work units because editor, recording and fi
 - macro_izq_loop2.pcapng: only unchanged report08 at6331, no macro upload; cannot establish counter.
 - macro_izq_new_loop2.pcapng: map10857/13945 unchanged; chunks10861/10945/10947; block offset4=02 and checksum0268, all other bytes unchanged.
 - Headers: 09 40 05 00 / 09 40 05 01 / 09 0c 05 02. Physical report lengths64, logical data60+60+8, trailing padding excluded. Checksum BE sum of block0:126 stored126:128.
+- New external originals: /home/alejandro/x6-capturas/macro_izq_loop3.pcapng (SHA256 62e77e4611362fd52072ef2213e86adce5fdc7da1d98c8b4c52e014ce1734ad9) and macro_izq_loop5.pcapng (SHA256 8da51a14ebff158f04f49e64f0d83d3186a0081bba541b4736253f6baef08bdc). Read-only decoded report09 chunks for value3: one-based frames16745/16863/17983 and18407/18411/18413; value5:11595/11683/11713. Each 128-byte logical block differs from count1 only at offset4=03/05 and checksum127=69/6b, BE checksums0269/026b validated. Loop3 also contains prior value2 at13477/13481/13483. Parser indexes are zero-based; frame citations here are one-based. Originals not yet copied into repository.
 - X3 published MIT protocol is analogous framing only; blockID08 and slot rules are not substituted for observed X6 blockID05.
 
 ## Progress and verification evidence
@@ -76,4 +80,4 @@ XM-3 was split into three reviewable work units because editor, recording and fi
 - Engram mirror and visible todo must stay synchronized after each task transition.
 
 ## Next step
-XM-3a/b/c closed with native approved acknowledgement and work-unit commits. Next unit XM-4: map original X6 capture evidence and define bounded evidence-preserving encoder/decoder work before any source mutation. Preserve unrelated dirty refactor task note and untracked metadata/design files. No push or device writes. Full physical checks, frontend build for recording/import-export, timing and count-width gaps remain pending.
+XM-3a/b/c closed with native approved acknowledgement and work-unit commits. Next unit XM-4a: preserve selected decoded protocol evidence with frame/hash provenance from external originals, leaving captures unchanged. Then XM-4b pure offline codec with explicitly extrapolated 1–255 template and no HID writes. Preserve unrelated dirty refactor task note, generated cache and untracked metadata/design files. No push or device writes. Full physical checks, frontend build for recording/import-export, timing and count-width gaps remain pending.
