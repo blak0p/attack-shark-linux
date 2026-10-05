@@ -8,8 +8,43 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/macros"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
+
+type compositeCommandFake struct {
+	commandFake
+	calls int
+}
+
+func (c *compositeCommandFake) SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+func TestTargetedCompositeMacroSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	if _, err := svc.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, _ := svc.Selection()
+	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
+	click := macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
+	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, macros.X6Click{}); err == nil || command.calls != 0 {
+		t.Fatal("invalid click reached transport")
+	}
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), stale, assignment, click); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	p, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, click)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
 
 func TestTargetedServiceSelectsSoleDeviceAndRequiresSelectionForMany(t *testing.T) {
 	profile := targetedProfile{}

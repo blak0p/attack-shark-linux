@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/blak0p/attack-shark-linux/internal/macros"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -60,6 +62,63 @@ type ProfileValidator interface {
 // discover a replacement device during an operation.
 type TargetedCommand interface {
 	SendAndAwaitBound(context.Context, Binding, []byte, func([]byte) bool) error
+}
+
+// MacroProgress records transport evidence only, never playback or persistence.
+// Zero values explicitly mean neither phase was started.
+type MacroProgress struct {
+	Assignment MacroAssignmentProgress
+	Upload     MacroUploadProgress
+}
+type MacroAssignmentProgress uint8
+type MacroUploadProgress uint8
+
+const (
+	MacroAssignmentNotStarted MacroAssignmentProgress = iota
+	MacroAssignmentUnknown
+	MacroAssignmentACKConfirmed
+)
+const (
+	MacroUploadNotStarted MacroUploadProgress = iota
+	MacroUploadPossiblyPartial
+	MacroUploadConfirmed
+)
+
+// TargetedMacroCommand is deliberately separate from generic report admission.
+type TargetedMacroCommand interface {
+	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error)
+}
+
+func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macros.X6Click) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
+		return empty, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return empty, err
+	}
+	if _, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click}); err != nil {
+		return empty, err
+	}
+	selected, state, _, err := s.selectedState()
+	if err != nil || selected != binding {
+		return empty, ErrStaleBinding
+	}
+	command, ok := s.command.(TargetedMacroCommand)
+	if !ok {
+		return empty, errors.New("bound macro command unavailable")
+	}
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	selected, _, _, err = s.selectedState()
+	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) {
+		return empty, ErrStaleBinding
+	}
+	return command.SendX6MacroAssignmentBound(ctx, binding, assignment, click)
 }
 
 type deviceState struct {

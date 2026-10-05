@@ -1,5 +1,22 @@
 # Bound X6 macro upload
 
+The explicit composite `SendX6MacroAssignmentBound(ctx, binding, assignment,
+click)` (and mouse `ApplyMacroAssignmentBound`) validates typed remap and click
+before I/O, derives the destination from the assignment button, and owns one
+command lock/node for report08, exact `0310500008`, three report09 chunks and
+final `0310500009`. Identity, descriptor, path and cancellation are checked
+before writes and the upload completion phase. No generic report09 bypass is
+provided. Legacy block05 upload remains unchanged.
+
+Returned `MacroProgress` has independent assignment (not started, unknown,
+ACK confirmed) and upload (not started, possibly partial, confirmed) evidence.
+Assignment becomes unknown before its write attempt; an observed08 ACK remains
+confirmed even if later upload fails. Errors after that attempt warn about
+partial mutation. Neither confirmation establishes physical playback or
+persistence. Destinations05/06 are capture-backed; other mapped button groups
+are authorized extrapolation, not proof of independent simultaneous slots.
+Desktop staging/composition and physical validation remain separate work.
+
 `HidrawBackend.SendX6MacroBound(ctx, binding, macros.X6Click)` encodes the strict
 single-button template before I/O. It acquires command ownership, revalidates the
 captured candidate identity, serial and status descriptor, and opens only that

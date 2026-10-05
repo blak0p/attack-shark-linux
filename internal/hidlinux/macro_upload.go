@@ -10,6 +10,7 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -84,25 +85,126 @@ func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Bind
 		}
 	}
 	// Pacing is outside the final ACK deadline. No per-chunk ACK is expected.
+	return b.awaitMacroStatus(ctx, node, binding, 9)
+}
+
+// SendX6MacroAssignmentBound owns report08 and the whole report09 batch under
+// one command lock. It never retries or rolls back a possibly mutated device.
+func (b *HidrawBackend) SendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click) (mouse.MacroProgress, error) {
+	return b.sendX6MacroAssignmentBound(ctx, binding, assignment, click, waitMacroChunk)
+}
+
+func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click, wait macroWait) (progress mouse.MacroProgress, err error) {
+	report, err := x6.EncodeMacroAssignmentReport(assignment)
+	if err != nil {
+		return progress, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return progress, err
+	}
+	chunks, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click})
+	if err != nil {
+		return progress, err
+	}
+	if err = ctx.Err(); err != nil {
+		return progress, err
+	}
+	release, err := b.beginCommand(ctx)
+	if err != nil {
+		return progress, err
+	}
+	defer release()
+	path, err := b.macroBindingPath(ctx, binding)
+	if err != nil {
+		return progress, err
+	}
+	node, err := b.opener.OpenNode(path)
+	if err != nil {
+		return progress, &diagnosticError{operation: "transfer", err: classify(err)}
+	}
+	defer node.Close()
+	defer func() {
+		if err != nil && progress.Assignment != mouse.MacroAssignmentNotStarted {
+			err = fmt.Errorf("macro assignment: possible device partial mutation; no rollback or retry: %w", err)
+		}
+	}()
+	validate := func() error {
+		current, e := b.macroBindingPath(ctx, binding)
+		if e != nil {
+			return e
+		}
+		if current != path {
+			return mouse.ErrStaleBinding
+		}
+		return ctx.Err()
+	}
+	write := func(payload []byte) error {
+		count, e := node.SendFeatureReport(payload)
+		if e != nil {
+			return &diagnosticError{operation: "transfer", err: classify(e)}
+		}
+		if count != len(payload) {
+			return fmt.Errorf("feature report wrote %d bytes, want %d", count, len(payload))
+		}
+		return nil
+	}
+	if err = validate(); err != nil {
+		return progress, err
+	}
+	progress.Assignment = mouse.MacroAssignmentUnknown
+	if err = write(report); err != nil {
+		return progress, err
+	}
+	if err = b.awaitMacroStatus(ctx, node, binding, 8); err != nil {
+		return progress, err
+	}
+	progress.Assignment = mouse.MacroAssignmentACKConfirmed
+	for i, chunk := range chunks {
+		if err = validate(); err != nil {
+			return progress, err
+		}
+		progress.Upload = mouse.MacroUploadPossiblyPartial
+		if err = write(chunk); err != nil {
+			return progress, err
+		}
+		if i < len(chunks)-1 {
+			if err = wait(ctx, x6MacroSpacing); err != nil {
+				return progress, err
+			}
+		}
+	}
+	if err = validate(); err != nil {
+		return progress, err
+	}
+	if err = b.awaitMacroStatus(ctx, node, binding, 9); err != nil {
+		return progress, err
+	}
+	progress.Upload = mouse.MacroUploadConfirmed
+	return progress, nil
+}
+
+func (b *HidrawBackend) awaitMacroStatus(ctx context.Context, node hidrawNode, binding mouse.Binding, id byte) error {
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
 	defer cancel()
 	buffer := make([]byte, 64)
 	for {
-		if err = bounded.Err(); err != nil {
+		if err := bounded.Err(); err != nil {
 			return err
 		}
-		count, readErr := b.readNode(bounded, node, buffer)
-		if readErr != nil {
-			return &diagnosticError{operation: "ack_failure", err: readErr}
+		count, err := b.readNode(bounded, node, buffer)
+		if err != nil {
+			return &diagnosticError{operation: "ack_failure", err: err}
 		}
 		if count < 0 || count > len(buffer) {
 			return fmt.Errorf("invalid macro status length %d", count)
 		}
 		report := append([]byte(nil), buffer[:count]...)
 		b.dispatchListenerReport(binding.Path, report)
-		if bytes.Equal(report, []byte{3, 0x10, 0x50, 0, 9}) {
+		if bytes.Equal(report, []byte{3, 0x10, 0x50, 0, id}) {
 			return nil
 		}
+		// A final09 status before assignment ACK must not authorize uploading.
 		if knownMacroInterleave(report) {
 			continue
 		}
@@ -152,6 +254,9 @@ func (b *HidrawBackend) macroBindingPath(ctx context.Context, binding mouse.Bind
 	path, err := b.hidrawPath(candidate)
 	if err != nil {
 		return "", mouse.ErrStaleBinding
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	return path, nil
 }

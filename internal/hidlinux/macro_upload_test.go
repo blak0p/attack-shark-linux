@@ -14,6 +14,7 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 type macroNode struct {
@@ -38,7 +39,7 @@ func (n *macroNode) SendFeatureReport(r []byte) (int, error) {
 	return len(r), nil
 }
 func (n *macroNode) Read(p []byte) (int, error) {
-	if len(n.writes) != 3 {
+	if len(n.writes) != 3 && !(len(n.writes) == 1 && n.writes[0][0] == 8) && !(len(n.writes) == 4 && n.writes[0][0] == 8) {
 		return 0, errors.New("read before all chunks")
 	}
 	return n.commandHidrawNode.Read(p)
@@ -56,6 +57,139 @@ func noMacroWait(context.Context, time.Duration) error { return nil }
 
 var macroACK = []byte{3, 0x10, 0x50, 0, 9}
 var macroClick = macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
+
+func TestCompositeMacroOrderAndProgress(t *testing.T) {
+	for button := uint8(1); button <= 7; button++ {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x40, 1, 10}, {3, 0x10, 0x50, 0, 8}, macroACK})
+		assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: button}
+		progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+		report, _ := x6.EncodeMacroAssignmentReport(assignment)
+		destination, _ := x6.MacroDestinationForButton(button)
+		chunks, _ := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: macroClick})
+		want := append([][]byte{report}, chunks...)
+		if err != nil || !reflect.DeepEqual(n.writes, want) || progress.Assignment != mouse.MacroAssignmentACKConfirmed || progress.Upload != mouse.MacroUploadConfirmed {
+			t.Fatalf("button %d: %+v %v", button, progress, err)
+		}
+	}
+}
+
+func TestCompositeMacroFailures(t *testing.T) {
+	for at := 1; at <= 4; at++ {
+		for _, short := range []bool{false, true} {
+			b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+			n.failAt, n.short = at, short
+			p, err := b.sendX6MacroAssignmentBound(context.Background(), binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}, macroClick, noMacroWait)
+			if err == nil || !strings.Contains(err.Error(), "partial mutation") || len(n.writes) != at {
+				t.Fatalf("boundary %d: %+v %v", at, p, err)
+			}
+			if at == 1 && p.Assignment != mouse.MacroAssignmentUnknown {
+				t.Fatal(p)
+			}
+			if at > 1 && (p.Assignment != mouse.MacroAssignmentACKConfirmed || p.Upload != mouse.MacroUploadPossiblyPartial) {
+				t.Fatal(p)
+			}
+		}
+	}
+	for _, a := range []x6.MacroAssignment{{}, {Config: x6.DefaultRemapConfig(), Button: 8}} {
+		if _, err := (&HidrawBackend{}).SendX6MacroAssignmentBound(context.Background(), mouse.Binding{}, a, macroClick); err == nil {
+			t.Fatal("invalid assignment")
+		}
+	}
+}
+
+func TestCompositeMacroFinalStatusAndWaitFailure(t *testing.T) {
+	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}
+	for _, status := range [][]byte{{3, 0x10, 0x1e, 0, 0xaa}, {3, 0x10, 0x50, 1, 9}, nil} {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, status})
+		p, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+		if err == nil || len(n.writes) != 4 || p.Assignment != mouse.MacroAssignmentACKConfirmed || p.Upload != mouse.MacroUploadPossiblyPartial {
+			t.Fatal(p, err)
+		}
+	}
+	for boundary := 1; boundary <= 2; boundary++ {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}})
+		waits := 0
+		p, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, func(context.Context, time.Duration) error {
+			waits++
+			if waits == boundary {
+				return context.Canceled
+			}
+			return nil
+		})
+		if !errors.Is(err, context.Canceled) || len(n.writes) != boundary+1 || p.Assignment != mouse.MacroAssignmentACKConfirmed || p.Upload != mouse.MacroUploadPossiblyPartial {
+			t.Fatal(p, err)
+		}
+	}
+	b, binding, _, _ := macroFixture(t, [][]byte{{3, 0x10, 0x40, 1, 10}, {3, 0x10, 0x50, 0, 8}, {3, 0x10, 0x40, 1, 10}, macroACK})
+	seen := 0
+	b.activePath = binding.Path
+	b.listener = func([]byte) bool { seen++; return true }
+	if _, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait); err != nil || seen != 4 {
+		t.Fatal(seen, err)
+	}
+}
+
+func TestCompositeMacroWaitOwnership(t *testing.T) {
+	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+	waits := 0
+	_, err := b.sendX6MacroAssignmentBound(context.Background(), binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}, macroClick, func(ctx context.Context, d time.Duration) error {
+		waits++
+		if d != x6MacroSpacing || len(n.writes) != waits+1 {
+			t.Fatal("pacing/order")
+		}
+		bounded, cancel := context.WithTimeout(ctx, time.Millisecond)
+		defer cancel()
+		release, e := b.beginCommand(bounded)
+		if e == nil {
+			release()
+			t.Fatal("interleaved command")
+		}
+		return nil
+	})
+	if err != nil || waits != 2 {
+		t.Fatal(err, waits)
+	}
+}
+
+func TestCompositeMacroPhaseGuards(t *testing.T) {
+	for _, phase := range []int{1, 2, 3, 4} {
+		for _, stale := range []bool{false, true} {
+			b, binding, n, root := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+			ctx, cancel := context.WithCancel(context.Background())
+			n.onWrite = func(i int) {
+				if i == phase {
+					if stale {
+						writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "B\n")
+					} else {
+						cancel()
+					}
+				}
+			}
+			p, err := b.sendX6MacroAssignmentBound(ctx, binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}, macroClick, noMacroWait)
+			cancel()
+			if err == nil || len(n.writes) != phase || !strings.Contains(err.Error(), "partial mutation") {
+				t.Fatalf("phase %d stale %t: %+v %v", phase, stale, p, err)
+			}
+			unlock, e := b.beginCommand(context.Background())
+			if e != nil {
+				t.Fatal(e)
+			}
+			unlock()
+		}
+	}
+	for _, ack := range [][]byte{{3, 0x10, 0x1e, 0, 0xaa}, {3, 0x10, 0x50, 1, 8}, {3, 0x10, 0x50, 0, 9}} {
+		b, binding, n, _ := macroFixture(t, [][]byte{ack})
+		p, err := b.sendX6MacroAssignmentBound(context.Background(), binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}, macroClick, noMacroWait)
+		if err == nil || len(n.writes) != 1 || p.Assignment != mouse.MacroAssignmentUnknown || p.Upload != mouse.MacroUploadNotStarted {
+			t.Fatalf("%+v %v", p, err)
+		}
+	}
+	b, binding, n, _ := macroFixture(t, nil)
+	n.readWait = make(chan struct{})
+	if _, err := b.sendX6MacroAssignmentBound(context.Background(), binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}, macroClick, noMacroWait); !IsErrorKind(err, Timeout) {
+		t.Fatal(err)
+	}
+}
 
 func TestMacroInvalidBeforeIO(t *testing.T) {
 	for _, click := range []macros.X6Click{{}, {Button: macros.MouseLeft, Repeat: 256}, {Button: macros.MouseRight, Repeat: 0}} {
