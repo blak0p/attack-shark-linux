@@ -614,8 +614,14 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await screen.findByText("Device available");
     expect(screen.getByRole("link", { name: "Macros" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New macro" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /profile|record|play|import|export/i })).not.toBeInTheDocument();
-	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Import macro JSON")).toHaveAttribute("type", "file");
+    expect(screen.getByRole("button", { name: "Export saved macro" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
+    expect(screen.getByRole("region", { name: "Mouse recording zone" })).toBeInTheDocument();
+    // Local file exchange and zone recording are implemented; hardware playback/profiles are not.
+    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload|assign/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
 

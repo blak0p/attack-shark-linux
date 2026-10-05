@@ -12,7 +12,7 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
   const [recordingMessage, setRecordingMessage] = useState("");
   const [recordingError, setRecordingError] = useState("");
   const zone = useRef<HTMLDivElement>(null);
-  const session = useRef<{ events: Macro["events"]; held: Set<number>; last?: number } | undefined>(undefined);
+  const session = useRef<{ events: Macro["events"]; held: Set<number> } | undefined>(undefined);
   const editorDisabled = unavailable || armed;
 
   const discardRecording = (message = "Recording discarded. Draft unchanged.") => {
@@ -38,16 +38,9 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
     if ((action === "down") === current.held.has(event.button)) return;
     if (action === "down") event.currentTarget.focus();
     event.preventDefault();
-    const now = performance.now();
-    // First delay is zero; subsequent delays precede their event and round to local whole ms.
-    const delay = current.last === undefined ? 0 : Math.round(now - current.last);
-    if (!Number.isFinite(now) || (current.last !== undefined && now < current.last) || !Number.isSafeInteger(delay) || delay < 0) {
-      discardRecording("Recording discarded: invalid local clock interval. Draft unchanged.");
-      return;
-    }
+    // Schema compatibility only: zero requests no pause locally, not instant firmware playback.
     if (action === "down") current.held.add(event.button); else current.held.delete(event.button);
-    current.events.push({ type: event.button === 0 ? "mouse_left" : "mouse_right", action, delay_ms: delay });
-    current.last = now;
+    current.events.push({ type: event.button === 0 ? "mouse_left" : "mouse_right", action, delay_ms: 0 });
     setRecordingMessage(`Recording armed · ${current.events.length} captured events (not saved).`);
   };
   const stopRecording = () => {
@@ -119,7 +112,7 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
             <section className="group" aria-label="Local browser recording">
               <h3>Local browser recording</h3>
               <p className="hint">Left/right mouse only, inside the zone below. Stop appends balanced events to this draft; an incomplete session is discarded. No hardware capture or verified X6 playback timing.</p>
-              <p className="hint">First delay is 0 ms; later delays are rounded elapsed local milliseconds. Leaving with a button held or losing zone focus discards the session.</p>
+              <p className="hint">Records event order only, without configurable pauses. New events use a local no-pause-request placeholder, not a guarantee of instantaneous device playback. Leaving with a button held or losing zone focus discards the session.</p>
               <div className="macro-actions">
                 <button type="button" className="button" disabled={unavailable || armed} onClick={armRecording}>Arm recording</button>
                 <button type="button" className="button" disabled={!armed} onMouseDown={(event) => event.preventDefault()} onClick={stopRecording}>Stop recording</button>
@@ -137,12 +130,15 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
             </section>
             <section className="group macro-events" aria-label="Ordered events">
               <h3>Events · {draft.events.length}</h3>
-              <p className="hint">Ordered left/right press and release events. Delays are local milliseconds, not verified device timing.</p>
+              <p className="hint">Ordered left/right press and release events.</p>
+              {draft.events.some((event) => Number(event.delay_ms) !== 0) && (
+                <p className="hint">Existing delay values are preserved for compatibility, not editable here. Vendor pause support is unverified; any future device upload must reject unsupported timing.</p>
+              )}
               <button type="button" className="button" disabled={editorDisabled} onClick={library.addEvent}>Add event</button>
               {draft.events.length === 0 ? <p className="macro-empty">No events yet. Empty macros can be saved.</p> : (
                 <ol>{draft.events.map((event, index) => (
                   <li key={index}>
-                    <span>{event.type === "mouse_left" ? "Left mouse" : "Right mouse"} · {event.action} · {event.delay_ms} ms</span>
+                    <span>{event.type === "mouse_left" ? "Left mouse" : "Right mouse"} · {event.action}</span>
                     <div className="macro-event-fields">
                       <label>Event {index + 1} button
                         <select disabled={editorDisabled} value={event.type}
@@ -155,11 +151,6 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
                           onChange={(change) => library.updateEvent(index, { action: change.target.value as typeof event.action })}>
                           <option value="down">Press (down)</option><option value="up">Release (up)</option>
                         </select>
-                      </label>
-                      <label>Event {index + 1} delay (ms)
-                        <input inputMode="numeric" disabled={editorDisabled} value={event.delay_ms}
-                          aria-invalid={validationError.startsWith(`Event ${index + 1} delay`)}
-                          onChange={(change) => library.updateEvent(index, { delay_ms: change.target.value })} />
                       </label>
                     </div>
                     <div className="macro-actions">
