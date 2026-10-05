@@ -1,6 +1,86 @@
 package x6
 
-import "testing"
+import (
+	"bytes"
+	"encoding/hex"
+	"testing"
+)
+
+func TestMacroAssignmentDestinations(t *testing.T) {
+	for i, group := range []byte{1, 2, 3, 7, 8, 5, 6} {
+		button := uint8(i + 1)
+		got, err := MacroDestinationForButton(button)
+		if err != nil || got != group {
+			t.Fatalf("button %d: %d %v", button, got, err)
+		}
+		config := DefaultRemapConfig()
+		for j := range config.Buttons {
+			config.Buttons[j].Action = RemapFire
+		}
+		before, _ := EncodeRemapReport(config)
+		report, err := EncodeMacroAssignmentReport(MacroAssignment{Config: config, Button: button})
+		if err != nil {
+			t.Fatal(err)
+		}
+		offset := 3 + int(group-1)*3
+		if !bytes.Equal(report[offset:offset+3], []byte{0x12, 0, group}) {
+			t.Fatalf("group: %x", report)
+		}
+		for j := 0; j < 57; j++ {
+			if (j < offset || j >= offset+3) && report[j] != before[j] {
+				t.Fatalf("unrelated byte %d changed", j)
+			}
+		}
+		sum := 0
+		for _, b := range report[3:57] {
+			sum += int(b)
+		}
+		if int(report[57])*256+int(report[58]) != sum {
+			t.Fatal("checksum")
+		}
+		after, _ := EncodeRemapReport(config)
+		if !bytes.Equal(before, after) {
+			t.Fatal("config mutated")
+		}
+	}
+	for _, button := range []uint8{0, 8, 255} {
+		if _, err := MacroDestinationForButton(button); err == nil {
+			t.Fatal("invalid button")
+		}
+		if _, err := EncodeMacroAssignmentReport(MacroAssignment{DefaultRemapConfig(), button}); err == nil {
+			t.Fatal("invalid assignment")
+		}
+	}
+	for _, destination := range []byte{0, 4, 9, 255} {
+		if ValidateMacroDestination(destination) == nil {
+			t.Fatal("invalid destination")
+		}
+	}
+	invalid := DefaultRemapConfig()
+	invalid.Buttons[0].Action = "macro"
+	if _, err := EncodeMacroAssignmentReport(MacroAssignment{invalid, 6}); err == nil {
+		t.Fatal("invalid config")
+	}
+}
+
+func TestMacroAssignmentCaptured05And06(t *testing.T) {
+	for _, tt := range []struct {
+		button uint8
+		hex    string
+	}{
+		{6, "083b010200000300000400000d00001200050f00000600000500003c00000100000100000100000100000100000100000100000a0000090000009d"},
+		{7, "083b010200000300000400000d00000e00001200060600000500003c00000100000100000100000100000100000100000100000a0000090000009d"},
+	} {
+		want, err := hex.DecodeString(tt.hex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := EncodeMacroAssignmentReport(MacroAssignment{DefaultRemapConfig(), tt.button})
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("button %d: %x %v", tt.button, got, err)
+		}
+	}
+}
 
 func TestRemapEncodesOnlyMappedPhysicalButtons(t *testing.T) {
 	config := DefaultRemapConfig()
@@ -112,7 +192,10 @@ func TestMouseControlsUseExactIDsAndRespectPhysicalButtonPolicy(t *testing.T) {
 }
 
 func TestBrowserActionsEncodeExactIDsAndZeroParameters(t *testing.T) {
-	for _, tt := range []struct { action RemapAction; id byte }{
+	for _, tt := range []struct {
+		action RemapAction
+		id     byte
+	}{
 		{RemapBrowserCalculator, 0x1d}, {RemapBrowserEmail, 0x1e}, {RemapBrowserForward, 0x20},
 		{RemapBrowserBackward, 0x21}, {RemapBrowserStop, 0x22}, {RemapBrowserMyComputer, 0x23},
 		{RemapBrowserRefresh, 0x24}, {RemapBrowserHome, 0x25}, {RemapBrowserSearch, 0x26},
@@ -121,12 +204,22 @@ func TestBrowserActionsEncodeExactIDsAndZeroParameters(t *testing.T) {
 			config := DefaultRemapConfig()
 			config.Buttons[0].Action = tt.action
 			report, err := EncodeRemapReport(config)
-			if err != nil { t.Fatal(err) }
-			if len(report) != 59 || report[0] != 0x08 || report[1] != 0x3b || report[2] != 0x01 { t.Fatalf("invalid report shape: %x", report) }
-			if report[3] != tt.id || report[4] != 0 || report[5] != 0 { t.Fatalf("action group = %x, want %02x0000", report[3:6], tt.id) }
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report) != 59 || report[0] != 0x08 || report[1] != 0x3b || report[2] != 0x01 {
+				t.Fatalf("invalid report shape: %x", report)
+			}
+			if report[3] != tt.id || report[4] != 0 || report[5] != 0 {
+				t.Fatalf("action group = %x, want %02x0000", report[3:6], tt.id)
+			}
 			checksum := 0
-			for _, value := range report[3:57] { checksum += int(value) }
-			if report[57] != byte(checksum>>8) || report[58] != byte(checksum) { t.Fatalf("checksum = %x, want %04x", report[57:59], checksum) }
+			for _, value := range report[3:57] {
+				checksum += int(value)
+			}
+			if report[57] != byte(checksum>>8) || report[58] != byte(checksum) {
+				t.Fatalf("checksum = %x, want %04x", report[57:59], checksum)
+			}
 		})
 	}
 }
@@ -135,14 +228,18 @@ func TestBrowserActionOnButtonSevenPreservesHiddenGroups(t *testing.T) {
 	config := DefaultRemapConfig()
 	config.Buttons[6].Action = RemapBrowserHome
 	report, err := EncodeRemapReport(config)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if report[18] != 0x25 || report[19] != 0 || report[20] != 0 {
 		t.Fatalf("Button 7 group = %x, want 250000", report[18:21])
 	}
 	if report[27] != remapBaseline[27] || report[12] != remapBaseline[12] {
 		t.Fatal("Browser action changed hidden groups")
 	}
-	if MatchesRemapACK([]byte{0x03, 0x10, 0x50, 0x00, 0x1f}) { t.Fatal("accepted wrong ACK") }
+	if MatchesRemapACK([]byte{0x03, 0x10, 0x50, 0x00, 0x1f}) {
+		t.Fatal("accepted wrong ACK")
+	}
 }
 
 func TestRemapDefaultsPreserveDPIMarkersAndReturnCopies(t *testing.T) {
