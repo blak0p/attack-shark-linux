@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
   ListMacros: vi.fn(), CreateMacro: vi.fn(), ReadMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
+  StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearMacroAssignment: vi.fn(),
+  DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
   GetApplicationVersion: vi.fn(),
   CheckForUpdate: vi.fn(),
   ApplyVerifiedUpdate: vi.fn(),
@@ -36,11 +38,50 @@ const bindings = vi.hoisted(() => ({
 const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
 
 vi.mock("../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
-vi.mock("@wailsio/runtime", () => runtime);
+vi.mock("@wailsio/runtime", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@wailsio/runtime")>(), ...runtime,
+}));
 
 import { desktopService } from "./wails-service";
 
 describe("desktopService", () => {
+  it("forwards assignment drafts and preserves nullable overlay results and errors", async () => {
+    const config = { Buttons: [] };
+    const snapshot = { Pending: config, Applied: config, MacroPending: null, MacroApplied: null,
+      MacroProgress: { Assignment: 0, Upload: 0 },
+      Firmware: "failed", Persistence: "not_supported", Error: { Code: "apply_failed" } };
+    bindings.StageMacroAssignment.mockResolvedValue(snapshot);
+    bindings.StageRemap.mockResolvedValue(snapshot);
+    bindings.ClearMacroAssignment.mockResolvedValue(snapshot);
+    bindings.DiscardRemap.mockResolvedValue(snapshot);
+    bindings.GetMacroAssignmentSnapshot.mockResolvedValue(snapshot);
+    expect(await desktopService.StageMacroAssignment("stable", 6, 255)).toEqual(snapshot);
+    expect(bindings.StageMacroAssignment).toHaveBeenCalledWith("stable", 6, 255);
+    expect(await desktopService.StageRemap(config)).toEqual(snapshot);
+    expect(bindings.StageRemap).toHaveBeenCalledWith(config);
+    for (const name of ["ClearMacroAssignment", "DiscardRemap", "GetMacroAssignmentSnapshot"] as const) {
+      expect(await desktopService[name]()).toEqual(snapshot);
+      expect(bindings[name]).toHaveBeenCalledWith();
+    }
+    const failure = new Error("native service unavailable");
+    bindings.StageMacroAssignment.mockRejectedValueOnce(failure);
+    await expect(desktopService.StageMacroAssignment("stable", 6, 1)).rejects.toBe(failure);
+  });
+  it("preserves frozen assignment events and partial transport evidence on apply", async () => {
+    const config = { Buttons: [] };
+    const draft = { ID: "stable", Name: "Saved click", Button: 7, Repeat: 1,
+      Events: [{ type: "mouse_right", action: "down", delay_ms: 0 },
+        { type: "mouse_right", action: "up", delay_ms: 0 }] };
+    const snapshot = { Pending: config, Applied: config, MacroPending: draft, MacroApplied: null,
+      MacroProgress: { Assignment: 2, Upload: 1 }, Firmware: "failed",
+      Persistence: "not_supported", Error: { Code: "apply_failed" } };
+    bindings.ApplyRemap.mockResolvedValueOnce(snapshot);
+    expect(await desktopService.ApplyRemap(config)).toEqual(snapshot);
+    expect(bindings.ApplyRemap).toHaveBeenCalledWith(config);
+    const failure = new Error("transport unavailable");
+    bindings.ApplyRemap.mockRejectedValueOnce(failure);
+    await expect(desktopService.ApplyRemap(config)).rejects.toBe(failure);
+  });
   it("maps local macro CRUD to generated APIs with lowercase JSON fields and no device apply", async () => {
     const events = [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 15 }];
     const macro = { id: "stable", name: "Clicks", events };
@@ -130,10 +171,47 @@ describe("desktopService", () => {
     expect(bindings.ApplyLighting).toHaveBeenCalledOnce();
 	});
 
-	it("forwards remap reads and explicit application to generated Wails bindings", () => {
-		expect(desktopService.GetRemapSnapshot).toBe(bindings.GetRemapSnapshot);
-		expect(desktopService.ApplyRemap).toBe(bindings.ApplyRemap);
-	});
+  it("forwards remap reads and explicit application with converted results", async () => {
+    const config = { Buttons: [] };
+    const snapshot = { Pending: config, Applied: config, MacroPending: null, MacroApplied: null };
+    bindings.GetRemapSnapshot.mockResolvedValueOnce(snapshot);
+    bindings.ApplyRemap.mockResolvedValueOnce(snapshot);
+    expect(await desktopService.GetRemapSnapshot()).toEqual(snapshot);
+    expect(bindings.GetRemapSnapshot).toHaveBeenCalledWith();
+    expect(await desktopService.ApplyRemap(config)).toEqual(snapshot);
+    expect(bindings.ApplyRemap).toHaveBeenCalledWith(config);
+  });
+
+  it("maps preserved defaults to Go zero actions without mutating the local draft", async () => {
+    const config = { Buttons: [
+      { Button: 1, Action: "left" as const, PreservedDefault: "" as const },
+      { Button: 6, Action: null, PreservedDefault: "DPI+" as const },
+      { Button: 7, Action: null, PreservedDefault: "DPI-" as const },
+    ] };
+    const snapshot = { Pending: config, Applied: config };
+    bindings.StageRemap.mockResolvedValueOnce(snapshot);
+    bindings.ApplyRemap.mockResolvedValueOnce(snapshot);
+    for (const method of ["StageRemap", "ApplyRemap"] as const) {
+      expect(await desktopService[method](config)).toMatchObject(snapshot);
+      expect(bindings[method]).toHaveBeenLastCalledWith({ Buttons: [
+        config.Buttons[0], { ...config.Buttons[1], Action: "" }, { ...config.Buttons[2], Action: "" },
+      ] });
+    }
+    expect(config.Buttons[1].Action).toBeNull();
+    const nativeConfig = JSON.parse('{"Buttons":[{"Button":6,"Action":"","PreservedDefault":"DPI+"}]}');
+    bindings.StageRemap.mockResolvedValueOnce(snapshot);
+    await desktopService.StageRemap(nativeConfig);
+    expect(bindings.StageRemap).toHaveBeenLastCalledWith(nativeConfig);
+    expect(nativeConfig.Buttons[0].Action).toBe("");
+    for (const method of ["StageRemap", "ApplyRemap"] as const) {
+      const calls = bindings[method].mock.calls.length;
+      await expect(desktopService[method]({ Buttons: [{ Button: 1, Action: null, PreservedDefault: "" }] }))
+        .rejects.toThrow("Unsupported preserved remap default");
+      await expect(desktopService[method](JSON.parse('{"Buttons":[{"Button":1,"Action":"macro","PreservedDefault":""}]}')))
+        .rejects.toThrow("Unsupported remap action");
+      expect(bindings[method].mock.calls).toHaveLength(calls);
+    }
+  });
 
   it("subscribes to device-scoped status events and returns the Wails unsubscribe function", () => {
     const callback = vi.fn();

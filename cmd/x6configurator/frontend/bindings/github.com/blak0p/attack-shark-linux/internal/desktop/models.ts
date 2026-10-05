@@ -7,13 +7,16 @@ import { Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as macros$0 from "../macros/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as mouse$0 from "../mouse/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$1 from "../protocol/x6/models.js";
+import * as x6$0 from "../protocol/x6/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$0 from "../x6/models.js";
+import * as x6$1 from "../x6/models.js";
 
 export const Binding = mouse$0.Binding;
 export type Binding = mouse$0.Binding;
@@ -214,9 +217,9 @@ export class Inventory {
 }
 
 export class LightingSnapshot {
-    "Pending": x6$0.LightingSelection;
-    "Applied": x6$0.LightingSelection | null;
-    "Effects": x6$0.LightingEffect[];
+    "Pending": x6$1.LightingSelection;
+    "Applied": x6$1.LightingSelection | null;
+    "Effects": x6$1.LightingEffect[];
     "Revision": number;
     "Firmware": string;
     "Error": Error;
@@ -224,7 +227,7 @@ export class LightingSnapshot {
     /** Creates a new LightingSnapshot instance. */
     constructor($$source: Partial<LightingSnapshot> = {}) {
         if (!("Pending" in $$source)) {
-            this["Pending"] = (new x6$0.LightingSelection());
+            this["Pending"] = (new x6$1.LightingSelection());
         }
         if (!("Applied" in $$source)) {
             this["Applied"] = null;
@@ -267,6 +270,51 @@ export class LightingSnapshot {
             $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
         }
         return new LightingSnapshot($$parsedSource as Partial<LightingSnapshot>);
+    }
+}
+
+/**
+ * MacroDraft is one local assignment, not a firmware slot inventory. Events are
+ * frozen at staging; later library edits require explicit restaging.
+ */
+export class MacroDraft {
+    "ID": string;
+    "Name": string;
+    "Button": number;
+    "Repeat": number;
+    "Events": macros$0.Event[];
+
+    /** Creates a new MacroDraft instance. */
+    constructor($$source: Partial<MacroDraft> = {}) {
+        if (!("ID" in $$source)) {
+            this["ID"] = "";
+        }
+        if (!("Name" in $$source)) {
+            this["Name"] = "";
+        }
+        if (!("Button" in $$source)) {
+            this["Button"] = 0;
+        }
+        if (!("Repeat" in $$source)) {
+            this["Repeat"] = 0;
+        }
+        if (!("Events" in $$source)) {
+            this["Events"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MacroDraft instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MacroDraft {
+        const $$createField3_0 = $$createType10;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Events" in $$parsedSource) {
+            $$parsedSource["Events"] = $$createField3_0($$parsedSource["Events"]);
+        }
+        return new MacroDraft($$parsedSource as Partial<MacroDraft>);
     }
 }
 
@@ -324,10 +372,10 @@ export class NormalSleepSnapshot {
 }
 
 export class PollingSnapshot {
-    "Desired": x6$0.PollingRate;
-    "Applied": x6$0.PollingRate;
-    "Persisted": x6$0.PollingRate | null;
-    "Factory": x6$0.PollingRate;
+    "Desired": x6$1.PollingRate;
+    "Applied": x6$1.PollingRate;
+    "Persisted": x6$1.PollingRate | null;
+    "Factory": x6$1.PollingRate;
     "Revision": number;
     "Error": Error;
     "Firmware": string;
@@ -337,16 +385,16 @@ export class PollingSnapshot {
     /** Creates a new PollingSnapshot instance. */
     constructor($$source: Partial<PollingSnapshot> = {}) {
         if (!("Desired" in $$source)) {
-            this["Desired"] = x6$1.PollingRate.$zero;
+            this["Desired"] = x6$0.PollingRate.$zero;
         }
         if (!("Applied" in $$source)) {
-            this["Applied"] = x6$1.PollingRate.$zero;
+            this["Applied"] = x6$0.PollingRate.$zero;
         }
         if (!("Persisted" in $$source)) {
             this["Persisted"] = null;
         }
         if (!("Factory" in $$source)) {
-            this["Factory"] = x6$1.PollingRate.$zero;
+            this["Factory"] = x6$0.PollingRate.$zero;
         }
         if (!("Revision" in $$source)) {
             this["Revision"] = 0;
@@ -381,10 +429,13 @@ export class PollingSnapshot {
 }
 
 export class RemapSnapshot {
-    "Pending": x6$0.RemapConfig;
-    "Applied": x6$0.RemapConfig;
-    "Factory": x6$0.RemapConfig;
-    "Actions": x6$0.RemapAction[];
+    "MacroPending": MacroDraft | null;
+    "MacroApplied": MacroDraft | null;
+    "MacroProgress": mouse$0.MacroProgress;
+    "Pending": x6$1.RemapConfig;
+    "Applied": x6$1.RemapConfig;
+    "Factory": x6$1.RemapConfig;
+    "Actions": x6$1.RemapAction[];
     "Revision": number;
     "Firmware": string;
     "Persistence": string;
@@ -393,14 +444,23 @@ export class RemapSnapshot {
 
     /** Creates a new RemapSnapshot instance. */
     constructor($$source: Partial<RemapSnapshot> = {}) {
+        if (!("MacroPending" in $$source)) {
+            this["MacroPending"] = null;
+        }
+        if (!("MacroApplied" in $$source)) {
+            this["MacroApplied"] = null;
+        }
+        if (!("MacroProgress" in $$source)) {
+            this["MacroProgress"] = (new mouse$0.MacroProgress());
+        }
         if (!("Pending" in $$source)) {
-            this["Pending"] = (new x6$0.RemapConfig());
+            this["Pending"] = (new x6$1.RemapConfig());
         }
         if (!("Applied" in $$source)) {
-            this["Applied"] = (new x6$0.RemapConfig());
+            this["Applied"] = (new x6$1.RemapConfig());
         }
         if (!("Factory" in $$source)) {
-            this["Factory"] = (new x6$0.RemapConfig());
+            this["Factory"] = (new x6$1.RemapConfig());
         }
         if (!("Actions" in $$source)) {
             this["Actions"] = [];
@@ -428,26 +488,38 @@ export class RemapSnapshot {
      * Creates a new RemapSnapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): RemapSnapshot {
-        const $$createField0_0 = $$createType9;
-        const $$createField0_1 = $$createType9;
-        const $$createField0_2 = $$createType9;
-        const $$createField1_0 = $$createType10;
-        const $$createField5_0 = $$createType0;
+        const $$createField0_0 = $$createType12;
+        const $$createField0_1 = $$createType12;
+        const $$createField1_0 = $$createType13;
+        const $$createField2_0 = $$createType14;
+        const $$createField2_1 = $$createType14;
+        const $$createField2_2 = $$createType14;
+        const $$createField3_0 = $$createType15;
+        const $$createField7_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("MacroPending" in $$parsedSource) {
+            $$parsedSource["MacroPending"] = $$createField0_0($$parsedSource["MacroPending"]);
+        }
+        if ("MacroApplied" in $$parsedSource) {
+            $$parsedSource["MacroApplied"] = $$createField0_1($$parsedSource["MacroApplied"]);
+        }
+        if ("MacroProgress" in $$parsedSource) {
+            $$parsedSource["MacroProgress"] = $$createField1_0($$parsedSource["MacroProgress"]);
+        }
         if ("Pending" in $$parsedSource) {
-            $$parsedSource["Pending"] = $$createField0_0($$parsedSource["Pending"]);
+            $$parsedSource["Pending"] = $$createField2_0($$parsedSource["Pending"]);
         }
         if ("Applied" in $$parsedSource) {
-            $$parsedSource["Applied"] = $$createField0_1($$parsedSource["Applied"]);
+            $$parsedSource["Applied"] = $$createField2_1($$parsedSource["Applied"]);
         }
         if ("Factory" in $$parsedSource) {
-            $$parsedSource["Factory"] = $$createField0_2($$parsedSource["Factory"]);
+            $$parsedSource["Factory"] = $$createField2_2($$parsedSource["Factory"]);
         }
         if ("Actions" in $$parsedSource) {
-            $$parsedSource["Actions"] = $$createField1_0($$parsedSource["Actions"]);
+            $$parsedSource["Actions"] = $$createField3_0($$parsedSource["Actions"]);
         }
         if ("Error" in $$parsedSource) {
-            $$parsedSource["Error"] = $$createField5_0($$parsedSource["Error"]);
+            $$parsedSource["Error"] = $$createField7_0($$parsedSource["Error"]);
         }
         return new RemapSnapshot($$parsedSource as Partial<RemapSnapshot>);
     }
@@ -510,8 +582,8 @@ export class ResetResult {
      * Creates a new ResetResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ResetResult {
-        const $$createField0_0 = $$createType12;
-        const $$createField1_0 = $$createType11;
+        const $$createField0_0 = $$createType17;
+        const $$createField1_0 = $$createType16;
         const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Lanes" in $$parsedSource) {
@@ -604,9 +676,9 @@ export class Snapshot {
      * Creates a new Snapshot instance from a string or object.
      */
     static createFrom($$source: any = {}): Snapshot {
-        const $$createField2_0 = $$createType13;
-        const $$createField3_0 = $$createType13;
-        const $$createField4_0 = $$createType13;
+        const $$createField2_0 = $$createType18;
+        const $$createField3_0 = $$createType18;
+        const $$createField4_0 = $$createType18;
         const $$createField6_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Applied" in $$parsedSource) {
@@ -663,12 +735,17 @@ const $$createType1 = mouse$0.Device.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = mouse$0.Binding.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = x6$1.LightingSelection.createFrom;
+const $$createType5 = x6$0.LightingSelection.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = x6$0.LightingEffect.createFrom;
+const $$createType7 = x6$1.LightingEffect.createFrom;
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = x6$1.RemapConfig.createFrom;
-const $$createType10 = $Create.Array($Create.Any);
-const $$createType11 = ResetLaneResult.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = DPIConfig.createFrom;
+const $$createType9 = macros$0.Event.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = MacroDraft.createFrom;
+const $$createType12 = $Create.Nullable($$createType11);
+const $$createType13 = mouse$0.MacroProgress.createFrom;
+const $$createType14 = x6$0.RemapConfig.createFrom;
+const $$createType15 = $Create.Array($Create.Any);
+const $$createType16 = ResetLaneResult.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = DPIConfig.createFrom;

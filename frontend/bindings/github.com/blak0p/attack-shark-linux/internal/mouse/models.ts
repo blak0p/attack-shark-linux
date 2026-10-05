@@ -135,6 +135,57 @@ export class DeviceID {
     }
 }
 
+export enum MacroAssignmentProgress {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    MacroAssignmentNotStarted = 0,
+    MacroAssignmentUnknown = 1,
+    MacroAssignmentACKConfirmed = 2,
+};
+
+/**
+ * MacroProgress records transport evidence only, never playback or persistence.
+ * Zero values explicitly mean neither phase was started.
+ */
+export class MacroProgress {
+    "Assignment": MacroAssignmentProgress;
+    "Upload": MacroUploadProgress;
+
+    /** Creates a new MacroProgress instance. */
+    constructor($$source: Partial<MacroProgress> = {}) {
+        if (!("Assignment" in $$source)) {
+            this["Assignment"] = MacroAssignmentProgress.$zero;
+        }
+        if (!("Upload" in $$source)) {
+            this["Upload"] = MacroUploadProgress.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MacroProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MacroProgress {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new MacroProgress($$parsedSource as Partial<MacroProgress>);
+    }
+}
+
+export enum MacroUploadProgress {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    MacroUploadNotStarted = 0,
+    MacroUploadPossiblyPartial = 1,
+    MacroUploadConfirmed = 2,
+};
+
 /**
  * TargetedService owns inventory selection and state scoped to stable identities.
  */

@@ -109,6 +109,15 @@ export enum RemapAction {
     RemapDPICycle = "dpi_cycle",
     RemapDPIPlus = "dpi_plus",
     RemapDPIMinus = "dpi_minus",
+    RemapBrowserCalculator = "browser_calculator",
+    RemapBrowserEmail = "browser_email",
+    RemapBrowserForward = "browser_forward",
+    RemapBrowserBackward = "browser_backward",
+    RemapBrowserStop = "browser_stop",
+    RemapBrowserMyComputer = "browser_my_computer",
+    RemapBrowserRefresh = "browser_refresh",
+    RemapBrowserHome = "browser_home",
+    RemapBrowserSearch = "browser_search",
 };
 
 export class RemapButton {

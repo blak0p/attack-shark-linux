@@ -16,6 +16,7 @@ export {
     ErrorCode,
     Inventory,
     LightingSnapshot,
+    MacroDraft,
     NormalSleepSnapshot,
     PollingSnapshot,
     RemapSnapshot,

@@ -152,6 +152,15 @@ export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null>
     });
 }
 
+/**
+ * ClearMacroAssignment returns to the ordinary remap draft, never a device write.
+ */
+export function ClearMacroAssignment(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(1394905128).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
 export function CreateMacro(name: string, events: macros$0.Event[]): $CancellablePromise<macros$0.Macro> {
     return $Call.ByID(4248872902, name, events).then(($result: any) => {
         return $$createType10($result);
@@ -160,6 +169,16 @@ export function CreateMacro(name: string, events: macros$0.Event[]): $Cancellabl
 
 export function DeleteMacro(id: string): $CancellablePromise<void> {
     return $Call.ByID(3893970143, id);
+}
+
+/**
+ * DiscardRemap restores ordinary applied fields but deliberately does not restore
+ * a previously applied macro: no readback or independent slots are inferred.
+ */
+export function DiscardRemap(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(1611216701).then(($result: any) => {
+        return $$createType5($result);
+    });
 }
 
 /**
@@ -183,6 +202,12 @@ export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnaps
 export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1849424142).then(($result: any) => {
         return $$createType2($result);
+    });
+}
+
+export function GetMacroAssignmentSnapshot(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(33566531).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 
@@ -324,6 +349,16 @@ export function StageLighting(selection: x6$0.LightingSelection): $CancellablePr
     });
 }
 
+/**
+ * StageMacroAssignment replaces the single selected-device assignment without
+ * writing hardware or modifying other pending remap fields.
+ */
+export function StageMacroAssignment(id: string, button: number, repeat: number): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(3328335509, id, button, repeat).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
 export function StageNormalSleep(minutes: number): $CancellablePromise<$models.NormalSleepSnapshot> {
     return $Call.ByID(1234567502, minutes).then(($result: any) => {
         return $$createType3($result);
@@ -333,6 +368,16 @@ export function StageNormalSleep(minutes: number): $CancellablePromise<$models.N
 export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1822189569, rate).then(($result: any) => {
         return $$createType4($result);
+    });
+}
+
+/**
+ * StageRemap stages ordinary fields without changing the separate macro overlay.
+ * Returning the target button to an ordinary action requires ClearMacroAssignment.
+ */
+export function StageRemap(config: x6$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(3338853773, config).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 

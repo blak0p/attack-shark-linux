@@ -7,6 +7,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as macros$0 from "../macros/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as mouse$0 from "../mouse/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -150,6 +153,35 @@ export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null>
 }
 
 /**
+ * ClearMacroAssignment returns to the ordinary remap draft, never a device write.
+ */
+export function ClearMacroAssignment(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(1394905128).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+export function CreateMacro(name: string, events: macros$0.Event[]): $CancellablePromise<macros$0.Macro> {
+    return $Call.ByID(4248872902, name, events).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+export function DeleteMacro(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3893970143, id);
+}
+
+/**
+ * DiscardRemap restores ordinary applied fields but deliberately does not restore
+ * a previously applied macro: no readback or independent slots are inferred.
+ */
+export function DiscardRemap(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(1611216701).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
  * GetApplicationVersion reports the compiled installed-application version, not
  * the device firmware version or an available update target.
  */
@@ -170,6 +202,12 @@ export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnaps
 export function GetLightingSnapshot(): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1849424142).then(($result: any) => {
         return $$createType2($result);
+    });
+}
+
+export function GetMacroAssignmentSnapshot(): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(33566531).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 
@@ -205,6 +243,15 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
 }
 
 /**
+ * ListMacros reads app data without requiring inventory or a selected device.
+ */
+export function ListMacros(): $CancellablePromise<macros$0.Macro[]> {
+    return $Call.ByID(3745963423).then(($result: any) => {
+        return $$createType11($result);
+    });
+}
+
+/**
  * Quiesce cancels scheduled DPI and polling writes and invalidates their captured
  * revisions before a reset writes the same selected device.
  */
@@ -212,12 +259,18 @@ export function Quiesce(binding: $models.Binding): $CancellablePromise<void> {
     return $Call.ByID(2160581423, binding);
 }
 
+export function ReadMacro(id: string): $CancellablePromise<macros$0.Macro> {
+    return $Call.ByID(3360424442, id).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
 /**
  * RefreshInventory exposes all discovered devices and the explicit selection.
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(2420989727).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -232,7 +285,7 @@ export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
  */
 export function ResetToFactory(): $CancellablePromise<$models.ResetResult> {
     return $Call.ByID(2708725118).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType13($result);
     });
 }
 
@@ -271,7 +324,7 @@ export function RetryRemapPersistence(): $CancellablePromise<$models.RemapSnapsh
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(236647672, id).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -296,6 +349,16 @@ export function StageLighting(selection: x6$0.LightingSelection): $CancellablePr
     });
 }
 
+/**
+ * StageMacroAssignment replaces the single selected-device assignment without
+ * writing hardware or modifying other pending remap fields.
+ */
+export function StageMacroAssignment(id: string, button: number, repeat: number): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(3328335509, id, button, repeat).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
 export function StageNormalSleep(minutes: number): $CancellablePromise<$models.NormalSleepSnapshot> {
     return $Call.ByID(1234567502, minutes).then(($result: any) => {
         return $$createType3($result);
@@ -309,12 +372,28 @@ export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$m
 }
 
 /**
+ * StageRemap stages ordinary fields without changing the separate macro overlay.
+ * Returning the target button to an ordinary action requires ClearMacroAssignment.
+ */
+export function StageRemap(config: x6$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(3338853773, config).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
  * StartListener runs the status listener until ctx is cancelled, forwarding
  * every dongle-pushed status report into the service state and the frontend.
  * It is a no-op when no listener has been attached.
  */
 export function StartListener(): $CancellablePromise<void> {
     return $Call.ByID(987205650);
+}
+
+export function UpdateMacro(id: string, name: string, events: macros$0.Event[]): $CancellablePromise<macros$0.Macro> {
+    return $Call.ByID(3402186437, id, name, events).then(($result: any) => {
+        return $$createType10($result);
+    });
 }
 
 // Private type creation functions
@@ -328,5 +407,7 @@ const $$createType6 = $models.Service.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
 const $$createType8 = $models.UpdateInfo.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = $models.Inventory.createFrom;
-const $$createType11 = $models.ResetResult.createFrom;
+const $$createType10 = macros$0.Macro.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = $models.Inventory.createFrom;
+const $$createType13 = $models.ResetResult.createFrom;

@@ -73,6 +73,7 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   let pendingDPI = initial.Pending;
   let desiredPolling = pollingSnapshot().Desired;
   let pendingLighting = lightingSnapshot().Pending;
+  let remapDraft = remapSnapshot({ MacroPending: null, MacroApplied: null, MacroProgress: { Assignment: 0, Upload: 0 } });
 
   return {
   ListMacros: vi.fn().mockResolvedValue([]), ReadMacro: vi.fn(), CreateMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
@@ -81,7 +82,26 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
       GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot()),
 	GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
       GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleepSnapshot()),
-	GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot()),
+	GetRemapSnapshot: vi.fn().mockImplementation(async () => remapDraft),
+  StageMacroAssignment: vi.fn().mockImplementation(async (id, button, repeat) => {
+    if (!overrides.ReadMacro) throw new Error("Macro not found");
+    const macro = await overrides.ReadMacro(id);
+    remapDraft = { ...remapDraft, MacroPending: { ID: macro.id, Name: macro.name, Button: button, Repeat: repeat, Events: macro.events.map((event) => ({ ...event })) }, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  StageRemap: vi.fn().mockImplementation(async (config) => {
+    remapDraft = { ...remapDraft, Pending: config, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  ClearMacroAssignment: vi.fn().mockImplementation(async () => {
+    remapDraft = { ...remapDraft, MacroPending: null, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  DiscardRemap: vi.fn().mockImplementation(async () => {
+    remapDraft = { ...remapDraft, Pending: remapDraft.Applied, MacroPending: null, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  GetMacroAssignmentSnapshot: vi.fn().mockImplementation(async () => remapDraft),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
@@ -109,6 +129,61 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   ...overrides,
   };
 };
+
+describe("serviceFor remap fixture", () => {
+  const appliedConfig = { Buttons: [
+    { Button: 1, Action: "left" as const, PreservedDefault: "" as const },
+    { Button: 2, Action: "right" as const, PreservedDefault: "" as const },
+    { Button: 3, Action: "middle" as const, PreservedDefault: "" as const },
+    { Button: 4, Action: "forward" as const, PreservedDefault: "" as const },
+    { Button: 5, Action: "backward" as const, PreservedDefault: "" as const },
+    { Button: 6, Action: null, PreservedDefault: "DPI+" as const },
+    { Button: 7, Action: null, PreservedDefault: "DPI-" as const },
+  ] };
+  const pendingConfig = { Buttons: appliedConfig.Buttons.map((button) =>
+    button.Button === 2 ? { ...button, Action: "off" as const } : { ...button },
+  ) };
+  const clickEvents = [
+    { type: "mouse_left" as const, action: "down" as const, delay_ms: 0 },
+    { type: "mouse_left" as const, action: "up" as const, delay_ms: 0 },
+  ];
+
+  it("preserves the staged macro when staging ordinary remap fields", async () => {
+    const service = serviceFor(snapshot(), {
+      ReadMacro: vi.fn().mockResolvedValue({ id: "draft", name: "Draft macro", events: clickEvents }),
+    });
+    const staged = await service.StageMacroAssignment("draft", 1, 3);
+    staged.Applied = appliedConfig;
+
+    const result = await service.StageRemap(pendingConfig);
+
+    expect(result.MacroPending).toEqual(staged.MacroPending);
+    expect(result.Pending).toEqual(pendingConfig);
+    expect(result.Revision).toBe(staged.Revision + 1);
+    expect((await service.GetRemapSnapshot()).MacroPending).toEqual(staged.MacroPending);
+  });
+
+  it.each([false, true])("clears the staged macro on discard with an applied macro: %s", async (hasAppliedMacro) => {
+    const service = serviceFor(snapshot(), {
+      ReadMacro: vi.fn().mockResolvedValue({ id: "draft", name: "Draft macro", events: clickEvents }),
+    });
+    const staged = await service.StageMacroAssignment("draft", 1, 3);
+    // Seed applied state through the fixture's shared snapshot; no device apply is simulated.
+    staged.Applied = appliedConfig;
+    staged.MacroApplied = hasAppliedMacro ? { ...staged.MacroPending!, ID: "applied", Name: "Applied macro" } : null;
+    await service.StageRemap(pendingConfig);
+    const appliedMacro = staged.MacroApplied;
+
+    const result = await service.DiscardRemap();
+
+    expect(result.MacroPending).toBeNull();
+    expect(result.MacroApplied).toEqual(appliedMacro);
+    expect(result.Pending).toEqual(appliedConfig);
+    expect(result.Pending).not.toEqual(pendingConfig);
+    expect(result.Revision).toBe(staged.Revision + 2);
+    expect((await service.GetMacroAssignmentSnapshot()).MacroPending).toBeNull();
+  });
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
