@@ -10,13 +10,15 @@ import (
 )
 
 type remapState struct {
-	mu                        sync.Mutex
-	applyMu                   sync.Mutex
-	pending, applied, factory x6.RemapConfig
-	retry                     *x6.RemapConfig
-	revision                  uint64
-	firmware, persistence     string
-	err                       Error
+	macroPending, macroApplied *MacroDraft
+	macroProgress              mouse.MacroProgress
+	mu                         sync.Mutex
+	applyMu                    sync.Mutex
+	pending, applied, factory  x6.RemapConfig
+	retry                      *x6.RemapConfig
+	revision                   uint64
+	firmware, persistence      string
+	err                        Error
 }
 
 type remapComponent struct {
@@ -75,7 +77,7 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
-	if remapConfigsEqual(state.applied, config) && state.firmware == "success" {
+	if state.macroPending == nil && state.macroApplied == nil && remapConfigsEqual(state.applied, config) && state.firmware == "success" {
 		retry := state.retry != nil
 		snapshot := remapSnapshotLocked(state)
 		state.mu.Unlock()
@@ -88,8 +90,13 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 	state.revision++
 	revision := state.revision
 	state.firmware, state.persistence, state.retry, state.err = "pending", "", nil, Error{}
+	draft := cloneMacroDraft(state.macroPending)
 	state.mu.Unlock()
-	c.applyBound(binding, state, revision, cloneRemapConfig(config))
+	if draft != nil {
+		c.applyMacroBound(binding, state, revision, cloneRemapConfig(config), draft)
+	} else {
+		c.applyBound(binding, state, revision, cloneRemapConfig(config))
+	}
 	return remapSnapshotOf(state)
 }
 
@@ -123,6 +130,7 @@ func (c *remapComponent) applyBound(binding Binding, state *remapState, revision
 		return
 	}
 	state.applied, state.firmware, state.err = cloneRemapConfig(pending), "success", Error{}
+	state.macroApplied = nil
 	state.mu.Unlock()
 	if binding.SessionOnly || persistence == nil {
 		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
@@ -190,6 +198,7 @@ func (c *remapComponent) reconcileFactoryReset() {
 	defaults := x6.DefaultRemapConfig()
 	state.pending, state.applied, state.retry = cloneRemapConfig(defaults), cloneRemapConfig(defaults), nil
 	state.revision++
+	state.macroPending, state.macroApplied, state.macroProgress = nil, nil, mouse.MacroProgress{}
 	state.firmware, state.persistence, state.err = "success", "success", Error{}
 }
 
@@ -214,7 +223,7 @@ func remapSnapshotLocked(state *remapState) RemapSnapshot {
 		x6.RemapBrowserCalculator, x6.RemapBrowserEmail, x6.RemapBrowserForward, x6.RemapBrowserBackward, x6.RemapBrowserStop,
 		x6.RemapBrowserMyComputer, x6.RemapBrowserRefresh, x6.RemapBrowserHome, x6.RemapBrowserSearch,
 	}
-	return RemapSnapshot{Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
+	return RemapSnapshot{MacroPending: cloneMacroDraft(state.macroPending), MacroApplied: cloneMacroDraft(state.macroApplied), MacroProgress: state.macroProgress, Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
 }
 
 func cloneRemapConfig(config x6.RemapConfig) x6.RemapConfig {

@@ -95,12 +95,14 @@ type NormalSleepSnapshot struct {
 	Error                 Error
 }
 type RemapSnapshot struct {
-	Pending, Applied, Factory x6.RemapConfig
-	Actions                   []x6.RemapAction
-	Revision                  uint64
-	Firmware, Persistence     string
-	RetryAvailable            bool
-	Error                     Error
+	MacroPending, MacroApplied *MacroDraft
+	MacroProgress              mouse.MacroProgress
+	Pending, Applied, Factory  x6.RemapConfig
+	Actions                    []x6.RemapAction
+	Revision                   uint64
+	Firmware, Persistence      string
+	RetryAvailable             bool
+	Error                      Error
 }
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
