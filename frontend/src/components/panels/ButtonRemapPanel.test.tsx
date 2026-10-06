@@ -24,9 +24,93 @@ const mouseControlsRemap = {
 const browserActions = ["browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
 const browserRemap = { ...mouseControlsRemap, Actions: [...mouseControlsRemap.Actions, ...browserActions] };
 
+const clickMacro = { id: "click", name: "Saved click", events: [
+  { type: "mouse_left", action: "down", delay_ms: 0 },
+  { type: "mouse_left", action: "up", delay_ms: 0 },
+] } as const;
+
 afterEach(cleanup);
 
 describe("ButtonRemapPanel", () => {
+  it("stages a saved name and fixed repeat without applying, rejecting invalid repeats", () => {
+    const onStageMacro = vi.fn(); const onApply = vi.fn();
+    render(<ButtonRemapPanel remap={remap} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
+    fireEvent.change(screen.getByLabelText("Macro target button"), { target: { value: "7" } });
+    fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "click" } });
+    for (const value of ["0", "256", "1.5", ""]) {
+      fireEvent.change(screen.getByLabelText("Fixed repetitions"), { target: { value } });
+      expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
+    }
+    fireEvent.change(screen.getByLabelText("Fixed repetitions"), { target: { value: "255" } });
+    fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+    expect(onStageMacro).toHaveBeenCalledWith("click", 7, 255);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("rejects timing and sequence projection and isolates input keyboard shortcuts", () => {
+    const onApply = vi.fn(); const onDiscard = vi.fn(); const onStageMacro = vi.fn();
+    const unsupported = { ...clickMacro, id: "timed", events: clickMacro.events.map((event) => ({ ...event, delay_ms: 2 })) };
+    render(<ButtonRemapPanel remap={remap} ready macros={[unsupported] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} onDiscard={onDiscard} />);
+    fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "timed" } });
+    expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
+    expect(screen.getByText(/exactly two same-button/)).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByLabelText("Fixed repetitions"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByLabelText("Saved macro"), { key: "Escape" });
+    expect(onApply).not.toHaveBeenCalled(); expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it("shows the singular overlay instead of the underlying ordinary action and reports partial transport", () => {
+    render(<ButtonRemapPanel remap={{ ...remap, MacroPending: { ID: "click", Name: "Saved click", Button: 6, Repeat: 2, Events: [] }, MacroProgress: { Assignment: 2, Upload: 1 }, Firmware: "failed" } as never} ready onStage={vi.fn()} />);
+    expect(screen.getByLabelText("Remap assignment summary")).toHaveTextContent("Button 6: Saved click × 2");
+    expect(screen.getByRole("status")).toHaveTextContent(/partial|unknown/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/playback.*unverified/i);
+  });
+  it.each([
+    [],
+    [...clickMacro.events, ...clickMacro.events],
+    [clickMacro.events[1], clickMacro.events[0]],
+    [clickMacro.events[0], { ...clickMacro.events[1], type: "mouse_right" }],
+  ].map((events) => ({ events })))("does not stage unsupported event layout %j", ({ events }) => {
+    const onStageMacro = vi.fn();
+    render(<ButtonRemapPanel remap={remap} ready macros={[{ ...clickMacro, events }] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
+    fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "click" } });
+    fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+    expect(onStageMacro).not.toHaveBeenCalled();
+  });
+
+  it("disables staging and panel shortcuts while disconnected or busy", () => {
+    const onApply = vi.fn(); const onDiscard = vi.fn();
+    render(<ButtonRemapPanel remap={remap} ready={false} macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} onApply={onApply} onDiscard={onDiscard} />);
+    expect(screen.getByLabelText("Saved macro")).toBeDisabled();
+    const panel = screen.getByRole("heading", { name: "Button remapping" }).parentElement!;
+    fireEvent.keyDown(panel, { key: "Enter" }); fireEvent.keyDown(panel, { key: "Escape" });
+    expect(onApply).not.toHaveBeenCalled(); expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse prior transport success for a changed macro draft", () => {
+    const draft = { ID: "click", Name: "Saved click", Button: 6, Repeat: 2, Events: [] };
+    render(<ButtonRemapPanel remap={{ ...remap, Applied: remap.Pending, MacroPending: { ...draft, Button: 7 }, MacroApplied: draft, Firmware: "success" } as never} ready onStage={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("current draft not confirmed");
+  });
+
+  it.each(["success", "failed", "pending"])("does not treat residual macro progress as an active macro when ordinary transport is %s", (Firmware) => {
+    render(<ButtonRemapPanel remap={{ ...remap, Applied: remap.Pending, MacroPending: null, MacroApplied: null,
+      MacroProgress: { Assignment: 2, Upload: 1 }, Firmware } as never} ready onStage={vi.fn()} />);
+    const status = screen.getByRole("status");
+    expect(status).not.toHaveTextContent("Remap and macro transport confirmed");
+    expect(status).not.toHaveTextContent("Macro assignment staged locally");
+    expect(status).toHaveTextContent(Firmware === "success" ? "Button remapping applied" : Firmware === "failed" ? "Button remapping failed" : "Remap draft pending confirmation");
+    expect(screen.getByText(/Prior macro transport progress/)).toHaveTextContent("partial or unknown");
+  });
+
+  it("still confirms a matching applied macro rather than ordinary transport", () => {
+    const draft = { ID: "click", Name: "Saved click", Button: 6, Repeat: 2, Events: clickMacro.events };
+    render(<ButtonRemapPanel remap={{ ...remap, Applied: remap.Pending, MacroPending: draft, MacroApplied: draft,
+      MacroProgress: { Assignment: 2, Upload: 2 }, Firmware: "success" } as never} ready onStage={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Remap and macro transport confirmed");
+    expect(screen.queryByText(/Prior macro transport progress/)).not.toBeInTheDocument();
+  });
+
   it("renders exactly seven closed-action selectors and preserves DPI markers", () => {
     render(<ButtonRemapPanel remap={remap} ready onStage={vi.fn()} />);
     expect(screen.getAllByRole("button", { name: /Button \d action/ })).toHaveLength(7);

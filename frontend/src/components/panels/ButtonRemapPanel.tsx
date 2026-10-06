@@ -1,3 +1,5 @@
+import { useState } from "react";
+import type { Macro, MacroDraft, MacroProgress } from "../../desktop-contract";
 import { GnomeSelect } from "./GnomeSelect";
 
 import type { RemapAction as Action } from "../../desktop-contract";
@@ -8,7 +10,16 @@ type Remap = {
   Actions: Action[];
   Firmware: string;
   Error: { Code: string };
+  MacroPending?: MacroDraft | null;
+  MacroApplied?: MacroDraft | null;
+  MacroProgress?: MacroProgress;
 };
+
+const compatible = (macro: Macro) => macro.events.length === 2 &&
+  ["mouse_left", "mouse_right"].includes(macro.events[0].type) &&
+  macro.events[0].type === macro.events[1].type &&
+  macro.events[0].action === "down" && macro.events[1].action === "up" &&
+  macro.events.every((event) => event.delay_ms === 0);
 
 const labelFor = (action: Action) =>
   ({
@@ -55,14 +66,36 @@ export function ButtonRemapPanel({
   onApply = () => {},
   onDiscard = () => {},
   feedbackFor,
+  macros = [],
+  libraryReady = true,
+  onStageMacro,
+  error = "",
 }: {
   remap: Remap;
   ready: boolean;
+  macros?: Macro[];
+  libraryReady?: boolean;
+  onStageMacro?(id: string, button: number, repeat: number): void;
+  error?: string;
   onStage(button: number, action: Action): void;
   onApply?(): void;
   onDiscard?(): void;
   feedbackFor?: (code: string) => string;
 }) {
+  const [target, setTarget] = useState(1);
+  const [macroID, setMacroID] = useState("");
+  const [repeat, setRepeat] = useState("1");
+  const selectedMacro = macros.find((macro) => macro.id === macroID);
+  const validRepeat = repeat.trim() !== "" && Number.isInteger(Number(repeat)) && Number(repeat) >= 1 && Number(repeat) <= 255;
+  const canStage = ready && libraryReady && !!onStageMacro && !!selectedMacro && compatible(selectedMacro) && validRepeat;
+  const assignmentLabel = (button: Button) => remap.MacroPending?.Button === button.Button
+    ? `${remap.MacroPending.Name} × ${remap.MacroPending.Repeat}`
+    : button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
+  const draftMatchesApplied = JSON.stringify(remap.MacroPending ?? null) === JSON.stringify(remap.MacroApplied ?? null) &&
+    JSON.stringify(remap.Pending) === JSON.stringify(remap.Applied);
+  const macroTransport = !!(remap.MacroPending || remap.MacroApplied);
+  // Native ordinary apply retains historical macro progress, not macro confirmation.
+  const residualMacroProgress = !macroTransport && !!(remap.MacroProgress?.Assignment || remap.MacroProgress?.Upload);
   return (
     <article
       id="remapping-card"
@@ -70,6 +103,7 @@ export function ButtonRemapPanel({
       aria-labelledby="button-remap-title"
       tabIndex={0}
       onKeyDown={(event) => {
+        if (!ready || event.target !== event.currentTarget) return;
         if (event.key === "Enter") {
           event.preventDefault();
           onApply();
@@ -83,6 +117,28 @@ export function ButtonRemapPanel({
       <h2 id="button-remap-title">Button remapping</h2>
       <p className="hint">Review the complete assignment below, then apply or discard it.</p>
 
+      <fieldset disabled={!ready || !libraryReady} onKeyDown={(event) => event.stopPropagation()}>
+        <legend>Saved macro assignment</legend>
+        <label>Macro target button
+          <select aria-label="Macro target button" className="select" value={target} onChange={(event) => setTarget(Number(event.target.value))}>
+            {Array.from({ length: 7 }, (_, index) => <option key={index + 1} value={index + 1}>Button {index + 1}</option>)}
+          </select>
+        </label>
+        <label>Saved macro
+          <select aria-label="Saved macro" className="select" value={selectedMacro ? macroID : ""} onChange={(event) => setMacroID(event.target.value)}>
+            <option value="">Choose a saved macro</option>
+            {macros.map((macro) => <option key={macro.id} value={macro.id}>{macro.name}{compatible(macro) ? "" : " (incompatible)"}</option>)}
+          </select>
+        </label>
+        <label>Fixed repetitions
+          <input className="input" type="number" min={1} max={255} step={1} value={repeat} onChange={(event) => setRepeat(event.target.value)} />
+        </label>
+        <button type="button" className="button" disabled={!canStage} onClick={() => { if (canStage) onStageMacro!(macroID, target, Number(repeat)); }}>Stage macro assignment</button>
+      </fieldset>
+      <p className="hint">Save locally in Macros, then stage here and use Apply remap. Only exactly two same-button left/right down/up events with zero delays are compatible; fixed repetitions 1–255. One macro overlay per device; staging another replaces it. Playback and device persistence remain unverified.</p>
+      {!libraryReady && <p className="hint">Saved library unavailable or loading. Open Macros to retry.</p>}
+      {error && <p role="alert">{error}</p>}
+
       {remap.Pending.Buttons.map((button) => (
         <div className="binding" key={button.Button}>
           <div>
@@ -91,7 +147,7 @@ export function ButtonRemapPanel({
               {button.PreservedDefault ? ` (${button.PreservedDefault})` : ""}
             </b>
             <span>
-              {button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default"}
+              {assignmentLabel(button)}
             </span>
           </div>
           <GnomeSelect
@@ -117,7 +173,7 @@ export function ButtonRemapPanel({
         {remap.Pending.Buttons.map(
           (button) =>
             `Button ${button.Button}: ${
-              button.Action ? labelFor(button.Action) : button.PreservedDefault
+              assignmentLabel(button)
             }`
         ).join(", ")}
       </p>
@@ -131,8 +187,19 @@ export function ButtonRemapPanel({
         </button>
       </div>
 
+      {residualMacroProgress && <p className="hint">Prior macro transport progress retained; macro device state may be partial or unknown. Playback and device persistence unverified.</p>}
       <div className="status" role="status" aria-label="Button remapping status">
-        {remap.Firmware === "success"
+        {macroTransport
+          ? remap.Firmware === "success"
+            ? draftMatchesApplied
+              ? "Remap and macro transport confirmed. Playback and device persistence unverified."
+              : remap.MacroApplied
+                ? "Last remap and macro transport confirmed; current draft not confirmed. Playback and device persistence unverified."
+                : "Macro assignment staged locally; current draft not confirmed. Playback and device persistence unverified."
+            : remap.Firmware === "failed"
+            ? "Macro transport not confirmed; device state may be partial or unknown. Playback and device persistence unverified."
+            : "Macro assignment staged locally; no transport confirmation. Playback and device persistence unverified."
+          : remap.Firmware === "success"
           ? "Button remapping applied"
           : remap.Firmware === "failed"
           ? <>

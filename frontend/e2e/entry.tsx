@@ -34,8 +34,15 @@ const remapFactory = (): RemapConfig => ({ Buttons: [
   { Button: 7, Action: null, PreservedDefault: "DPI-" },
 ] });
 const actions: RemapAction[] = ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire", "browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
-const remaps = new Map(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
+const remaps = new Map<string, RemapSnapshot>(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
 const remapSnapshot = () => structuredClone(remaps.get(selected.ID.Serial)!);
+const validateRemap = (config: RemapConfig) => {
+  if (config.Buttons.length !== 7 || config.Buttons.some((button, index) =>
+    button.Button !== index + 1 || (button.Action !== null ? !actions.includes(button.Action) :
+      button.PreservedDefault !== (button.Button === 6 ? "DPI+" : button.Button === 7 ? "DPI-" : "" ) || button.Button < 6))) {
+    throw new Error("Invalid mock remap draft");
+  }
+};
 let selected = ids[0];
 let currentPolling = polling();
 let currentDPI = snapshot();
@@ -112,11 +119,57 @@ const service = {
   GetLightingSnapshot: async () => ({ Pending: { Mode: 0, TemplateID: "off" }, Applied: null, Effects: [], Revision: 0, Error: { Code: "" } }),
   GetNormalSleepSnapshot: async () => ({ Pending: 0.5, Applied: 0.5, Persisted: 0.5, Revision: 0, Error: { Code: "" } }),
   GetRemapSnapshot: async () => remapSnapshot(),
+  GetMacroAssignmentSnapshot: async () => remapSnapshot(),
+  StageMacroAssignment: async (id: string, button: number, repeat: number) => {
+    const macro = readMacro(id);
+    if (offline || !Number.isInteger(button) || button < 1 || button > 7 ||
+        !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || macro.events.length !== 2 ||
+        !["mouse_left", "mouse_right"].includes(macro.events[0].type) ||
+        macro.events[0].type !== macro.events[1].type || macro.events[0].action !== "down" ||
+        macro.events[1].action !== "up" || macro.events.some((event) => event.delay_ms !== 0)) throw new Error("Invalid macro assignment");
+    record("StageMacroAssignment");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: macro.events }, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  StageRemap: async (config: RemapConfig) => {
+    validateRemap(config); record("StageRemap");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  ClearMacroAssignment: async () => {
+    record("ClearMacroAssignment");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: null, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  DiscardRemap: async () => {
+    record("DiscardRemap");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(current.Applied), MacroPending: null, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
   ApplyRemap: async (config: RemapConfig) => {
-    if (config.Buttons.length !== 7 || config.Buttons.some((button, index) => button.Button !== index + 1 || (button.Action !== null && !actions.includes(button.Action)))) throw new Error("Invalid mock remap draft");
+    validateRemap(config);
     calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
-    const updated = { ...remapSnapshot(), Pending: structuredClone(config), Applied: structuredClone(config), Revision: remaps.get(selected.ID.Serial)!.Revision + 1, Firmware: "success" };
-    remaps.set(selected.ID.Serial, updated);
+    const current = remapSnapshot();
+    const draft = current.MacroPending;
+    const libraryCurrent = !draft || JSON.stringify(macros.get(draft.ID)) === JSON.stringify({ id: draft.ID, name: draft.Name, events: draft.Events });
+    if (!libraryCurrent) {
+      remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Firmware: "failed", Persistence: "", Error: { Code: "invalid_configuration" } });
+      return remapSnapshot();
+    }
+    const failed = failNext;
+    failNext = false;
+    remaps.set(selected.ID.Serial, {
+      ...current, Pending: structuredClone(config), Revision: current.Revision + 1,
+      Applied: failed ? current.Applied : structuredClone(config),
+      MacroApplied: failed ? current.MacroApplied : structuredClone(draft ?? null),
+      MacroProgress: draft ? { Assignment: 2, Upload: failed ? 1 : 2 } : current.MacroProgress,
+      Firmware: failed ? "failed" : "success", Persistence: failed ? "" : draft ? "not_supported" : "success",
+      Error: { Code: failed ? "apply_failed" : "" },
+    });
     return remapSnapshot();
   },
   OnStatusEvent: () => () => {}, OnConfiguration: () => () => {},

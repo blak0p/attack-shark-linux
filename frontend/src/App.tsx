@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
+import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
 import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
 import { WorkspaceView } from "./components/workspace/WorkspaceView";
@@ -77,6 +78,7 @@ const speedFill = (index: number, count: number) =>
 
 export function App({ service }: { service: DesktopService }) {
   const { model, actions } = useDesktopWorkspace(service);
+  const macroLibrary = useMacroLibrary(service);
   const {
     snapshot,
     polling,
@@ -97,7 +99,7 @@ export function App({ service }: { service: DesktopService }) {
 
   const macroWorkspace = (
     <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
-      <MacroManagerPanel service={service} />
+      <MacroManagerPanel service={service} library={macroLibrary} />
     </WorkspaceView>
   );
 
@@ -440,7 +442,11 @@ export function App({ service }: { service: DesktopService }) {
         {remap && (
           <ButtonRemapPanel
             remap={remap}
-            ready={ready}
+            ready={ready && !model.remapBusy}
+            macros={macroLibrary.macros}
+            libraryReady={macroLibrary.loaded && !macroLibrary.loading}
+            onStageMacro={actions.stageMacroAssignment}
+            error={model.remapError}
             onStage={actions.stageRemap}
             onApply={actions.applyRemap}
             onDiscard={actions.discardRemap}

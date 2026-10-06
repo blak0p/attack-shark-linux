@@ -4,8 +4,18 @@ import { useMacroLibrary } from "../../hooks/useMacroLibrary";
 import { exportMacroFile, MAX_MACRO_FILE_BYTES } from "../../macros/macro-file";
 import "./MacroManagerPanel.css";
 
-export function MacroManagerPanel({ service }: { service: MacroLibraryService }) {
+type Library = ReturnType<typeof useMacroLibrary>;
+
+export function MacroManagerPanel({ service, library }: { service: MacroLibraryService; library?: Library }) {
+  return library ? <MacroManagerEditor library={library} service={service} /> : <LocalMacroManager service={service} />;
+}
+
+function LocalMacroManager({ service }: { service: MacroLibraryService }) {
   const library = useMacroLibrary(service);
+  return <MacroManagerEditor library={library} service={service} />;
+}
+
+function MacroManagerEditor({ library, service }: { library: Library; service: MacroLibraryService }) {
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
   const unavailable = busy || reading || loading || confirmation;
   const [armed, setArmed] = useState(false);
@@ -99,7 +109,7 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
       </article>
       <article className="card macro-detail" aria-label="Macro details">
         <h2>{draft?.id ? "Macro details" : "New macro"}</h2>
-        <p className="hint">Save to library only. Device assignment comes later.</p>
+        <p className="hint">Save to library only; no device changes. To assign a saved macro, open Button remapping, choose its name and fixed repetitions (1–255), then Apply remap. Playback and device persistence remain unverified.</p>
         <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
         <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
         {reading && <p role="status">Loading macro…</p>}
@@ -132,7 +142,7 @@ export function MacroManagerPanel({ service }: { service: MacroLibraryService })
               <h3>Events · {draft.events.length}</h3>
               <p className="hint">Ordered left/right press and release events.</p>
               {draft.events.some((event) => Number(event.delay_ms) !== 0) && (
-                <p className="hint">Existing delay values are preserved for compatibility, not editable here. Vendor pause support is unverified; any future device upload must reject unsupported timing.</p>
+                <p className="hint">Existing delay values are preserved for compatibility, not editable here. Vendor pause support is unverified; Button remapping rejects unsupported timing rather than discarding it.</p>
               )}
               <button type="button" className="button" disabled={editorDisabled} onClick={library.addEvent}>Add event</button>
               {draft.events.length === 0 ? <p className="macro-empty">No events yet. Empty macros can be saved.</p> : (

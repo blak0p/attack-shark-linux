@@ -3,8 +3,37 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
+import type { Macro } from "./desktop-contract";
 
 afterEach(cleanup);
+
+it("shares one guarded saved library between manager and remapping", async () => {
+  const macro: Macro = { id: "saved", name: "Saved click", events: [
+    { type: "mouse_left", action: "down", delay_ms: 0 },
+    { type: "mouse_left", action: "up", delay_ms: 0 },
+  ] };
+  const config = { Buttons: [
+    { Button: 1, Action: "left", PreservedDefault: "" }, { Button: 2, Action: "right", PreservedDefault: "" },
+    { Button: 3, Action: "middle", PreservedDefault: "" }, { Button: 4, Action: "forward", PreservedDefault: "" },
+    { Button: 5, Action: "backward", PreservedDefault: "" }, { Button: 6, Action: null, PreservedDefault: "DPI+" },
+    { Button: 7, Action: null, PreservedDefault: "DPI-" },
+  ] } as RemapSnapshot["Pending"];
+  const service = serviceFor(snapshot(), {
+    ListMacros: vi.fn().mockResolvedValue([macro]), ReadMacro: vi.fn().mockResolvedValue(macro),
+    GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot({ Pending: config, Applied: config, Factory: config })),
+    StageMacroAssignment: vi.fn().mockResolvedValue(remapSnapshot({ Pending: config, Applied: config, Factory: config,
+      MacroPending: { ID: macro.id, Name: macro.name, Button: 1, Repeat: 1, Events: macro.events },
+    })),
+  });
+  render(<App service={service} />);
+  await waitFor(() => expect(screen.getByLabelText("Saved macro")).toHaveTextContent("Saved click"));
+  expect(service.ListMacros).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("link", { name: "Button remapping", exact: true }));
+  fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "saved" } });
+  fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+  await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
+  expect(service.ApplyRemap).not.toHaveBeenCalled();
+});
 
 const configuration = (firstDPI = 800) => ({
   DPI: [firstDPI, 1200, 1600, 2400, 3200, 6400, 12800, 26000],
@@ -622,7 +651,8 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(await screen.findByText("Device available")).toBeInTheDocument();
     expect(screen.queryByText(/ambiguous identity/)).not.toBeInTheDocument();
 	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
-    expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole("button", { name: /^Stage \d/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
     expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
   });
 
@@ -695,7 +725,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
     expect(screen.getByRole("region", { name: "Mouse recording zone" })).toBeInTheDocument();
     // Local file exchange and zone recording are implemented; hardware playback/profiles are not.
-    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload|assign/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });

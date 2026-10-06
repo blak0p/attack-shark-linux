@@ -6,6 +6,13 @@ import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("guides assignment to Button remapping without a standalone upload", async () => {
+  render(<MacroManagerPanel service={serviceFor()} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  expect(screen.getByText(/To assign a saved macro, open Button remapping/)).toHaveTextContent("Playback and device persistence remain unverified");
+  expect(screen.queryByRole("button", { name: /upload|apply remap/i })).not.toBeInTheDocument();
+});
+
 it("records only armed zone input in order, appends on stop and persists only on explicit save", async () => {
   const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
   let now = 100;
