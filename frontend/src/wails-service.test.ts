@@ -101,6 +101,52 @@ describe("desktopService", () => {
     expect(bindings.ApplyRemap).not.toHaveBeenCalled();
     expect(bindings.ApplyDPI).not.toHaveBeenCalled();
   });
+  it.each(["mouse_middle", "mouse_back", "mouse_forward"] as const)(
+    "preserves %s through local CRUD and assignment draft snapshots", async (type) => {
+      const events = [
+        { type, action: "down" as const, delay_ms: 15 },
+        { type, action: "up" as const, delay_ms: 25 },
+      ];
+      const macro = { id: "stable", name: "Clicks", events };
+      bindings.ListMacros.mockResolvedValueOnce([macro]);
+      bindings.CreateMacro.mockResolvedValueOnce(macro);
+      bindings.UpdateMacro.mockResolvedValueOnce(macro);
+      bindings.ReadMacro.mockResolvedValueOnce(macro);
+      expect(await desktopService.ListMacros()).toEqual([macro]);
+      expect(await desktopService.CreateMacro("Clicks", events)).toEqual(macro);
+      expect(await desktopService.UpdateMacro("stable", "Clicks", events)).toEqual(macro);
+      expect(await desktopService.ReadMacro("stable")).toEqual(macro);
+      expect(bindings.CreateMacro).toHaveBeenLastCalledWith("Clicks", events);
+      expect(bindings.UpdateMacro).toHaveBeenLastCalledWith("stable", "Clicks", events);
+      const draft = { ID: "stable", Name: "Clicks", Button: 7, Repeat: 1, Events: events };
+      const snapshot = { Pending: { Buttons: [] }, Applied: { Buttons: [] },
+        MacroPending: draft, MacroApplied: draft };
+      bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce(snapshot);
+      expect(await desktopService.GetMacroAssignmentSnapshot()).toEqual(snapshot);
+    },
+  );
+
+  it("rejects unknown event types in local CRUD responses and both draft states", async () => {
+    const events = [{ type: "mouse_unknown", action: "down", delay_ms: 0 }];
+    const macro = { id: "stable", name: "Unknown", events };
+    bindings.ListMacros.mockResolvedValueOnce([macro]);
+    bindings.CreateMacro.mockResolvedValueOnce(macro);
+    bindings.UpdateMacro.mockResolvedValueOnce(macro);
+    bindings.ReadMacro.mockResolvedValueOnce(macro);
+    await expect(desktopService.ListMacros()).rejects.toThrow("Unsupported local macro event");
+    await expect(desktopService.CreateMacro("Unknown", [])).rejects.toThrow("Unsupported local macro event");
+    await expect(desktopService.UpdateMacro("stable", "Unknown", [])).rejects.toThrow("Unsupported local macro event");
+    await expect(desktopService.ReadMacro("stable")).rejects.toThrow("Unsupported local macro event");
+    const draft = { ID: "stable", Name: "Unknown", Button: 7, Repeat: 1, Events: events };
+    for (const state of ["MacroPending", "MacroApplied"] as const) {
+      bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce({
+        Pending: { Buttons: [] }, Applied: { Buttons: [] },
+        MacroPending: null, MacroApplied: null, [state]: draft,
+      });
+      await expect(desktopService.GetMacroAssignmentSnapshot()).rejects.toThrow("Unsupported local macro event");
+    }
+  });
+
   it("forwards each UI operation to its generated Wails binding", () => {
     const config = { DPI: [1600], ActiveStage: 0, StageMask: 1, LiftDistance: 1 };
 

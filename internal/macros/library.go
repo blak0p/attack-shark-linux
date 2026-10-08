@@ -23,8 +23,11 @@ import (
 type EventType string
 
 const (
-	MouseLeft  EventType = "mouse_left"
-	MouseRight EventType = "mouse_right"
+	MouseLeft    EventType = "mouse_left"
+	MouseRight   EventType = "mouse_right"
+	MouseMiddle  EventType = "mouse_middle"
+	MouseBack    EventType = "mouse_back"
+	MouseForward EventType = "mouse_forward"
 )
 
 // Action describes a press or release, not a firmware opcode.
@@ -113,7 +116,9 @@ func validate(name string, events []Event) error {
 		return errors.New("macro name is blank")
 	}
 	for i, event := range events {
-		if event.Type != MouseLeft && event.Type != MouseRight {
+		switch event.Type {
+		case MouseLeft, MouseRight, MouseMiddle, MouseBack, MouseForward:
+		default:
 			return fmt.Errorf("event %d: unknown type %q", i, event.Type)
 		}
 		if event.Action != Down && event.Action != Up {

@@ -29,7 +29,7 @@ export type StatusEvent = Partial<Binding> & { Connection?: string; Battery?: nu
 export type ConfigurationEvent = { Binding: Binding; Snapshot: Snapshot };
 export type PollingConfigurationEvent = { Binding: Binding; Snapshot: PollingSnapshot };
 export type RemapConfigurationEvent = { Binding: Binding; Snapshot: RemapSnapshot };
-export type MacroEvent = { type: "mouse_left" | "mouse_right"; action: "down" | "up"; delay_ms: number };
+export type MacroEvent = { type: "mouse_left" | "mouse_right" | "mouse_middle" | "mouse_back" | "mouse_forward"; action: "down" | "up"; delay_ms: number };
 export type Macro = { id: string; name: string; events: MacroEvent[] };
 export type MacroLibraryService = {
   ListMacros(): Promise<Macro[]>;

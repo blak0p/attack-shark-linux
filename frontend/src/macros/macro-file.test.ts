@@ -11,6 +11,17 @@ it("roundtrips one versioned macro in order without its local ID", () => {
   expect(importMacroFile(text)).toEqual({ name: macro.name, events: macro.events });
   expect(importMacroFile(JSON.stringify({ version: 1, name: "Empty", events: [] }))).toEqual({ name: "Empty", events: [] });
 });
+it.each(["mouse_middle", "mouse_back", "mouse_forward"] as const)("roundtrips stored %s events without changing delays", (type) => {
+  const events = [{ type, action: "down" as const, delay_ms: 17 }, { type, action: "up" as const, delay_ms: 23 }];
+  const text = JSON.stringify({ version: 1, name: "Extended", events });
+  expect(importMacroFile(text)).toEqual({ name: "Extended", events });
+  expect(importMacroFile(exportMacroFile({ id: "local", name: "Extended", events }))).toEqual({ name: "Extended", events });
+});
+it.each(["mouse_arbitrary", "mouse_backward", "", "keyboard"])("rejects arbitrary type %s on import and export", (type) => {
+  const events = [{ type, action: "down" as const, delay_ms: 0 }];
+  expect(() => importMacroFile(JSON.stringify({ version: 1, name: "Invalid", events }))).toThrow(/unsupported type/);
+  expect(() => exportMacroFile({ id: "local", name: "Invalid", events } as unknown as Parameters<typeof exportMacroFile>[0])).toThrow(/unsupported type/);
+});
 it.each([
   "{", "{}", "null", "[]", JSON.stringify({ version: 2, name: "A", events: [] }),
   JSON.stringify({ version: 1, name: " ", events: [] }),

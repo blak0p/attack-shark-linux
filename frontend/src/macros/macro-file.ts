@@ -19,7 +19,7 @@ const validate = (value: unknown): MacroCopy => {
   if (!Array.isArray(file.events)) return fail("Macro events must be an ordered array.");
   const events = file.events.map((value, index) => {
     const event = objectWithKeys(value, ["type", "action", "delay_ms"], `event ${index + 1}`);
-    if (event.type !== "mouse_left" && event.type !== "mouse_right") return fail(`Event ${index + 1} has an unsupported type.`);
+    if (event.type !== "mouse_left" && event.type !== "mouse_right" && event.type !== "mouse_middle" && event.type !== "mouse_back" && event.type !== "mouse_forward") return fail(`Event ${index + 1} has an unsupported type.`);
     if (event.action !== "down" && event.action !== "up") return fail(`Event ${index + 1} has an unsupported action.`);
     if (typeof event.delay_ms !== "number" || !Number.isSafeInteger(event.delay_ms) || event.delay_ms < 0) {
       return fail(`Event ${index + 1} delay_ms must be a safe nonnegative integer of local milliseconds.`);

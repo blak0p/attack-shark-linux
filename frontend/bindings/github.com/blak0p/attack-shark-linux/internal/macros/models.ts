@@ -58,6 +58,9 @@ export enum EventType {
 
     MouseLeft = "mouse_left",
     MouseRight = "mouse_right",
+    MouseMiddle = "mouse_middle",
+    MouseBack = "mouse_back",
+    MouseForward = "mouse_forward",
 };
 
 export class Macro {

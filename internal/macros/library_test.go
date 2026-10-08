@@ -106,6 +106,7 @@ func TestValidationDoesNotMutate(t *testing.T) {
 
 func TestRejectInvalidStoresWithoutOverwrite(t *testing.T) {
 	for _, text := range []string{
+		`{"version":1,"macros":[{"id":"x","name":"one","events":[{"type":"mouse_arbitrary","action":"down","delay_ms":0}]}]}`,
 		`not json`, `{"version":2,"macros":[]}`, `{"version":1,"macros":[{"id":"x","name":"one"},{"id":"x","name":"two"}]}`,
 		`{"version":1,"macros":[{"id":"","name":"one"}]}`, `{"version":1,"macros":[{"id":"x","name":" "}]}`,
 		`{"version":1,"macros":[{"id":"x","name":"one","events":[{"type":"mouse_left","action":"down","delay_ms":-1}]}]}`,
@@ -152,6 +153,48 @@ func TestFailedPersistenceDoesNotAdvance(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Dir(path))
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("temporary files leaked: %v %v", entries, err)
+	}
+}
+
+func TestStoredMouseTypesRoundtrip(t *testing.T) {
+	lib, path := openTest(t)
+	types := []EventType{"mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"}
+	for _, kind := range types {
+		t.Run(string(kind), func(t *testing.T) {
+			events := []Event{{Type: kind, Action: Down, DelayMS: 17}, {Type: kind, Action: Up, DelayMS: 23}}
+			created, err := lib.Create("stored", events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated, err := lib.Update(created.ID, "updated", events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := loaded.Read(created.ID)
+			if err != nil || !reflect.DeepEqual(got, updated) {
+				t.Fatalf("roundtrip: %#v %v", got, err)
+			}
+		})
+	}
+}
+
+func TestVersionOneLegacyMouseStore(t *testing.T) {
+	_, path := openTest(t)
+	text := `{"version":1,"macros":[{"id":"legacy","name":"Old","events":[{"type":"mouse_left","action":"down","delay_ms":0},{"type":"mouse_right","action":"up","delay_ms":19}]}]}`
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := lib.Read("legacy")
+	if err != nil || got.Events[0].Type != MouseLeft || got.Events[1].Type != MouseRight || got.Events[1].DelayMS != 19 {
+		t.Fatalf("legacy: %#v %v", got, err)
 	}
 }
 

@@ -28,7 +28,8 @@ const bindingEvents = (events: MacroEvent[]) => events.map((event) => ({
 const localMacro = (macro: GeneratedMacro): Macro => ({
   id: macro.id, name: macro.name,
   events: macro.events.map((event): MacroEvent => {
-    if ((event.type !== "mouse_left" && event.type !== "mouse_right") ||
+    if ((event.type !== "mouse_left" && event.type !== "mouse_right" &&
+         event.type !== "mouse_middle" && event.type !== "mouse_back" && event.type !== "mouse_forward") ||
         (event.action !== "down" && event.action !== "up")) throw new Error("Unsupported local macro event");
     return { type: event.type, action: event.action, delay_ms: event.delay_ms };
   }),
