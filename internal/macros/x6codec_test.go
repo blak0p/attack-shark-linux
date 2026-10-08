@@ -20,6 +20,107 @@ func fixture(t *testing.T, name string) []byte {
 	return b
 }
 
+func TestX6SequenceCaptures(t *testing.T) {
+	var manifest struct {
+		Sources []struct {
+			Uploads []struct {
+				Repeat  int      `json:"repeat_byte"`
+				Block   string   `json:"logical_block_hex"`
+				Reports []string `json:"reports_hex"`
+				Events  []struct {
+					Action     string
+					Transition string
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(fixture(t, "new-sequences.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	buttons := map[string]EventType{"left": MouseLeft, "right": MouseRight, "middle": EventType("mouse_middle"), "back": EventType("mouse_back"), "forward": EventType("mouse_forward")}
+	for _, source := range manifest.Sources {
+		for _, capture := range source.Uploads {
+			sequence := X6Sequence{Repeat: capture.Repeat}
+			for _, event := range capture.Events {
+				if event.Transition == "press" {
+					sequence.Buttons = append(sequence.Buttons, buttons[event.Action])
+				}
+			}
+			block, _ := hex.DecodeString(capture.Block)
+			for _, bad := range [][]byte{nil, block[:127], append(append([]byte{}, block...), 0)} {
+				if _, err := DecodeX6SequenceBlock(bad); err == nil {
+					t.Fatal("accepted wrong length")
+				}
+			}
+			corrupt := append([]byte{}, block...)
+			corrupt[127] ^= 1
+			if _, err := DecodeX6SequenceBlock(corrupt); err == nil {
+				t.Fatal("accepted invalid checksum")
+			}
+			encoded, err := EncodeX6SequenceBlock(sequence)
+			if err != nil || !bytes.Equal(encoded, block) {
+				t.Fatalf("captured block mismatch: %v", err)
+			}
+			reports, err := EncodeX6SequenceUpload(X6SequenceUpload{6, sequence})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, h := range capture.Reports {
+				want, _ := hex.DecodeString(h)
+				if !bytes.Equal(reports[i], want) {
+					t.Fatal("captured report mismatch")
+				}
+			}
+			got, err := DecodeX6SequenceUpload(reports)
+			if err != nil || got.Destination != 6 || fmt.Sprint(got.Sequence) != fmt.Sprint(sequence) {
+				t.Fatalf("sequence roundtrip: %+v %v", got, err)
+			}
+			if len(sequence.Buttons) == 2 {
+				if _, err := DecodeX6Upload(reports); err == nil {
+					t.Fatal("legacy collapsed sequence")
+				}
+			}
+			for offset := 0; offset < 126; offset++ {
+				if offset == 4 {
+					continue
+				}
+				bad := append([]byte{}, block...)
+				bad[offset] ^= 1
+				repairChecksum(bad)
+				if _, err := DecodeX6SequenceBlock(bad); err == nil {
+					t.Fatalf("accepted mutation at %d", offset)
+				}
+			}
+		}
+	}
+	for _, s := range []X6Sequence{{nil, 1}, {[]EventType{MouseLeft, MouseLeft, MouseLeft}, 1}, {[]EventType{"keyboard"}, 1}, {[]EventType{"press"}, 1}, {[]EventType{"delay"}, 1}, {[]EventType{MouseLeft}, 0}, {[]EventType{MouseLeft}, 256}} {
+		if _, err := EncodeX6SequenceBlock(s); err == nil {
+			t.Fatalf("accepted unsupported %+v", s)
+		}
+	}
+}
+
+func TestX6SequenceRepeatAndDestination(t *testing.T) {
+	for _, button := range x6SequenceButtons {
+		for repeat := 1; repeat <= 255; repeat++ {
+			want := X6Sequence{[]EventType{button, MouseRight}, repeat}
+			b, err := EncodeX6SequenceBlock(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := DecodeX6SequenceBlock(b)
+			if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Fatal("repeat roundtrip")
+			}
+		}
+	}
+	for _, destination := range []byte{0, 4, 9, 255} {
+		if _, err := EncodeX6SequenceUpload(X6SequenceUpload{destination, X6Sequence{[]EventType{MouseLeft}, 1}}); err == nil {
+			t.Fatal("invalid destination")
+		}
+	}
+}
+
 func TestX6DestinationUpload(t *testing.T) {
 	click := X6Click{MouseLeft, 1}
 	body := fixture(t, "left-repeat-1.bin")

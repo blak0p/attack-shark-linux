@@ -78,6 +78,87 @@ func x6Checksum(b []byte) uint16 {
 	return sum
 }
 
+// X6Sequence selects one or two ordered complete zero-delay button actions.
+// It cannot represent partial transitions, local events or timing.
+type X6Sequence struct {
+	Buttons []EventType
+	Repeat  int
+}
+
+// X6SequenceUpload keeps destination independent of ordered actions.
+type X6SequenceUpload struct {
+	Destination byte
+	Sequence    X6Sequence
+}
+
+var x6SequenceButtons = [...]EventType{MouseLeft, MouseRight, "mouse_middle", "mouse_back", "mouse_forward"}
+
+func EncodeX6SequenceBlock(sequence X6Sequence) ([]byte, error) {
+	if len(sequence.Buttons) < 1 || len(sequence.Buttons) > 2 {
+		return nil, fmt.Errorf("X6 requires one or two complete clicks")
+	}
+	if sequence.Repeat < 1 || sequence.Repeat > 255 {
+		return nil, fmt.Errorf("X6 repeat must be in UI range 1–255")
+	}
+	b := make([]byte, 128)
+	b[4], b[25] = byte(sequence.Repeat), byte(2*len(sequence.Buttons))
+	for i, button := range sequence.Buttons {
+		var code byte
+		for j, supported := range x6SequenceButtons {
+			if button == supported {
+				code = byte(0xf1 + j)
+				break
+			}
+		}
+		if code == 0 {
+			return nil, fmt.Errorf("unsupported X6 button %q", button)
+		}
+		offset := 26 + 4*i
+		b[offset], b[offset+1], b[offset+2], b[offset+3] = 1, code, 0x81, code
+	}
+	binary.BigEndian.PutUint16(b[126:], x6Checksum(b))
+	return b, nil
+}
+
+func DecodeX6SequenceBlock(b []byte) (X6Sequence, error) {
+	if len(b) != 128 {
+		return X6Sequence{}, fmt.Errorf("X6 block length must be 128")
+	}
+	if binary.BigEndian.Uint16(b[126:]) != x6Checksum(b) {
+		return X6Sequence{}, fmt.Errorf("invalid X6 checksum")
+	}
+	if b[25] != 2 && b[25] != 4 {
+		return X6Sequence{}, fmt.Errorf("unsupported X6 event count")
+	}
+	sequence := X6Sequence{Repeat: int(b[4])}
+	for i := 0; i < int(b[25])/2; i++ {
+		code := b[27+4*i]
+		if code < 0xf1 || code > 0xf5 {
+			return X6Sequence{}, fmt.Errorf("unsupported X6 event code")
+		}
+		sequence.Buttons = append(sequence.Buttons, x6SequenceButtons[code-0xf1])
+	}
+	expected, err := EncodeX6SequenceBlock(sequence)
+	if err != nil {
+		return X6Sequence{}, err
+	}
+	if !bytes.Equal(b, expected) {
+		return X6Sequence{}, fmt.Errorf("unsupported X6 block layout")
+	}
+	return sequence, nil
+}
+
+func EncodeX6SequenceUpload(upload X6SequenceUpload) ([][]byte, error) {
+	if err := x6.ValidateMacroDestination(upload.Destination); err != nil {
+		return nil, err
+	}
+	b, err := EncodeX6SequenceBlock(upload.Sequence)
+	if err != nil {
+		return nil, err
+	}
+	return encodeX6Framing(upload.Destination, b), nil
+}
+
 var x6Headers = [3][4]byte{{9, 0x40, 5, 0}, {9, 0x40, 5, 1}, {9, 0x0c, 5, 2}}
 var x6ChunkSizes = [3]int{60, 60, 8}
 
@@ -103,16 +184,20 @@ func EncodeX6Upload(upload X6Upload) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return encodeX6Framing(upload.Destination, b), nil
+}
+
+func encodeX6Framing(destination byte, b []byte) [][]byte {
 	reports := make([][]byte, 3)
 	offset := 0
 	for i, size := range x6ChunkSizes {
 		reports[i] = make([]byte, 64)
 		copy(reports[i], x6Headers[i][:])
-		reports[i][2] = upload.Destination
+		reports[i][2] = destination
 		copy(reports[i][4:4+size], b[offset:offset+size])
 		offset += size
 	}
-	return reports, nil
+	return reports
 }
 
 // DecodeX6Reports requires exactly the captured framing, including sequence,
@@ -131,37 +216,52 @@ func DecodeX6Reports(reports [][]byte) (X6Click, error) {
 // DecodeX6Upload preserves the checked destination and rejects mixed IDs.
 // Framing, padding and logical-block admission remain identical to the legacy API.
 func DecodeX6Upload(reports [][]byte) (X6Upload, error) {
+	upload, err := DecodeX6SequenceUpload(reports)
+	if err != nil {
+		return X6Upload{}, err
+	}
+	if len(upload.Sequence.Buttons) != 1 {
+		return X6Upload{}, fmt.Errorf("legacy X6 upload requires one click")
+	}
+	click := X6Click{upload.Sequence.Buttons[0], upload.Sequence.Repeat}
+	if _, err := EncodeX6Block(click); err != nil {
+		return X6Upload{}, err
+	}
+	return X6Upload{upload.Destination, click}, nil
+}
+
+func DecodeX6SequenceUpload(reports [][]byte) (X6SequenceUpload, error) {
 	if len(reports) != 3 {
-		return X6Upload{}, fmt.Errorf("X6 requires exactly three reports")
+		return X6SequenceUpload{}, fmt.Errorf("X6 requires exactly three reports")
 	}
 	if len(reports[0]) != 64 {
-		return X6Upload{}, fmt.Errorf("X6 report 0 length must be 64")
+		return X6SequenceUpload{}, fmt.Errorf("X6 report 0 length must be 64")
 	}
 	destination := reports[0][2]
 	if err := x6.ValidateMacroDestination(destination); err != nil {
-		return X6Upload{}, err
+		return X6SequenceUpload{}, err
 	}
 	b := make([]byte, 0, 128)
 	for i, size := range x6ChunkSizes {
 		r := reports[i]
 		if len(r) != 64 {
-			return X6Upload{}, fmt.Errorf("X6 report %d length must be 64", i)
+			return X6SequenceUpload{}, fmt.Errorf("X6 report %d length must be 64", i)
 		}
 		header := x6Headers[i]
 		header[2] = destination
 		if !bytes.Equal(r[:4], header[:]) {
-			return X6Upload{}, fmt.Errorf("unsupported X6 report %d header", i)
+			return X6SequenceUpload{}, fmt.Errorf("unsupported X6 report %d header", i)
 		}
 		for _, v := range r[4+size:] {
 			if v != 0 {
-				return X6Upload{}, fmt.Errorf("nonzero X6 report %d padding", i)
+				return X6SequenceUpload{}, fmt.Errorf("nonzero X6 report %d padding", i)
 			}
 		}
 		b = append(b, r[4:4+size]...)
 	}
-	click, err := DecodeX6Block(b)
+	sequence, err := DecodeX6SequenceBlock(b)
 	if err != nil {
-		return X6Upload{}, err
+		return X6SequenceUpload{}, err
 	}
-	return X6Upload{Destination: destination, Click: click}, nil
+	return X6SequenceUpload{Destination: destination, Sequence: sequence}, nil
 }

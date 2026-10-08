@@ -30,6 +30,30 @@ Decoding verifies checksum **and** the complete template, including fixed zero
 bytes, matching button codes and framing/padding. A valid checksum alone does
 not authorize another layout. No overflow rule for future layouts is inferred.
 
+## Ordered complete-click sequences (XM-7c)
+
+`X6Sequence{Buttons: []EventType{...}, Repeat: int}` and
+`EncodeX6SequenceBlock` / `DecodeX6SequenceBlock` admit exactly one or two
+ordered complete clicks with the captured zero-delay layout. Accepted actions
+are `MouseLeft`, `MouseRight`, and `EventType("mouse_middle")`,
+`EventType("mouse_back")`, `EventType("mouse_forward")` (codes f1–f5).
+`X6SequenceUpload{Destination: byte, Sequence: X6Sequence}` and
+`EncodeX6SequenceUpload` / `DecodeX6SequenceUpload` preserve checked addressing.
+
+The separate API leaves positional `X6Click` and `X6Upload` literals unchanged.
+Legacy APIs retain their left/right single-click admission; they reject sequences
+rather than silently reducing them. No desktop, frontend or device behavior changes.
+Zero clicks, three or more clicks, non-button actions, partial transitions and
+timing representations are outside this API. Decode checks the exact template,
+including all unused bytes, paired transitions, checksum and report padding.
+No local-event or delay conversion is provided.
+
+Exact-byte tests read committed `new-sequences.json`: destination06 single
+middle/back/forward, left, mixed left/right, right/left, forward/back,
+middle/forward and duplicate uploads. These captures have repeat1 only.
+Other one/two-button combinations and repeat2–255 are authorized layout
+extrapolation, not proof of device playback or timing units.
+
 ## Evidence versus extrapolation
 
 Source: [`captures/0x09-macro`](../../captures/0x09-macro/README.md), with five
