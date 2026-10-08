@@ -1,10 +1,12 @@
 # X6 report 0x09 macro evidence (XM-4a)
 
-Passive capture evidence only: no encoder, replay, device writes or copied PCAPs.
+Passive capture evidence only: no replay or device writes. XM-7a adds seven
+byte-preserved PCAP copies; the original XM-4a fixtures/contract remain unchanged.
 `contract.json` records original sizes/SHA-256, exact physical reports, one-based
 `tshark frame.number` provenance, fixture hashes and zero-based byte differences.
 The five `.bin` fixtures are **128-byte logical blocks**, not wire reports.
 Originals remain external at `/home/alejandro/x6-capturas/` and were read only.
+The XM-7a copies and their independent manifest are described below.
 
 ## Captured contract
 
@@ -105,3 +107,93 @@ git status --short
 
 No meaningful RED applies to passive evidence preservation. The reproduction
 assertions verify extraction/readback rather than implementing behavior.
+
+## XM-7a: complete-click sequence captures
+
+`new-sequences.json` records seven originals' filenames, sizes, before/after
+SHA-256 and copy hashes, plus all nine report09 groups with one-based frames,
+wire bytes, logical blocks, checksums and ordered decoded event records.
+
+| External original | Repository copy |
+| --- | --- |
+| izq_der_macro.pcapng | left-then-right-clicks.pcapng |
+| der_izq_macro.pcapng | right-then-left-clicks.pcapng |
+| adelante_atras.pcapng | forward-then-back-clicks.pcapng |
+| medio_adelante_macro.pcapng | middle-then-forward-clicks.pcapng |
+| adelante_macro.pcapng | forward-click.pcapng |
+| atras.pcapng | back-click.pcapng |
+| macro_boton_medio(no_se_cual_es_realmetne_).pcapng | middle-click.pcapng |
+
+**izq_der contains three uploads**: earlier single-left at
+13303/13315/13335, then identical mixed left/right uploads at
+15873/16051/16165 and 16169/16173/16175. Duplication does not prove retry safety.
+The middle original filename expresses uncertainty; its label reflects the
+supplied scenario and code f3, not independently verified physical playback.
+
+All groups address destination06, independently of event action codes, with
+headers 09400600/09400601/090c0602 and 60+60+8 logical bytes.
+Offset4 is repeat01; offset25 counts two or four two-byte event records starting
+at offset26. States01/81 alternate press/release; f1/f2/f3/f4/f5 denote
+left/right/middle/back/forward in this bounded capture-backed interpretation.
+The checksum sums bytes0:126 and is stored big-endian at126:128. Wire padding
+is zero. No source admission, timing, persistence or playback claim changes.
+
+### Read-only new-sequence reproduction
+
+Run from the repository root with tshark and the external originals available:
+
+```sh
+python -B - <<'PY'
+import hashlib, json, subprocess
+from pathlib import Path
+out = Path('captures/0x09-macro')
+doc = json.loads((out / 'new-sequences.json').read_text())
+sha = lambda b: hashlib.sha256(b).hexdigest()
+assert len(doc['sources']) == 7
+for s in doc['sources']:
+    original = Path(doc['source_root']) / s['original_file']
+    before = original.read_bytes()
+    assert len(before) == s['bytes']
+    assert sha(before) == s['sha256'] == s['original_sha256_after'] == s['copy_sha256']
+    assert (out / s['file']).read_bytes() == before
+    for p in (original, out / s['file']):
+        rows = subprocess.check_output(['tshark', '-r', str(p), '-Y',
+            'usb.data_fragment', '-T', 'fields', '-e', 'frame.number',
+            '-e', 'usb.data_fragment'], text=True).splitlines()
+        reports = [(int(n), bytes.fromhex(h)) for n, h in
+                   (r.split('\t') for r in rows)]
+        reports = [(n, b) for n, b in reports if b[0] == 9]
+        assert len(reports) == 3 * len(s['uploads'])
+        for i, u in enumerate(s['uploads']):
+            group = reports[3*i:3*i+3]
+            wire = [b for _, b in group]
+            assert [n for n, _ in group] == u['frames']
+            assert [b.hex() for b in wire] == u['reports_hex']
+            assert all(len(b) == 64 for b in wire)
+            assert [b[:4].hex() for b in wire] == doc['extraction']['headers_hex']
+            assert u['destination_hex'] == '06' and wire[2][12:] == bytes(52)
+            b = b''.join(r[4:4+n] for r, n in zip(wire, [60,60,8]))
+            assert len(b) == 128 and b.hex() == u['logical_block_hex']
+            assert sha(b) == u['logical_block_sha256']
+            assert sum(b[:126]) == int.from_bytes(b[126:], 'big')
+            assert b[126:].hex() == u['checksum_be_hex']
+            assert b[4] == u['repeat_byte'] == 1
+            assert b[25] == u['event_count'] == len(u['events']) and b[25] in (2,4)
+            for j, e in enumerate(u['events']):
+                state, code = b[26+2*j:28+2*j]
+                assert state == (1 if j % 2 == 0 else 129)
+                assert e['state_hex'] == f'{state:02x}' and e['code_hex'] == f'{code:02x}'
+                assert e['action'] == doc['event_codes'][e['code_hex']]
+                assert e['transition'] == ('press' if state == 1 else 'release')
+                if j % 2:
+                    assert e['code_hex'] == u['events'][j-1]['code_hex']
+    assert original.read_bytes() == before
+u = doc['sources'][0]['uploads']
+assert len(u) == 3 and u[0]['event_count'] == 2
+assert u[1]['event_count'] == u[2]['event_count'] == 4
+assert u[1]['logical_block_hex'] == u[2]['logical_block_hex']
+assert sum(len(s['uploads']) for s in doc['sources']) == 9
+print('PASS: seven original/copy hashes/sizes; nine frame groups, destination06, events and checksums')
+PY
+git diff --check
+```
