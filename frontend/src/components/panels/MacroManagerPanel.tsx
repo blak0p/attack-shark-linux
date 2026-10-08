@@ -6,6 +6,19 @@ import "./MacroManagerPanel.css";
 
 type Library = ReturnType<typeof useMacroLibrary>;
 
+// Display-only grouping: never reconstruct or normalize the draft's raw events.
+function timeline(events: NonNullable<Library["draft"]>["events"]) {
+  const rows: { index: number; count: number }[] = [];
+  for (let index = 0; index < events.length;) {
+    const down = events[index], up = events[index + 1];
+    const paired = down.action === "down" && down.delay_ms === 0 && up?.action === "up"
+      && up.delay_ms === 0 && up.type === down.type;
+    rows.push({ index, count: paired ? 2 : 1 });
+    index += paired ? 2 : 1;
+  }
+  return rows;
+}
+
 // DOM button order differs from the protocol/editor order: middle is button 1.
 const mouseButtons: { button: number; type: Macro["events"][number]["type"]; label: string }[] = [
   { button: 0, type: "mouse_left", label: "Left mouse" },
@@ -28,6 +41,10 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
   const unavailable = busy || reading || loading || confirmation;
   const [armed, setArmed] = useState(false);
+  const [clickType, setClickType] = useState<Macro["events"][number]["type"]>("mouse_left");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const rows = timeline(draft?.events ?? []);
+  const compatible = rows.length >= 1 && rows.length <= 2 && rows.every((row) => row.count === 2);
   const [recordingMessage, setRecordingMessage] = useState("");
   const [recordingError, setRecordingError] = useState("");
   const zone = useRef<HTMLDivElement>(null);
@@ -105,11 +122,6 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
           <button type="button" className="button primary" disabled={busy || loading} onClick={() => { discardRecording(); library.newMacro(); }}>New macro</button>
         </div>
         <p className="hint">Shared across devices. Available offline.</p>
-        <label className="macro-name">Import macro JSON
-          <input type="file" accept=".json,application/json" disabled={editorDisabled}
-            onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; upload(file); }} />
-        </label>
-        <p className="hint">One version-1 JSON macro per file, up to 1 MiB (local file safety budget, not a device limit). Import creates a new copy, even with a duplicate name; existing macros are never replaced.</p>
         {loading && <p role="status">Loading library…</p>}
         {!loading && loaded && macros.length === 0 && <p className="hint">No macros in your library yet.</p>}
         <div className="macro-cards">
@@ -124,11 +136,21 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
         {error && !loading && <button type="button" className="button" disabled={busy} onClick={library.reload}>Retry library</button>}
       </article>
       <article className="card macro-detail" aria-label="Macro details">
-        <h2>{draft?.id ? "Macro details" : "New macro"}</h2>
-        <p className="hint">Save to library only; no device changes. To assign a saved macro, open Button remapping, choose its name and fixed repetitions (1–255), then Apply remap. Playback and device persistence remain unverified.</p>
-        <p className="hint">Backend admission: one or two complete zero-delay clicks using left/right/middle/back/forward actions. Local save preserves other event layouts and delays; these cannot be assigned. Transport confirmation does not prove playback or device persistence.</p>
-        <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
-        <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
+        <header className="macro-editor-head">
+          <div><p className="macro-kicker">Macro editor</p><h2>{draft?.name.trim() || "Untitled macro"}</h2></div>
+          <details className="macro-options">
+            <summary>Macro options</summary>
+            <div className="macro-options-body">
+              <label className="macro-name">Import macro JSON
+                <input type="file" accept=".json,application/json" disabled={editorDisabled}
+                  onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; upload(file); }} />
+              </label>
+              <p className="hint">One version-1 JSON macro per file, up to 1 MiB (local file safety budget, not a device limit). Import creates a new copy, even with a duplicate name; existing macros are never replaced.</p>
+              <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
+              <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
+            </div>
+          </details>
+        </header>
         {reading && <p role="status">Loading macro…</p>}
         {!draft ? <p className="macro-empty">Select a macro or create a new one.</p> : (
           <>
@@ -136,6 +158,39 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
               <input className="input" value={draft.name} disabled={editorDisabled}
                 onChange={(event) => library.rename(event.target.value)} />
             </label>
+            <section className="macro-composer" aria-label="Complete click composer">
+              <h3>Add a complete click</h3>
+              <div className="macro-click-types" role="group" aria-label="Click type">
+                {mouseButtons.map((button) => <button key={button.type} type="button" className="button"
+                  aria-pressed={clickType === button.type} disabled={editorDisabled}
+                  onClick={() => setClickType(button.type)}>{button.label.replace(" mouse", "")} click</button>)}
+              </div>
+              <button type="button" className="button primary" disabled={editorDisabled} onClick={() => library.appendRecordedEvents([
+                { type: clickType, action: "down", delay_ms: 0 },
+                { type: clickType, action: "up", delay_ms: 0 },
+              ])}>Add click</button>
+            </section>
+            <section className="macro-timeline" aria-label="Sequence">
+              <div className="macro-sequence-head"><h3>Sequence</h3><span className="hint">{rows.length} actions · {draft.events.length} events</span></div>
+              <ol aria-label="Ordered timeline">{rows.map(({ index, count }, position) => {
+                const event = draft.events[index];
+                const label = mouseButtons.find((button) => button.type === event.type)?.label;
+                return <li key={index}>
+                  <span className="macro-step">{String(position + 1).padStart(2, "0")}</span>
+                  <div><strong>{label?.replace(" mouse", "")}{count === 2 ? " click" : ` · ${event.action}`}</strong>
+                    <small>{count === 2 ? "Complete click · zero local delay" : `Raw event ${index + 1} · ${event.delay_ms} ms`}</small></div>
+                </li>;
+              })}</ol>
+              {!rows.length && <p className="macro-empty">No actions yet. Add a click above. Empty macros can be saved.</p>}
+              <p className={`macro-compatibility${compatible ? " compatible" : ""}`}>{compatible
+                ? "Eligible for assignment after saving. Playback remains unverified."
+                : "Local sequence only · this layout cannot be assigned to the device."}</p>
+            </section>
+            <details className="macro-advanced" open={advancedOpen} onToggle={(event) => {
+              setAdvancedOpen(event.currentTarget.open);
+              if (!event.currentTarget.open) discardRecording();
+            }}>
+              <summary>Advanced events and recording</summary>
             <section className="group" aria-label="Local browser recording">
               <h3>Local browser recording</h3>
               <p className="hint">Left/right/middle/back/forward mouse buttons only, inside the zone below. Stop appends balanced events to this draft; an incomplete session is discarded. No hardware capture or verified X6 playback timing.</p>
@@ -166,6 +221,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
                 <ol>{draft.events.map((event, index) => (
                   <li key={index}>
                     <span>{mouseButtons.find((button) => button.type === event.type)?.label} · {event.action}</span>
+                    <small className="macro-raw-delay">Delay: {event.delay_ms} ms (preserved)</small>
                     <div className="macro-event-fields">
                       <label>Event {index + 1} button
                         <select disabled={editorDisabled} value={event.type}
@@ -192,7 +248,13 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
                 ))}</ol>
               )}
             </section>
-            <div className="macro-actions">
+            </details>
+            <details className="macro-help"><summary>Saving and assignment</summary>
+              <p className="hint">Save to library only; no device changes. To assign a saved macro, open Button remapping, choose its name and fixed repetitions (1–255), then Apply remap. Playback and device persistence remain unverified.</p>
+              <p className="hint">Backend admission: one or two complete zero-delay clicks using left/right/middle/back/forward actions. Local save preserves other event layouts and delays; these cannot be assigned. Transport confirmation does not prove playback or device persistence.</p>
+            </details>
+            <div className="macro-actions macro-save-footer">
+              <p className="hint">Local library · no device changes</p>
               <button type="button" className="button primary" disabled={editorDisabled || !draft.name.trim() || !!validationError} onClick={library.save}>Save to library</button>
               {draft.id && <button type="button" className="button" disabled={editorDisabled} onClick={library.requestDelete}>Delete macro</button>}
             </div>

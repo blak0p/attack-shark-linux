@@ -10,16 +10,10 @@ test("saved macro stages one device overlay, discards locally and reports confir
   await page.getByRole("link", { name: "Macros", exact: true }).click();
   await page.getByRole("button", { name: "New macro", exact: true }).click();
   await page.getByLabel("Macro name", { exact: true }).fill("Left pair");
-  await page.getByRole("button", { name: "Add event" }).click();
-  await page.getByRole("button", { name: "Add event" }).click();
-  await page.getByLabel("Event 1 button").selectOption("mouse_back");
-  await page.getByLabel("Event 2 button").selectOption("mouse_back");
-  await page.getByLabel("Event 2 action").selectOption("up");
-  await page.getByRole("button", { name: "Add event" }).click();
-  await page.getByRole("button", { name: "Add event" }).click();
-  await page.getByLabel("Event 3 button").selectOption("mouse_forward");
-  await page.getByLabel("Event 4 button").selectOption("mouse_forward");
-  await page.getByLabel("Event 4 action").selectOption("up");
+  await page.getByRole("button", { name: "Back click", exact: true }).click();
+  await page.getByRole("button", { name: "Add click" }).click();
+  await page.getByRole("button", { name: "Forward click", exact: true }).click();
+  await page.getByRole("button", { name: "Add click" }).click();
   await page.getByRole("button", { name: "Save to library" }).click();
   await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
   await page.getByRole("link", { name: "Button remapping", exact: true }).click();
@@ -81,11 +75,9 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("link", { name: "Macros", exact: true }).click();
     await page.getByRole("button", { name: "New macro", exact: true }).click();
     await page.getByLabel("Macro name", { exact: true }).fill(type);
-    for (let index = 1; index <= 2; index++) {
-      await page.getByRole("button", { name: "Add event" }).click();
-      await page.getByLabel(`Event ${index} button`).selectOption(type);
-    }
-    await page.getByLabel("Event 2 action").selectOption("up");
+    const label = type.replace("mouse_", "");
+    await page.getByRole("button", { name: `${label[0].toUpperCase()}${label.slice(1)} click`, exact: true }).click();
+    await page.getByRole("button", { name: "Add click" }).click();
     await page.getByRole("button", { name: "Save to library" }).click();
     await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
     expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation !== "SelectDevice"))).toEqual([]);
@@ -109,6 +101,36 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
     expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroApplied?.Name)).toBe("Changed saved name");
+  });
+}
+
+for (const width of [1280, 620]) {
+  test(`open macro options remain readable and bounded at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/e2e.html");
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await page.getByRole("button", { name: "New macro", exact: true }).click();
+    await page.getByText("Macro options", { exact: true }).click();
+    const options = page.locator(".macro-options");
+    const file = page.getByLabel("Import macro JSON", { exact: true });
+    await expect(file).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`options-${width}.png`) });
+    await page.getByRole("button", { name: "Save to library" }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`footer-${width}.png`) });
+    const bounds = await file.boundingBox();
+    const optionsBounds = await options.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(optionsBounds).not.toBeNull();
+    // Reserve room for the native chooser and status without depending on its locale or font.
+    expect(bounds!.width).toBeGreaterThanOrEqual(280);
+    expect(bounds!.x).toBeGreaterThanOrEqual(optionsBounds!.x);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(optionsBounds!.x + optionsBounds!.width);
+    expect(optionsBounds!.x + optionsBounds!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await expect(page.getByRole("button", { name: "Add click" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save to library" })).toBeVisible();
+    await page.getByText("Advanced events and recording", { exact: true }).click();
+    await expect(page.getByRole("button", { name: "Arm recording" })).toBeVisible();
   });
 }
 
@@ -147,6 +169,7 @@ test("editor records real left/middle/right clicks and synthetic back/forward wi
   await page.getByRole("link", { name: "Macros", exact: true }).click();
   await page.getByRole("button", { name: "New macro", exact: true }).click();
   await page.getByLabel("Macro name", { exact: true }).fill("Five buttons");
+  await page.getByText("Advanced events and recording", { exact: true }).click();
   const zone = page.getByRole("region", { name: "Mouse recording zone" });
   await zone.click({ button: "middle" }); // Passive input must not enter the draft.
   await page.getByRole("button", { name: "Arm recording" }).click();
@@ -178,6 +201,7 @@ test("armed-zone real middle click prevents link navigation while passive middle
   await page.getByRole("link", { name: "Macros", exact: true }).click();
   await page.getByRole("button", { name: "New macro", exact: true }).click();
   const zone = page.getByRole("region", { name: "Mouse recording zone" });
+  await page.getByText("Advanced events and recording", { exact: true }).click();
   const addLink = () => zone.evaluate((element) => {
     const link = document.createElement("a");
     link.href = "/e2e.html?offline&middle-link";
@@ -206,6 +230,49 @@ test("armed-zone real middle click prevents link navigation while passive middle
   await expect(page.getByLabel("Event 2 action")).toHaveValue("up");
   await expect(page.getByLabel("Event 3 button")).toHaveCount(0);
 });
+
+for (const width of [1280, 620]) {
+  test(`premium composer and secondary tools are keyboard accessible at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/e2e.html?offline");
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await page.getByRole("button", { name: "New macro", exact: true }).click();
+    await page.getByLabel("Macro name", { exact: true }).fill("Five-button sequence");
+    await expect(page.getByRole("button", { name: "Export saved macro" })).not.toBeVisible();
+    for (const name of ["Left", "Right", "Middle", "Back", "Forward"]) {
+      const choice = page.getByRole("button", { name: `${name} click`, exact: true });
+      await choice.focus();
+      await page.keyboard.press("Enter");
+      await expect(choice).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Add click" }).focus();
+      await page.keyboard.press("Space");
+    }
+    await expect(page.getByRole("list", { name: "Ordered timeline" }).locator("li")).toHaveCount(5);
+    expect(await page.evaluate(() => window.__macroTest.calls)).toEqual([]);
+    await expect(page.getByText(/Local sequence only/)).toBeVisible();
+    await page.getByRole("button", { name: "Save to library" }).click();
+    await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+    expect(await page.locator(".macro-manager").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    // The desktop shell scrolls internally; reset it for an honest top-of-editor capture.
+    await page.locator(".macro-manager").evaluate((element) => {
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0;
+    });
+    await page.screenshot({ path: testInfo.outputPath(`premium-${width}.png`), fullPage: true });
+    const options = page.getByText("Macro options", { exact: true });
+    await options.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel("Import macro JSON")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export saved macro" })).toBeEnabled();
+    await page.getByText("Advanced events and recording", { exact: true }).focus();
+    await page.keyboard.press("Space");
+    await expect(page.getByLabel("Event 10 action")).toHaveValue("up");
+    await page.getByRole("button", { name: "Move event 10 up" }).click();
+    await expect(page.getByLabel("Event 9 action")).toHaveValue("up");
+    await page.getByRole("button", { name: "Save to library" }).click();
+    await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+    expect(await page.evaluate(() => window.__macroTest.library()[0].events.slice(-2).map((event) => event.action))).toEqual(["up", "down"]);
+  });
+}
 
 test("macro cards and details stack without horizontal overflow on narrow screens", async ({ page }) => {
   await page.setViewportSize({ width: 620, height: 900 });
