@@ -89,6 +89,34 @@ type TargetedMacroCommand interface {
 	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error)
 }
 
+// TargetedMacroSequenceCommand is additive: legacy click-only commands remain valid.
+type TargetedMacroSequenceCommand interface {
+	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Sequence) (MacroProgress, error)
+}
+
+func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
+		return empty, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return empty, err
+	}
+	if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence}); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroSequenceCommand)
+	if !ok {
+		return empty, errors.New("bound macro sequence command unavailable")
+	}
+	// Freeze the caller-owned slice before waiting for serialization.
+	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence)
+	})
+}
+
 func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macros.X6Click) (MacroProgress, error) {
 	empty := MacroProgress{}
 	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
@@ -101,13 +129,20 @@ func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding
 	if _, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click}); err != nil {
 		return empty, err
 	}
-	selected, state, _, err := s.selectedState()
-	if err != nil || selected != binding {
-		return empty, ErrStaleBinding
-	}
 	command, ok := s.command.(TargetedMacroCommand)
 	if !ok {
 		return empty, errors.New("bound macro command unavailable")
+	}
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MacroAssignmentBound(ctx, binding, assignment, click)
+	})
+}
+
+func (s *TargetedService) applyMacroBound(ctx context.Context, binding Binding, send func() (MacroProgress, error)) (MacroProgress, error) {
+	empty := MacroProgress{}
+	selected, state, _, err := s.selectedState()
+	if err != nil || selected != binding {
+		return empty, ErrStaleBinding
 	}
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
@@ -118,7 +153,7 @@ func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding
 	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) {
 		return empty, ErrStaleBinding
 	}
-	return command.SendX6MacroAssignmentBound(ctx, binding, assignment, click)
+	return send()
 }
 
 type deviceState struct {

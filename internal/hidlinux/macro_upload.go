@@ -107,6 +107,32 @@ func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding 
 	if err != nil {
 		return progress, err
 	}
+	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
+}
+
+// SendX6MacroSequenceAssignmentBound admits only the bounded offline sequence
+// codec and retains the composite command's ownership and progress semantics.
+func (b *HidrawBackend) SendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (mouse.MacroProgress, error) {
+	return b.sendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence, waitMacroChunk)
+}
+
+func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence, wait macroWait) (mouse.MacroProgress, error) {
+	report, err := x6.EncodeMacroAssignmentReport(assignment)
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence})
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
+}
+
+func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, binding mouse.Binding, report []byte, chunks [][]byte, wait macroWait) (progress mouse.MacroProgress, err error) {
 	if err = ctx.Err(); err != nil {
 		return progress, err
 	}

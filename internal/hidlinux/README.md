@@ -8,6 +8,15 @@ final `0310500009`. Identity, descriptor, path and cancellation are checked
 before writes and the upload completion phase. No generic report09 bypass is
 provided. Legacy block05 upload remains unchanged.
 
+The additive `SendX6MacroSequenceAssignmentBound` and mouse
+`ApplyMacroSequenceAssignmentBound` accept `macros.X6Sequence`: one or two
+complete zero-delay clicks from the five captured action codes. Both composite
+APIs share the same serialized transport implementation, status handling and
+partial-progress rules. Destination comes only from `assignment.Button`, never
+from the sequence's actions. Invalid sequences fail before ownership or writes;
+legacy click admission and ordinary remapping are unchanged. Desktop admission
+and UI wiring are separate work; transport success does not prove playback.
+
 Returned `MacroProgress` has independent assignment (not started, unknown,
 ACK confirmed) and upload (not started, possibly partial, confirmed) evidence.
 Assignment becomes unknown before its write attempt; an observed08 ACK remains

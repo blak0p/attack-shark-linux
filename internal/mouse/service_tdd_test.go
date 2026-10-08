@@ -22,6 +22,38 @@ func (c *compositeCommandFake) SendX6MacroAssignmentBound(context.Context, Bindi
 	c.calls++
 	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
 }
+func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.MacroAssignment, _ macros.X6Sequence) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+
+func TestTargetedSequenceMacroSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	_, _ = svc.Refresh(context.Background())
+	binding, _ := svc.Selection()
+	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
+	s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, macros.X6Sequence{}); err == nil || command.calls != 0 {
+		t.Fatal("invalid sequence reached transport")
+	}
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), stale, a, s); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(ctx, binding, a, s); !errors.Is(err, context.Canceled) || command.calls != 0 {
+		t.Fatal(err)
+	}
+	p, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, s)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
+
 func TestTargetedCompositeMacroSeam(t *testing.T) {
 	registry, _ := NewProfileRegistry(targetedProfile{})
 	command := &compositeCommandFake{}
