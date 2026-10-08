@@ -5,6 +5,50 @@ declare global {
   interface Window { __macroTest: { calls: string[]; library(): Macro[] } }
 }
 
+for (const width of [1280, 620]) {
+  test(`saved-only assignment shortcut uses production navigation at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/e2e.html");
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await page.getByRole("button", { name: "New macro", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+    await page.getByLabel("Macro name", { exact: true }).fill("Saved shortcut");
+    for (const name of ["Middle click", "Forward click"]) {
+      await page.getByRole("button", { name, exact: true }).click();
+      await page.getByRole("button", { name: "Add click" }).click();
+    }
+    await page.getByRole("button", { name: "Save to library" }).click();
+    await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+    const saved = await page.evaluate(() => window.__macroTest.library()[0]);
+    await page.getByLabel("Macro name", { exact: true }).fill("Dirty shortcut");
+    await page.getByRole("button", { name: "Add click" }).click();
+    await page.getByRole("button", { name: "Assign to button" }).click();
+    await expect(page.getByRole("heading", { name: "Button remapping", exact: true, level: 1 })).toBeFocused();
+    await expect(page.getByLabel("Saved macro", { exact: true })).toHaveValue(saved.id);
+    expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
+    expect(await page.evaluate(() => window.__routingTest.calls)).toEqual([]);
+    await page.getByLabel("Macro target button").selectOption("6");
+    await page.getByLabel("Fixed repetitions").fill("2");
+    await page.getByRole("button", { name: "Stage macro assignment" }).click();
+    await expect(page.getByLabel("Remap assignment summary")).toContainText("Saved shortcut × 2");
+    const staged = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending);
+    expect(staged).toMatchObject({ ID: saved.id, Name: saved.name, Events: saved.events, Button: 6, Repeat: 2 });
+    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment"]);
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await expect(page.getByLabel("Macro name", { exact: true })).toHaveValue("Dirty shortcut");
+    await expect(page.getByRole("list", { name: "Ordered timeline" }).locator("li")).toHaveCount(3);
+    await page.getByRole("button", { name: "Assign to button" }).click();
+    await expect(page.getByLabel("Remap assignment summary")).toContainText("Saved shortcut × 2");
+    await page.getByLabel("Saved macro", { exact: true }).selectOption("");
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await page.getByRole("link", { name: "Button remapping", exact: true }).click();
+    await expect(page.getByLabel("Saved macro", { exact: true })).toHaveValue("");
+    await page.getByRole("button", { name: "Apply remap" }).click();
+    await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
+    expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
+  });
+}
+
 test("saved macro stages one device overlay, discards locally and reports confirmed or partial transport", async ({ page }) => {
   await page.goto("/e2e.html");
   await page.getByRole("link", { name: "Macros", exact: true }).click();

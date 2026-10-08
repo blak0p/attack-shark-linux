@@ -28,16 +28,18 @@ const mouseButtons: { button: number; type: Macro["events"][number]["type"]; lab
   { button: 4, type: "mouse_forward", label: "Forward mouse" },
 ];
 
-export function MacroManagerPanel({ service, library }: { service: MacroLibraryService; library?: Library }) {
-  return library ? <MacroManagerEditor library={library} service={service} /> : <LocalMacroManager service={service} />;
+type AssignmentShortcut = { onAssign?(id: string): void; assignmentReady?: boolean };
+
+export function MacroManagerPanel({ service, library, ...shortcut }: { service: MacroLibraryService; library?: Library } & AssignmentShortcut) {
+  return library ? <MacroManagerEditor library={library} service={service} {...shortcut} /> : <LocalMacroManager service={service} {...shortcut} />;
 }
 
-function LocalMacroManager({ service }: { service: MacroLibraryService }) {
+function LocalMacroManager({ service, ...shortcut }: { service: MacroLibraryService } & AssignmentShortcut) {
   const library = useMacroLibrary(service);
-  return <MacroManagerEditor library={library} service={service} />;
+  return <MacroManagerEditor library={library} service={service} {...shortcut} />;
 }
 
-function MacroManagerEditor({ library, service }: { library: Library; service: MacroLibraryService }) {
+function MacroManagerEditor({ library, service, onAssign, assignmentReady = false }: { library: Library; service: MacroLibraryService } & AssignmentShortcut) {
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
   const unavailable = busy || reading || loading || confirmation;
   const [armed, setArmed] = useState(false);
@@ -151,6 +153,18 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
             </div>
           </details>
         </header>
+        {onAssign && <div className="macro-actions">
+          <button type="button" className="button" disabled={editorDisabled || !loaded || !!error || !assignmentReady || !library.savedMacro || !macros.some((macro) => macro.id === library.savedMacro?.id)}
+            onClick={() => {
+              const saved = library.savedMacro;
+              if (!editorDisabled && loaded && !error && assignmentReady && saved && macros.some((macro) => macro.id === saved.id)) {
+                discardRecording();
+                onAssign(saved.id);
+              }
+            }}>Assign to button</button>
+          <p className="hint">Uses the saved macro only. Unsaved editor changes are not saved or included; they remain here. Choose a destination and repetitions in Button remapping, then explicitly Stage and Apply.</p>
+          {!assignmentReady && <p className="hint">Connect and select a device before assigning. Local editing remains available offline.</p>}
+        </div>}
         {reading && <p role="status">Loading macro…</p>}
         {!draft ? <p className="macro-empty">Select a macro or create a new one.</p> : (
           <>

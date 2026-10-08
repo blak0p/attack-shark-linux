@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { WorkspaceViewId } from "./components/workspace/workspace-view-context";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
 import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
@@ -97,14 +98,38 @@ export function App({ service }: { service: DesktopService }) {
     updateError,
   } = model;
 
+  const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
+  const token = useRef(0);
+  const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
+  const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
+    snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
+  const assignmentReady = assignmentAvailable && !!remap && !model.remapBusy;
+  const assignmentScope = useMemo(() => ({ service, selectedBinding, assignmentAvailable }), [service, selectedBinding, assignmentAvailable]);
+  const [assignmentIntent, setAssignmentIntent] = useState<{ token: number; id: string; scope: typeof assignmentScope }>();
+  const currentIntent = assignmentIntent?.scope === assignmentScope && assignmentReady &&
+    macroLibrary.loaded && !macroLibrary.loading && !macroLibrary.error &&
+    macroLibrary.macros.some((macro) => macro.id === assignmentIntent.id) ? assignmentIntent : undefined;
+  useEffect(() => {
+    if (assignmentIntent && !currentIntent) setAssignmentIntent(undefined);
+  }, [assignmentIntent, currentIntent]);
+  const assignSavedMacro = (id: string) => {
+    if (!assignmentReady || !macroLibrary.loaded || macroLibrary.loading || macroLibrary.error ||
+      !macroLibrary.macros.some((macro) => macro.id === id)) return;
+    setAssignmentIntent({ token: ++token.current, id, scope: assignmentScope });
+    setActiveView("remapping");
+  };
+  const consumeAssignmentIntent = (consumed: number) => {
+    setAssignmentIntent((current) => current?.token === consumed ? undefined : current);
+  };
+
   const macroWorkspace = (
     <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
-      <MacroManagerPanel service={service} library={macroLibrary} />
+      <MacroManagerPanel service={service} library={macroLibrary} onAssign={assignSavedMacro} assignmentReady={assignmentReady} />
     </WorkspaceView>
   );
 
   if (!snapshot) return (
-    <WorkspaceShell deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
+    <WorkspaceShell activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
       titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
       connectionStatus={<p className="connection offline">Device configuration loading</p>}>
       {macroWorkspace}
@@ -220,6 +245,8 @@ export function App({ service }: { service: DesktopService }) {
 
   return (
     <WorkspaceShell
+      activeView={activeView}
+      onNavigate={setActiveView}
       busy={automaticApplyBusy}
       deviceName="Attack Shark X6"
       deviceSubtitle="Wireless Gaming Mouse"
@@ -444,7 +471,11 @@ export function App({ service }: { service: DesktopService }) {
             remap={remap}
             ready={ready && !model.remapBusy}
             macros={macroLibrary.macros}
-            libraryReady={macroLibrary.loaded && !macroLibrary.loading}
+            libraryReady={macroLibrary.loaded && !macroLibrary.loading && !macroLibrary.error}
+            assignmentScope={assignmentScope}
+            assignmentAvailable={assignmentAvailable}
+            assignmentIntent={currentIntent}
+            onConsumeIntent={consumeAssignmentIntent}
             onStageMacro={actions.stageMacroAssignment}
             error={model.remapError}
             onStage={actions.stageRemap}

@@ -32,6 +32,63 @@ const clickMacro = { id: "click", name: "Saved click", events: [
 afterEach(cleanup);
 
 describe("ButtonRemapPanel", () => {
+  it("consumes a contextual saved ID once without staging or applying and respects overrides", () => {
+    const onStageMacro = vi.fn(), onApply = vi.fn(), onConsumeIntent = vi.fn();
+    const intent = { token: 1, id: "click" };
+    const props = { remap, ready: true, macros: [clickMacro] as never, onStage: vi.fn(), onStageMacro, onApply, onConsumeIntent, assignmentScope: "device-one" };
+    const view = render(<ButtonRemapPanel {...props} assignmentIntent={intent} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("click");
+    expect(onConsumeIntent).toHaveBeenCalledExactlyOnceWith(1);
+    expect(onStageMacro).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "" } });
+    view.rerender(<ButtonRemapPanel {...props} assignmentIntent={intent} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    view.rerender(<ButtonRemapPanel {...props} assignmentIntent={{ token: 2, id: "click" }} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("click");
+    view.rerender(<ButtonRemapPanel {...props} assignmentScope="device-two" />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+  });
+
+  it("does not resurrect deleted preselection or accept an older token", () => {
+    const onConsumeIntent = vi.fn();
+    const props = { remap, ready: true, onStage: vi.fn(), onConsumeIntent, assignmentScope: "one" };
+    const view = render(<ButtonRemapPanel {...props} macros={[clickMacro] as never} assignmentIntent={{ token: 3, id: "click" }} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("click");
+    view.rerender(<ButtonRemapPanel {...props} macros={[]} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    view.rerender(<ButtonRemapPanel {...props} macros={[clickMacro] as never} assignmentIntent={{ token: 2, id: "click" }} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    expect(onConsumeIntent).toHaveBeenCalledExactlyOnceWith(3);
+  });
+
+  it("leaves existing partial transport and staged assignment untouched on preselection", () => {
+    const onStageMacro = vi.fn(), onApply = vi.fn();
+    const partial = { ...remap, MacroPending: { ID: "prior", Name: "Prior saved", Button: 6, Repeat: 2, Events: [...clickMacro.events] },
+      MacroProgress: { Assignment: 2, Upload: 1 }, Firmware: "failed" } as never;
+    const props = { remap: partial, ready: true, macros: [clickMacro] as never, onStage: vi.fn(), onStageMacro, onApply };
+    const view = render(<ButtonRemapPanel {...props} />);
+    const summary = screen.getByLabelText("Remap assignment summary").textContent;
+    const status = screen.getByLabelText("Button remapping status").textContent;
+    view.rerender(<ButtonRemapPanel {...props} assignmentIntent={{ token: 1, id: "click" }} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("click");
+    expect(screen.getByLabelText("Remap assignment summary")).toHaveTextContent(summary!);
+    expect(screen.getByLabelText("Button remapping status")).toHaveTextContent(status!);
+    expect(onStageMacro).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it.each(["deleted", "incompatible", "loading", "offline"])("rejects %s contextual selection permanently", (state) => {
+    const onConsumeIntent = vi.fn();
+    const props = { remap, onStage: vi.fn(), onConsumeIntent, assignmentScope: "one", assignmentIntent: { token: 1, id: "click" } };
+    const view = render(<ButtonRemapPanel {...props} ready={state !== "offline"} libraryReady={state !== "loading"}
+      macros={(state === "deleted" ? [] : state === "incompatible" ? [{ ...clickMacro, events: [] }] : [clickMacro]) as never} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    view.rerender(<ButtonRemapPanel {...props} ready macros={[clickMacro] as never} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    expect(onConsumeIntent).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
   it.each(["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"])("stages one or two complete %s clicks by saved ID", (type) => {
     const onStageMacro = vi.fn();
     const events = ["down", "up"].map((action) => ({ type, action, delay_ms: 0 }));

@@ -15,6 +15,56 @@ const openOptions = () => {
   if (!(summary.parentElement as HTMLDetailsElement).open) fireEvent.click(summary);
 };
 
+it("assigns only the saved ID while retaining dirty name and events without saving", async () => {
+  const service = serviceFor();
+  const onAssign = vi.fn();
+  render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Unsaved name" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  fireEvent.click(screen.getByRole("button", { name: "Assign to button" }));
+  expect(onAssign).toHaveBeenCalledExactlyOnceWith("one");
+  expect(service.CreateMacro).not.toHaveBeenCalled();
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved name");
+  expect(screen.getByText(/Unsaved editor changes are not saved or included/)).toBeInTheDocument();
+});
+
+it("keeps unsaved and offline drafts local rather than assigning without a device", async () => {
+  const service = serviceFor();
+  const onAssign = vi.fn();
+  const view = render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady={false} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline edits" } });
+  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Assign to button" }));
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Offline edits");
+  expect(onAssign).not.toHaveBeenCalled();
+  view.rerender(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
+  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+  expect(service.CreateMacro).not.toHaveBeenCalled();
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+it("disables assignment during library loading and after a failed read while preserving the draft", async () => {
+  const service = serviceFor();
+  const onAssign = vi.fn();
+  render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
+  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Kept on error" } });
+  vi.mocked(service.ReadMacro).mockRejectedValueOnce(new Error("Read failed"));
+  fireEvent.click(screen.getByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByText("Read failed");
+  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Kept on error");
+  expect(onAssign).not.toHaveBeenCalled();
+});
+
 it("authors repeated complete five-button clicks atomically without implicit save", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);

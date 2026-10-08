@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Macro, MacroDraft, MacroProgress } from "../../desktop-contract";
 import { GnomeSelect } from "./GnomeSelect";
 
@@ -71,9 +71,17 @@ export function ButtonRemapPanel({
   libraryReady = true,
   onStageMacro,
   error = "",
+  assignmentIntent,
+  assignmentScope,
+  assignmentAvailable = ready,
+  onConsumeIntent,
 }: {
   remap: Remap;
   ready: boolean;
+  assignmentIntent?: { token: number; id: string };
+  assignmentScope?: unknown;
+  assignmentAvailable?: boolean;
+  onConsumeIntent?(token: number): void;
   macros?: Macro[];
   libraryReady?: boolean;
   onStageMacro?(id: string, button: number, repeat: number): void;
@@ -84,11 +92,27 @@ export function ButtonRemapPanel({
   feedbackFor?: (code: string) => string;
 }) {
   const [target, setTarget] = useState(1);
-  const [macroID, setMacroID] = useState("");
+  const [selection, setSelection] = useState({ id: "", scope: assignmentScope });
+  const macroID = selection.scope === assignmentScope ? selection.id : "";
+  const setMacroID = (id: string) => setSelection({ id, scope: assignmentScope });
+  const consumedToken = useRef(0);
+  // Invalidate missing IDs permanently: a later reload must not resurrect them.
+  useEffect(() => {
+    if (selection.scope !== assignmentScope || !assignmentAvailable || !libraryReady || !macros.some((macro) => macro.id === selection.id)) {
+      if (selection.id) setSelection({ id: "", scope: assignmentScope });
+    }
+    if (!assignmentIntent || assignmentIntent.token <= consumedToken.current) return;
+    consumedToken.current = assignmentIntent.token;
+    const saved = macros.find((macro) => macro.id === assignmentIntent.id);
+    if (assignmentAvailable && libraryReady && saved && compatible(saved)) {
+      setSelection({ id: saved.id, scope: assignmentScope });
+    }
+    onConsumeIntent?.(assignmentIntent.token);
+  }, [assignmentIntent, assignmentScope, assignmentAvailable, libraryReady, macros, selection, onConsumeIntent]);
   const [repeat, setRepeat] = useState("1");
   const selectedMacro = macros.find((macro) => macro.id === macroID);
   const validRepeat = repeat.trim() !== "" && Number.isInteger(Number(repeat)) && Number(repeat) >= 1 && Number(repeat) <= 255;
-  const canStage = ready && libraryReady && !!onStageMacro && !!selectedMacro && compatible(selectedMacro) && validRepeat;
+  const canStage = ready && assignmentAvailable && libraryReady && !!onStageMacro && !!selectedMacro && compatible(selectedMacro) && validRepeat;
   const assignmentLabel = (button: Button) => remap.MacroPending?.Button === button.Button
     ? `${remap.MacroPending.Name} × ${remap.MacroPending.Repeat}`
     : button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
@@ -118,7 +142,7 @@ export function ButtonRemapPanel({
       <h2 id="button-remap-title">Button remapping</h2>
       <p className="hint">Review the complete assignment below, then apply or discard it.</p>
 
-      <fieldset disabled={!ready || !libraryReady} onKeyDown={(event) => event.stopPropagation()}>
+      <fieldset disabled={!ready || !assignmentAvailable || !libraryReady} onKeyDown={(event) => event.stopPropagation()}>
         <legend>Saved macro assignment</legend>
         <label>Macro target button
           <select aria-label="Macro target button" className="select" value={target} onChange={(event) => setTarget(Number(event.target.value))}>
