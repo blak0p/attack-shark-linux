@@ -99,32 +99,14 @@ export function App({ service }: { service: DesktopService }) {
   } = model;
 
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
-  const token = useRef(0);
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
   const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
     snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
-  const assignmentReady = assignmentAvailable && !!remap && !model.remapBusy;
   const assignmentScope = useMemo(() => ({ service, selectedBinding, assignmentAvailable }), [service, selectedBinding, assignmentAvailable]);
-  const [assignmentIntent, setAssignmentIntent] = useState<{ token: number; id: string; scope: typeof assignmentScope }>();
-  const currentIntent = assignmentIntent?.scope === assignmentScope && assignmentReady &&
-    macroLibrary.loaded && !macroLibrary.loading && !macroLibrary.error &&
-    macroLibrary.macros.some((macro) => macro.id === assignmentIntent.id) ? assignmentIntent : undefined;
-  useEffect(() => {
-    if (assignmentIntent && !currentIntent) setAssignmentIntent(undefined);
-  }, [assignmentIntent, currentIntent]);
-  const assignSavedMacro = (id: string) => {
-    if (!assignmentReady || !macroLibrary.loaded || macroLibrary.loading || macroLibrary.error ||
-      !macroLibrary.macros.some((macro) => macro.id === id)) return;
-    setAssignmentIntent({ token: ++token.current, id, scope: assignmentScope });
-    setActiveView("remapping");
-  };
-  const consumeAssignmentIntent = (consumed: number) => {
-    setAssignmentIntent((current) => current?.token === consumed ? undefined : current);
-  };
 
   const macroWorkspace = (
     <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
-      <MacroManagerPanel service={service} library={macroLibrary} onAssign={assignSavedMacro} assignmentReady={assignmentReady} />
+      <MacroManagerPanel service={service} library={macroLibrary} />
     </WorkspaceView>
   );
 
@@ -474,8 +456,6 @@ export function App({ service }: { service: DesktopService }) {
             libraryReady={macroLibrary.loaded && !macroLibrary.loading && !macroLibrary.error}
             assignmentScope={assignmentScope}
             assignmentAvailable={assignmentAvailable}
-            assignmentIntent={currentIntent}
-            onConsumeIntent={consumeAssignmentIntent}
             onStageMacro={actions.stageMacroAssignment}
             error={model.remapError}
             onStage={actions.stageRemap}

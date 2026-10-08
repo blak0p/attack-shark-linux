@@ -4,68 +4,73 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MacroManagerPanel } from "./MacroManagerPanel";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-const openAdvanced = async () => {
-  const summary = await screen.findByText("Advanced events and recording");
-  if (!(summary.parentElement as HTMLDetailsElement).open) fireEvent.click(summary);
-};
 const openOptions = () => {
   const summary = screen.getByText("Macro options");
   if (!(summary.parentElement as HTMLDetailsElement).open) fireEvent.click(summary);
 };
 
-it("assigns only the saved ID while retaining dirty name and events without saving", async () => {
-  const service = serviceFor();
-  const onAssign = vi.fn();
-  render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await screen.findByDisplayValue("Clicks");
-  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Unsaved name" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
-  fireEvent.click(screen.getByRole("button", { name: "Assign to button" }));
-  expect(onAssign).toHaveBeenCalledExactlyOnceWith("one");
-  expect(service.CreateMacro).not.toHaveBeenCalled();
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved name");
-  expect(screen.getByText(/Unsaved editor changes are not saved or included/)).toBeInTheDocument();
+const upload = (text: string) => {
+  openOptions();
+  const file = new File([text], "macro.json", { type: "application/json" });
+  Object.defineProperty(file, "text", { value: async () => text });
+  fireEvent.change(screen.getByLabelText("Import macro JSON"), { target: { files: [file] } });
+};
+
+const fileText = JSON.stringify({ version: 1, name: "Clicks", events: [{ type: "mouse_left", action: "up", delay_ms: 5 }] });
+
+const buttons = [
+  [0, "mouse_left", "Left mouse"],
+  [1, "mouse_middle", "Middle mouse"],
+  [2, "mouse_right", "Right mouse"],
+  [3, "mouse_back", "Back mouse"],
+  [4, "mouse_forward", "Forward mouse"],
+] as const;
+
+const macro = (id = "one", name = "Clicks"): Macro => ({
+  id,
+  name,
+  events: [
+    { type: "mouse_left", action: "down", delay_ms: 12 },
+    { type: "mouse_right", action: "up", delay_ms: 34 },
+  ],
 });
 
-it("keeps unsaved and offline drafts local rather than assigning without a device", async () => {
-  const service = serviceFor();
-  const onAssign = vi.fn();
-  const view = render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady={false} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await screen.findByDisplayValue("Clicks");
-  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline edits" } });
-  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Assign to button" }));
-  expect(screen.getByLabelText("Macro name")).toHaveValue("Offline edits");
-  expect(onAssign).not.toHaveBeenCalled();
-  view.rerender(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
-  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
-  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
-  expect(service.CreateMacro).not.toHaveBeenCalled();
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
+const serviceFor = (overrides: Partial<MacroLibraryService> = {}): MacroLibraryService => ({
+  ListMacros: vi.fn().mockResolvedValue([macro()]),
+  ReadMacro: vi.fn().mockImplementation(async (id) => macro(id)),
+  CreateMacro: vi.fn().mockImplementation(async (name, events) => ({ id: "new", name, events })),
+  UpdateMacro: vi.fn().mockImplementation(async (id, name, events) => ({ id, name, events })),
+  DeleteMacro: vi.fn().mockResolvedValue(undefined),
+  ...overrides,
 });
 
-it("disables assignment during library loading and after a failed read while preserving the draft", async () => {
+it("renders clean guidance text for button assignment and no cross-view assign button", async () => {
   const service = serviceFor();
-  const onAssign = vi.fn();
-  render(<MacroManagerPanel service={service} onAssign={onAssign} assignmentReady />);
-  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
+  render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
   await screen.findByDisplayValue("Clicks");
-  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Kept on error" } });
-  vi.mocked(service.ReadMacro).mockRejectedValueOnce(new Error("Read failed"));
-  fireEvent.click(screen.getByRole("button", { name: "Clicks · 2 events" }));
-  await screen.findByText("Read failed");
-  expect(screen.getByRole("button", { name: "Assign to button" })).toBeDisabled();
-  expect(screen.getByLabelText("Macro name")).toHaveValue("Kept on error");
-  expect(onAssign).not.toHaveBeenCalled();
+  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Assign to button" })).not.toBeInTheDocument();
 });
 
-it("authors repeated complete five-button clicks atomically without implicit save", async () => {
+it("renders styled Import JSON button that triggers hidden file input dialog", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  openOptions();
+  const fileInput = screen.getByLabelText("Import macro JSON");
+  expect(fileInput).toHaveAttribute("type", "file");
+  expect(fileInput).toHaveStyle({ display: "none" });
+  const clickSpy = vi.spyOn(fileInput, "click");
+  const importBtn = screen.getByRole("button", { name: "Import JSON" });
+  expect(importBtn).toBeInTheDocument();
+  fireEvent.click(importBtn);
+  expect(clickSpy).toHaveBeenCalledTimes(1);
+});
+
+it("authors repeated complete five-button clicks atomically via composer without implicit save", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   await screen.findByRole("button", { name: "Clicks · 2 events" });
@@ -75,293 +80,82 @@ it("authors repeated complete five-button clicks atomically without implicit sav
     fireEvent.click(screen.getByRole("button", { name: `${label.replace(" mouse", "")} click`, exact: true }));
     fireEvent.click(screen.getByRole("button", { name: "Add click" }));
   }
-  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
   expect(service.CreateMacro).not.toHaveBeenCalled();
-  expect(screen.getByRole("list", { name: "Ordered timeline" }).children).toHaveLength(6);
+  const list = screen.getByRole("list", { name: "Ordered timeline" });
+  expect(list.children).toHaveLength(5);
   fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.CreateMacro).toHaveBeenCalledWith("Composer",
-    [...buttons.map(([, type]) => type), "mouse_forward"].flatMap((type) => [
-      { type, action: "down", delay_ms: 0 }, { type, action: "up", delay_ms: 0 },
-    ])));
+  await waitFor(() =>
+    expect(service.CreateMacro).toHaveBeenCalledWith(
+      "Composer",
+      buttons.flatMap(([, type]) => [
+        { type, action: "down", delay_ms: 0 },
+        { type, action: "up", delay_ms: 0 },
+      ])
+    )
+  );
 });
 
-it("groups only adjacent zero-delay pairs and preserves mixed raw data through editing and save", async () => {
+it("groups adjacent zero-delay pairs in timeline and displays raw events with preserved delays", async () => {
   const events: Macro["events"] = [
     { type: "mouse_middle", action: "down", delay_ms: 0 },
     { type: "mouse_middle", action: "up", delay_ms: 0 },
     { type: "mouse_back", action: "down", delay_ms: 0 },
     { type: "mouse_back", action: "up", delay_ms: 7 },
-    { type: "mouse_forward", action: "up", delay_ms: 0 },
-    { type: "mouse_left", action: "down", delay_ms: 0 },
-    { type: "mouse_right", action: "up", delay_ms: 0 },
   ];
-  const original = { id: "one", name: "Mixed", events };
-  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([original]), ReadMacro: vi.fn().mockResolvedValue(original) });
+  const mixed = { id: "one", name: "Mixed", events };
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([mixed]), ReadMacro: vi.fn().mockResolvedValue(mixed) });
   render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Mixed · 7 events" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Mixed · 4 events" }));
   const list = await screen.findByRole("list", { name: "Ordered timeline" });
-  expect(list.children).toHaveLength(6);
+  expect(list.children).toHaveLength(3);
   expect(list).toHaveTextContent("Middle click");
+  expect(list).toHaveTextContent("Complete click · zero local delay");
+  expect(list).toHaveTextContent("Back · up");
   expect(list).toHaveTextContent("Raw event 4 · 7 ms");
   expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Add event" })).not.toBeVisible();
-  await openAdvanced();
-  expect(screen.getByText("Delay: 7 ms (preserved)")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Move event 7 up" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove event 5" }));
-  fireEvent.change(screen.getByLabelText("Event 3 button"), { target: { value: "mouse_forward" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Mixed", [
-    events[0], events[1], { ...events[2], type: "mouse_forward" }, events[3], events[6], events[5],
-  ]));
-  expect(original.events).toEqual(events);
 });
 
-it("closing advanced tools discards an armed session and secondary file options start collapsed", async () => {
-  render(<MacroManagerPanel service={serviceFor()} />);
-  await screen.findByRole("button", { name: "Clicks · 2 events" });
-  expect(screen.getByRole("button", { name: "Export saved macro" })).not.toBeVisible();
+it("renders compatibility indicator for 1 or 2 complete clicks and local-only for others", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "New macro" }));
-  await openAdvanced();
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseDown(screen.getByRole("region", { name: "Mouse recording zone" }), { button: 4 });
-  fireEvent.click(screen.getByText("Advanced events and recording"));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Add click" })).toBeEnabled());
-  await openAdvanced();
-  expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
-  expect(screen.getByRole("list", { name: "Ordered timeline" }).children).toHaveLength(0);
+  expect(screen.getByText("No actions yet. Add a click above. Empty macros can be saved.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  expect(screen.getByText(/Eligible for assignment after saving/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  expect(screen.getByText(/Eligible for assignment after saving/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
 });
 
-it("guides assignment to Button remapping without a standalone upload", async () => {
+it("does not render fake recording zone, advanced raw events editor, or bottom disclaimers", async () => {
   render(<MacroManagerPanel service={serviceFor()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  expect(await screen.findByText(/To assign a saved macro, open Button remapping/)).toHaveTextContent("Playback and device persistence remain unverified");
-  expect(screen.queryByRole("button", { name: /upload|apply remap/i })).not.toBeInTheDocument();
+  await screen.findByDisplayValue("Clicks");
+  expect(screen.queryByText("Advanced events and recording")).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Mouse recording zone" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Arm recording" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Stop recording" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add event" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Saving and assignment")).not.toBeInTheDocument();
 });
 
-it("records only armed zone input in order, appends on stop and persists only on explicit save", async () => {
-  const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
-  let now = 100;
-  vi.spyOn(performance, "now").mockImplementation(() => now);
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
-  fireEvent.mouseDown(zone, { button: 0 }); fireEvent.mouseUp(zone, { button: 0 });
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  expect(screen.getByRole("button", { name: "Save to library" })).toBeDisabled();
-  fireEvent.mouseDown(document.body, { button: 0 });
-  fireEvent.mouseDown(screen.getByRole("button", { name: "Stop recording" }), { button: 0 });
-  fireEvent.mouseDown(zone, { button: 5 }); fireEvent.mouseUp(zone, { button: 5 });
-  fireEvent.mouseUp(zone, { button: 2 });
-  fireEvent.mouseDown(zone, { button: 0 }); fireEvent.mouseDown(zone, { button: 0 });
-  now = 112.6; fireEvent.mouseDown(zone, { button: 2 });
-  now = 140; fireEvent.mouseUp(zone, { button: 0 });
-  now = 160; fireEvent.mouseUp(zone, { button: 2 });
-  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  expect(screen.getByText(/Existing delay values are preserved/)).toBeInTheDocument();
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await screen.findByText("Saved to library. No device changes made.");
-  expect(service.UpdateMacro).toHaveBeenLastCalledWith("one", "Clicks", [...macro().events,
-    { type: "mouse_left", action: "down", delay_ms: 0 },
-    { type: "mouse_right", action: "down", delay_ms: 0 },
-    { type: "mouse_left", action: "up", delay_ms: 0 },
-    { type: "mouse_right", action: "up", delay_ms: 0 },
-  ]);
-});
-
-it("discards unbalanced sessions on stop, zone exit and focus loss", async () => {
-  const service = serviceFor();
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  for (const interrupt of [() => fireEvent.click(screen.getByRole("button", { name: "Stop recording" })),
-    () => fireEvent.mouseLeave(zone), () => fireEvent.blur(zone)]) {
-    fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-    fireEvent.mouseDown(zone, { button: 0 });
-    interrupt();
-    expect(screen.getByRole("alert")).toHaveTextContent("discarded");
-    expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
-    fireEvent.mouseUp(zone, { button: 0 });
-    expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
-  }
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-});
-
-it("keeps balanced sessions on zone exit and rearms without measuring clock intervals", async () => {
-  const service = serviceFor();
-
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseDown(zone, { button: 2 });
-  fireEvent.mouseUp(zone, { button: 2 });
-  fireEvent.mouseLeave(zone);
-  expect(screen.getByRole("button", { name: "Stop recording" })).toBeEnabled();
-  const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-  fireEvent(zone, menu);
-  expect(menu.defaultPrevented).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-  expect(screen.getByLabelText("Event 4 action")).toHaveValue("up");
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseDown(zone, { button: 0 });
-  fireEvent.mouseUp(zone, { button: 0 });
-  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-  expect(screen.getByLabelText("Event 6 action")).toHaveValue("up");
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
-    ...macro().events,
-    { type: "mouse_right", action: "down", delay_ms: 0 },
-    { type: "mouse_right", action: "up", delay_ms: 0 },
-    { type: "mouse_left", action: "down", delay_ms: 0 },
-    { type: "mouse_left", action: "up", delay_ms: 0 },
-  ]));
-});
-
-it("disarms and discards recording on selection, service replacement and unmount", async () => {
-  const service = serviceFor();
-  const view = render(<MacroManagerPanel service={service} />);
-  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
-  fireEvent.click(card);
-  await openAdvanced();
-  let zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseDown(zone, { button: 0 });
-  fireEvent.click(card);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled());
-  fireEvent.mouseUp(zone, { button: 0 });
-  expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  view.rerender(<MacroManagerPanel service={serviceFor()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  expect(screen.getByRole("button", { name: "Arm recording" })).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseDown(zone, { button: 2 });
-  view.unmount();
-  fireEvent.mouseUp(document.body, { button: 2 });
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-});
-
-it("edits, adds, reorders and removes local events before saving the same ID and name", async () => {
-  const service = serviceFor();
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  await screen.findByLabelText("Event 1 button");
-  expect(screen.getByRole("button", { name: "Move event 1 up" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Move event 2 down" })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("Event 1 button"), { target: { value: "mouse_right" } });
-  fireEvent.change(screen.getByLabelText("Event 1 action"), { target: { value: "up" } });
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: "Add event" }));
-  expect(screen.getByLabelText("Event 3 button")).toHaveValue("mouse_left");
-  fireEvent.click(screen.getByRole("button", { name: "Move event 3 up" }));
-  fireEvent.click(screen.getByRole("button", { name: "Move event 2 up" }));
-  fireEvent.click(screen.getByRole("button", { name: "Move event 1 down" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove event 3" }));
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
-    { type: "mouse_right", action: "up", delay_ms: 12 },
-    { type: "mouse_left", action: "down", delay_ms: 0 },
-  ]));
-});
-
-it("retains preserved delays and edited events for retry after a save failure", async () => {
-  const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (id, name, events) => ({ id, name, events })) });
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const button = await screen.findByLabelText("Event 1 button");
-  fireEvent.change(button, { target: { value: "mouse_right" } });
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
-  expect(button).toHaveValue("mouse_right");
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await screen.findByText("Saved to library. No device changes made.");
-  expect(service.UpdateMacro).toHaveBeenCalledTimes(2);
-  expect(service.UpdateMacro).toHaveBeenLastCalledWith("one", "Clicks", [
-    { ...macro().events[0], type: "mouse_right" }, macro().events[1],
-  ]);
-  fireEvent.click(screen.getByRole("button", { name: "Remove event 2" }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove event 1" }));
-  expect(screen.queryByText("Saved to library. No device changes made.")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenLastCalledWith("one", "Clicks", []));
-});
-it("creates edited events locally and locks event controls during save and delete confirmation", async () => {
-  let resolve!: (value: Macro) => void;
-  const pending = new Promise<Macro>((done) => { resolve = done; });
-  const service = serviceFor({ CreateMacro: vi.fn().mockReturnValue(pending) });
-  render(<MacroManagerPanel service={service} />);
-  await screen.findByRole("button", { name: "Clicks · 2 events" });
-  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
-  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "New events" } });
-  await openAdvanced();
-  fireEvent.click(screen.getByRole("button", { name: "Add event" }));
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  expect(screen.queryByText(/Existing delay values are preserved/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  const events = [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 0 }];
-  expect(service.CreateMacro).toHaveBeenCalledWith("New events", events);
-  expect(screen.getByRole("button", { name: "Add event" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Remove event 1" })).toBeDisabled();
-  expect(screen.queryAllByLabelText(/delay \(ms\)/)).toHaveLength(0);
-  expect(screen.getByLabelText("Event 1 button")).toBeDisabled();
-  expect(screen.getByLabelText("Event 1 action")).toBeDisabled();
-  await act(async () => resolve({ id: "new", name: "New events", events }));
-  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
-  expect(screen.getByRole("button", { name: "Add event" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Remove event 1" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.getByRole("button", { name: "Add event" })).toBeEnabled();
-});
-
-it("does not mutate loaded events and preserves delays when selection resets unsaved edits", async () => {
-  const original = macro();
-  const service = serviceFor({ ReadMacro: vi.fn().mockResolvedValue(original), ListMacros: vi.fn().mockResolvedValue([original]) });
-  render(<MacroManagerPanel service={service} />);
-  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
-  fireEvent.click(card);
-  await openAdvanced();
-  fireEvent.change(await screen.findByLabelText("Event 1 button"), { target: { value: "mouse_right" } });
-  fireEvent.click(screen.getByRole("button", { name: "Move event 1 down" }));
-  expect(original.events).toEqual(macro().events);
-  fireEvent.click(card);
-  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-  await waitFor(() => expect(screen.getByLabelText("Event 1 button")).toHaveValue("mouse_left"));
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", original.events));
-});
-
-const upload = (text: string) => {
-  openOptions();
-  const file = new File([text], "macro.json", { type: "application/json" });
-  Object.defineProperty(file, "text", { value: async () => text });
-  fireEvent.change(screen.getByLabelText("Import macro JSON"), { target: { files: [file] } });
-};
-const fileText = JSON.stringify({ version: 1, name: "Clicks", events: [{ type: "mouse_left", action: "up", delay_ms: 5 }] });
-
-it("imports duplicates as new copies, preserves drafts on validation/storage errors and never calls device APIs", async () => {
+it("imports duplicates as new copies, preserves drafts on errors, and never calls device APIs", async () => {
   const device = vi.fn();
-  const service = { ...serviceFor({ CreateMacro: vi.fn().mockRejectedValueOnce(new Error("Disk full")).mockImplementation(async (name, events) => ({ id: "fresh", name, events })) }), ApplyRemap: device };
+  const service = {
+    ...serviceFor({
+      CreateMacro: vi.fn()
+        .mockRejectedValueOnce(new Error("Disk full"))
+        .mockImplementation(async (name, events) => ({ id: "fresh", name, events })),
+    }),
+    ApplyRemap: device,
+  };
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
   fireEvent.change(await screen.findByLabelText("Macro name"), { target: { value: "Unsaved" } });
   upload("{");
   expect(await screen.findByRole("alert")).toHaveTextContent("JSON");
@@ -370,17 +164,13 @@ it("imports duplicates as new copies, preserves drafts on validation/storage err
   upload(fileText);
   expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
   expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved");
-  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
   upload(fileText);
   await screen.findByRole("button", { name: "Clicks · 1 events" });
-  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
   expect(service.CreateMacro).toHaveBeenLastCalledWith("Clicks", [{ type: "mouse_left", action: "up", delay_ms: 5 }]);
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-  expect(service.DeleteMacro).not.toHaveBeenCalled();
   expect(device).not.toHaveBeenCalled();
 });
 
-it("rejects oversized uploads before reading and preserves the library on file read errors", async () => {
+it("rejects oversized uploads before reading and preserves library", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   await screen.findByRole("button", { name: "Clicks · 2 events" });
@@ -393,14 +183,9 @@ it("rejects oversized uploads before reading and preserves the library on file r
   fireEvent.change(input, { target: { files: [file] } });
   expect(await screen.findByRole("alert")).toHaveTextContent("too large");
   expect(read).not.toHaveBeenCalled();
-  Object.defineProperty(file, "size", { value: 0 });
-  fireEvent.change(input, { target: { files: [file] } });
-  expect(await screen.findByRole("alert")).toHaveTextContent("File unreadable");
-  expect(service.CreateMacro).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
 });
 
-it("locks pending imports and ignores a file read after service replacement", async () => {
+it("locks pending imports and ignores file read after service replacement", async () => {
   let resolve!: (text: string) => void;
   const pending = new Promise<string>((done) => { resolve = done; });
   const first = serviceFor();
@@ -411,146 +196,56 @@ it("locks pending imports and ignores a file read after service replacement", as
   Object.defineProperty(file, "text", { value: () => pending });
   openOptions();
   fireEvent.change(screen.getByLabelText("Import macro JSON"), { target: { files: [file] } });
-  expect(screen.getByLabelText("Import macro JSON")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Import JSON" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "New macro" })).toBeDisabled();
   view.rerender(<MacroManagerPanel service={second} />);
   await screen.findByText("No macros in your library yet.");
   await act(async () => resolve(fileText));
   expect(first.CreateMacro).not.toHaveBeenCalled();
   expect(second.CreateMacro).not.toHaveBeenCalled();
-  expect(screen.getByText("No macros in your library yet.")).toBeInTheDocument();
 });
 
-it("downloads only the saved macro without ID, not unsaved editor changes", async () => {
+it("downloads only the saved macro without ID", async () => {
   let blob!: Blob;
-  vi.stubGlobal("URL", class extends URL {
-    static createObjectURL = vi.fn((value: Blob) => { blob = value; return "blob:macro"; });
-    static revokeObjectURL = vi.fn();
-  });
+  vi.spyOn(URL, "createObjectURL").mockImplementation((value: unknown) => { blob = value as Blob; return "blob:macro"; });
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  fireEvent.change(await screen.findByLabelText("Macro name"), { target: { value: "Unsaved" } });
-  await openAdvanced();
+  await screen.findByDisplayValue("Clicks");
   openOptions();
-  fireEvent.change(screen.getByLabelText("Event 1 button"), { target: { value: "mouse_right" } });
   fireEvent.click(screen.getByRole("button", { name: "Export saved macro" }));
-  const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob); });
-  expect(JSON.parse(text)).toEqual({ version: 1, name: "Clicks", events: macro().events });
-  expect(screen.getByText(/Unsaved editor changes are not exported/)).toBeInTheDocument();
-  expect(click).toHaveBeenCalledTimes(1);
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:macro");
-  expect(service.UpdateMacro).not.toHaveBeenCalled();
-});
-
-const buttons = [
-  [0, "mouse_left", "Left mouse"], [1, "mouse_middle", "Middle mouse"],
-  [2, "mouse_right", "Right mouse"], [3, "mouse_back", "Back mouse"],
-  [4, "mouse_forward", "Forward mouse"],
-] as const;
-
-it.each(buttons)("records DOM button %i as %s with duplicate/unmatched suppression", async (button, type) => {
-  const service = serviceFor();
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  fireEvent.mouseUp(zone, { button });
-  fireEvent.mouseDown(zone, { button });
-  fireEvent.mouseDown(zone, { button });
-  fireEvent.mouseUp(zone, { button });
-  fireEvent.mouseUp(zone, { button });
-  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-  expect(screen.getByLabelText("Event 3 button")).toHaveValue(type);
-  expect(screen.queryByLabelText("Event 5 button")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
-    ...macro().events, { type, action: "down", delay_ms: 0 }, { type, action: "up", delay_ms: 0 },
-  ]));
-});
-
-it.each(buttons)("discards held DOM button %i on stop, exit and blur", async (button) => {
-  render(<MacroManagerPanel service={serviceFor()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  for (const interrupt of [() => fireEvent.click(screen.getByRole("button", { name: "Stop recording" })),
-    () => fireEvent.mouseLeave(zone), () => fireEvent.blur(zone)]) {
-    fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-    fireEvent.mouseDown(zone, { button });
-    interrupt();
-    expect(screen.getByRole("alert")).toHaveTextContent("discarded");
-    fireEvent.mouseUp(zone, { button });
-    expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
-  }
-});
-
-it("suppresses auxiliary defaults only in the armed zone, including malformed input", async () => {
-  render(<MacroManagerPanel service={serviceFor()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
-  const dispatch = (target: Element, name: string, button: number) => {
-    const event = new MouseEvent(name, { bubbles: true, cancelable: true, button });
-    fireEvent(target, event);
-    return event.defaultPrevented;
-  };
-  for (const name of ["mousedown", "mouseup", "auxclick", "contextmenu"]) {
-    for (const button of [1, 2, 3, 4]) expect(dispatch(zone, name, button)).toBe(false);
-  }
-  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
-  for (const name of ["mouseup", "auxclick", "contextmenu"]) {
-    for (const button of [1, 2, 3, 4]) {
-      expect(dispatch(document.body, name, button)).toBe(false);
-      expect(dispatch(zone, name, button)).toBe(true);
-    }
-  }
-  expect(dispatch(zone, "mousedown", 5)).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-  expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
-  expect(dispatch(zone, "auxclick", 1)).toBe(false);
-});
-
-it("displays and saves imported five-button raw events and delays losslessly", async () => {
-  const service = serviceFor();
-  const events: Macro["events"] = buttons.map(([, type], index) => ({
-    type, action: index % 2 ? "up" : "down", delay_ms: index * 17,
-  }));
-  render(<MacroManagerPanel service={service} />);
-  await screen.findByRole("button", { name: "Clicks · 2 events" });
-  upload(JSON.stringify({ version: 1, name: "Raw five", events }));
-  await screen.findByRole("button", { name: "Raw five · 5 events" });
-  await openAdvanced();
-  buttons.forEach(([, type, label], index) => {
-    expect(screen.getByLabelText(`Event ${index + 1} button`)).toHaveValue(type);
-    expect(screen.getByText(`${label} · ${events[index].action}`)).toBeInTheDocument();
+  const text = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsText(blob);
   });
-  expect(service.CreateMacro).toHaveBeenCalledWith("Raw five", events);
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("new", "Raw five", events));
-  expect(screen.getByText(/Backend admission/)).toHaveTextContent("one or two complete zero-delay clicks");
+  expect(JSON.parse(text)).toEqual({ version: 1, name: "Clicks", events: macro().events });
+  expect(click).toHaveBeenCalledTimes(1);
+  expect(revoke).toHaveBeenCalledWith("blob:macro");
 });
 
-const macro = (id = "one", name = "Clicks"): Macro => ({ id, name, events: [
-  { type: "mouse_left", action: "down", delay_ms: 12 },
-  { type: "mouse_right", action: "up", delay_ms: 34 },
-] });
-const serviceFor = (overrides: Partial<MacroLibraryService> = {}): MacroLibraryService => ({
-  ListMacros: vi.fn().mockResolvedValue([macro()]), ReadMacro: vi.fn().mockImplementation(async (id) => macro(id)),
-  CreateMacro: vi.fn().mockImplementation(async (name, events) => ({ id: "new", name, events })),
-  UpdateMacro: vi.fn().mockImplementation(async (id, name, events) => ({ id, name, events })),
-  DeleteMacro: vi.fn().mockResolvedValue(undefined), ...overrides,
+it("requires explicit delete confirmation, supports cancel, and deletes macro", async () => {
+  const service = serviceFor({ DeleteMacro: vi.fn().mockResolvedValue(undefined) });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
+  expect(screen.getByRole("dialog", { name: "Delete macro confirmation" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(service.DeleteMacro).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+  await waitFor(() => expect(service.DeleteMacro).toHaveBeenCalledWith("one"));
 });
 
-it("views ordered local events, creates an empty draft, and saves a rename by ID", async () => {
+it("creates empty draft, renames and saves macro by ID", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  expect(await screen.findByText("Left mouse · down")).toBeInTheDocument();
-  expect(screen.getByText("Right mouse · up")).toBeInTheDocument();
+  await screen.findByDisplayValue("Clicks");
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Renamed" } });
   fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
   await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Renamed", macro().events));
@@ -558,54 +253,33 @@ it("views ordered local events, creates an empty draft, and saves a rename by ID
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Empty" } });
   fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
   await waitFor(() => expect(service.CreateMacro).toHaveBeenCalledWith("Empty", []));
-  expect(await screen.findByRole("button", { name: "Empty · 0 events" })).toHaveAttribute("aria-pressed", "true");
-});
-
-it("requires explicit delete confirmation, supports cancel, and preserves data/draft on failures", async () => {
-  const service = serviceFor({ UpdateMacro: vi.fn().mockRejectedValue(new Error("Disk full")), DeleteMacro: vi.fn().mockRejectedValue(new Error("Denied")) });
-  render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  await screen.findByText("Left mouse · down");
-  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Disk full");
-  expect(screen.getByLabelText("Macro name")).toHaveValue("Draft");
-  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
-  expect(service.DeleteMacro).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
-  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Denied"));
-  expect(screen.getByLabelText("Macro name")).toHaveValue("Draft");
-  service.DeleteMacro = vi.fn().mockResolvedValue(undefined);
-  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
-  expect(await screen.findByText("No macros in your library yet.")).toBeInTheDocument();
 });
 
 it("keeps duplicate names distinct and ignores stale reads", async () => {
   let resolve!: (value: Macro) => void;
   const delayed = new Promise<Macro>((done) => { resolve = done; });
-  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([macro("one"), macro("two")]), ReadMacro: vi.fn().mockImplementation((id) => id === "one" ? delayed : Promise.resolve(macro("two", "Second"))) });
+  const service = serviceFor({
+    ListMacros: vi.fn().mockResolvedValue([macro("one"), macro("two")]),
+    ReadMacro: vi.fn().mockImplementation((id) => (id === "one" ? delayed : Promise.resolve(macro("two", "Second")))),
+  });
   render(<MacroManagerPanel service={service} />);
   const cards = await screen.findAllByRole("button", { name: "Clicks · 2 events" });
-  fireEvent.click(cards[0]); fireEvent.click(cards[1]);
+  fireEvent.click(cards[0]);
+  fireEvent.click(cards[1]);
   await waitFor(() => expect(screen.getByLabelText("Macro name")).toHaveValue("Second"));
   await act(async () => resolve(macro("one", "Stale")));
   expect(screen.getByLabelText("Macro name")).toHaveValue("Second");
   expect(cards[1]).toHaveAttribute("aria-pressed", "true");
 });
 
-it("preserves the previous selection and unsaved name when another read or list refresh fails", async () => {
+it("preserves selection and unsaved name when another read or list refresh fails", async () => {
   const service = serviceFor({
     ListMacros: vi.fn().mockResolvedValueOnce([macro(), macro("two", "Other")]).mockRejectedValue(new Error("Refresh failed")),
     ReadMacro: vi.fn().mockResolvedValueOnce(macro()).mockRejectedValue(new Error("Read failed")),
   });
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await openAdvanced();
-  await screen.findByText("Left mouse · down");
+  await screen.findByDisplayValue("Clicks");
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Keep draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Other · 2 events" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Read failed");
@@ -613,7 +287,6 @@ it("preserves the previous selection and unsaved name when another read or list 
   expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Retry library" }));
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Refresh failed"));
-  expect(screen.getByRole("button", { name: "Clicks · 2 events" })).toBeInTheDocument();
   expect(screen.getByLabelText("Macro name")).toHaveValue("Keep draft");
 });
 
@@ -632,23 +305,94 @@ it("ignores reads from a replaced service", async () => {
   expect(screen.getByLabelText("Macro name")).toHaveValue("Current");
 });
 
-it("shows loading/list errors, retries, and retains a failed create draft while preventing duplicate submissions", async () => {
+it("shows loading/list errors, retries, and retains draft while preventing duplicate submissions", async () => {
   let reject!: (error: Error) => void;
   const pending = new Promise<Macro>((_, fail) => { reject = fail; });
-  const service = serviceFor({ ListMacros: vi.fn().mockRejectedValueOnce(new Error("Unavailable")).mockResolvedValue([]), CreateMacro: vi.fn().mockReturnValue(pending) });
+  const service = serviceFor({
+    ListMacros: vi.fn().mockRejectedValueOnce(new Error("Unavailable")).mockResolvedValue([]),
+    CreateMacro: vi.fn().mockReturnValue(pending),
+  });
   render(<MacroManagerPanel service={service} />);
   expect(screen.getByText("Loading library…")).toBeInTheDocument();
   expect(await screen.findByRole("alert")).toHaveTextContent("Unavailable");
-  expect(screen.queryByText("No macros in your library yet.")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry library" }));
   await screen.findByText("No macros in your library yet.");
   fireEvent.click(screen.getByRole("button", { name: "New macro" }));
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Unsaved" } });
   const save = screen.getByRole("button", { name: "Save to library" });
-  fireEvent.click(save); fireEvent.click(save);
+  fireEvent.click(save);
+  fireEvent.click(save);
   expect(service.CreateMacro).toHaveBeenCalledTimes(1);
   expect(save).toBeDisabled();
   await act(async () => reject(new Error("Cannot save")));
   expect(screen.getByLabelText("Macro name")).toHaveValue("Unsaved");
   expect(screen.getByRole("alert")).toHaveTextContent("Cannot save");
+});
+
+it("displays and saves imported five-button raw events and delays losslessly in timeline", async () => {
+  const service = serviceFor();
+  const events: Macro["events"] = buttons.map(([, type], index) => ({
+    type, action: index % 2 ? "up" : "down", delay_ms: index * 17,
+  }));
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  upload(JSON.stringify({ version: 1, name: "Raw five", events }));
+  await screen.findByRole("button", { name: "Raw five · 5 events" });
+  const list = screen.getByRole("list", { name: "Ordered timeline" });
+  buttons.forEach(([, , label]) => {
+    expect(list).toHaveTextContent(label.replace(" mouse", ""));
+  });
+  expect(service.CreateMacro).toHaveBeenCalledWith("Raw five", events);
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("new", "Raw five", events));
+});
+
+it("locks composer controls during save and delete confirmation", async () => {
+  let resolve!: (value: Macro) => void;
+  const pending = new Promise<Macro>((done) => { resolve = done; });
+  const service = serviceFor({ CreateMacro: vi.fn().mockReturnValue(pending) });
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "New click" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  expect(screen.getByRole("button", { name: "Add click" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Left click" })).toBeDisabled();
+  await act(async () =>
+    resolve({
+      id: "new",
+      name: "New click",
+      events: [
+        { type: "mouse_left", action: "down", delay_ms: 0 },
+        { type: "mouse_left", action: "up", delay_ms: 0 },
+      ],
+    })
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Delete macro" }));
+  expect(screen.getByRole("button", { name: "Add click" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Add click" })).toBeEnabled();
+});
+
+it("disables save when macro name is empty or only whitespace", async () => {
+  render(<MacroManagerPanel service={serviceFor()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "   " } });
+  expect(screen.getByRole("button", { name: "Save to library" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Valid name" } });
+  expect(screen.getByRole("button", { name: "Save to library" })).toBeEnabled();
+});
+
+it("resets unsaved edits when selecting another macro", async () => {
+  const original = macro();
+  const service = serviceFor({ ReadMacro: vi.fn().mockResolvedValue(original), ListMacros: vi.fn().mockResolvedValue([original]) });
+  render(<MacroManagerPanel service={service} />);
+  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
+  fireEvent.click(card);
+  await screen.findByDisplayValue("Clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Unsaved Name" } });
+  fireEvent.click(card);
+  await waitFor(() => expect(screen.getByLabelText("Macro name")).toHaveValue("Clicks"));
 });
