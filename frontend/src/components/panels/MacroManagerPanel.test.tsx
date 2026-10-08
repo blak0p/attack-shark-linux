@@ -26,7 +26,7 @@ it("records only armed zone input in order, appends on stop and persists only on
   expect(screen.getByRole("button", { name: "Save to library" })).toBeDisabled();
   fireEvent.mouseDown(document.body, { button: 0 });
   fireEvent.mouseDown(screen.getByRole("button", { name: "Stop recording" }), { button: 0 });
-  fireEvent.mouseDown(zone, { button: 1 }); fireEvent.mouseUp(zone, { button: 1 });
+  fireEvent.mouseDown(zone, { button: 5 }); fireEvent.mouseUp(zone, { button: 5 });
   fireEvent.mouseUp(zone, { button: 2 });
   fireEvent.mouseDown(zone, { button: 0 }); fireEvent.mouseDown(zone, { button: 0 });
   now = 112.6; fireEvent.mouseDown(zone, { button: 2 });
@@ -303,6 +303,91 @@ it("downloads only the saved macro without ID, not unsaved editor changes", asyn
   expect(click).toHaveBeenCalledTimes(1);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:macro");
   expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+const buttons = [
+  [0, "mouse_left", "Left mouse"], [1, "mouse_middle", "Middle mouse"],
+  [2, "mouse_right", "Right mouse"], [3, "mouse_back", "Back mouse"],
+  [4, "mouse_forward", "Forward mouse"],
+] as const;
+
+it.each(buttons)("records DOM button %i as %s with duplicate/unmatched suppression", async (button, type) => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  fireEvent.mouseUp(zone, { button });
+  fireEvent.mouseDown(zone, { button });
+  fireEvent.mouseDown(zone, { button });
+  fireEvent.mouseUp(zone, { button });
+  fireEvent.mouseUp(zone, { button });
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.getByLabelText("Event 3 button")).toHaveValue(type);
+  expect(screen.queryByLabelText("Event 5 button")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
+    ...macro().events, { type, action: "down", delay_ms: 0 }, { type, action: "up", delay_ms: 0 },
+  ]));
+});
+
+it.each(buttons)("discards held DOM button %i on stop, exit and blur", async (button) => {
+  render(<MacroManagerPanel service={serviceFor()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  for (const interrupt of [() => fireEvent.click(screen.getByRole("button", { name: "Stop recording" })),
+    () => fireEvent.mouseLeave(zone), () => fireEvent.blur(zone)]) {
+    fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+    fireEvent.mouseDown(zone, { button });
+    interrupt();
+    expect(screen.getByRole("alert")).toHaveTextContent("discarded");
+    fireEvent.mouseUp(zone, { button });
+    expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
+  }
+});
+
+it("suppresses auxiliary defaults only in the armed zone, including malformed input", async () => {
+  render(<MacroManagerPanel service={serviceFor()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const zone = await screen.findByRole("region", { name: "Mouse recording zone" });
+  const dispatch = (target: Element, name: string, button: number) => {
+    const event = new MouseEvent(name, { bubbles: true, cancelable: true, button });
+    fireEvent(target, event);
+    return event.defaultPrevented;
+  };
+  for (const name of ["mousedown", "mouseup", "auxclick", "contextmenu"]) {
+    for (const button of [1, 2, 3, 4]) expect(dispatch(zone, name, button)).toBe(false);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Arm recording" }));
+  for (const name of ["mouseup", "auxclick", "contextmenu"]) {
+    for (const button of [1, 2, 3, 4]) {
+      expect(dispatch(document.body, name, button)).toBe(false);
+      expect(dispatch(zone, name, button)).toBe(true);
+    }
+  }
+  expect(dispatch(zone, "mousedown", 5)).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.queryByLabelText("Event 3 button")).not.toBeInTheDocument();
+  expect(dispatch(zone, "auxclick", 1)).toBe(false);
+});
+
+it("displays and saves imported five-button raw events and delays losslessly", async () => {
+  const service = serviceFor();
+  const events: Macro["events"] = buttons.map(([, type], index) => ({
+    type, action: index % 2 ? "up" : "down", delay_ms: index * 17,
+  }));
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  upload(JSON.stringify({ version: 1, name: "Raw five", events }));
+  await screen.findByRole("button", { name: "Raw five · 5 events" });
+  buttons.forEach(([, type, label], index) => {
+    expect(screen.getByLabelText(`Event ${index + 1} button`)).toHaveValue(type);
+    expect(screen.getByText(`${label} · ${events[index].action}`)).toBeInTheDocument();
+  });
+  expect(service.CreateMacro).toHaveBeenCalledWith("Raw five", events);
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("new", "Raw five", events));
+  expect(screen.getByText(/Hardware boundary/)).toHaveTextContent("one or two complete zero-delay clicks");
 });
 
 const macro = (id = "one", name = "Clicks"): Macro => ({ id, name, events: [

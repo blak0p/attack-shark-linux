@@ -6,6 +6,15 @@ import "./MacroManagerPanel.css";
 
 type Library = ReturnType<typeof useMacroLibrary>;
 
+// DOM button order differs from the protocol/editor order: middle is button 1.
+const mouseButtons: { button: number; type: Macro["events"][number]["type"]; label: string }[] = [
+  { button: 0, type: "mouse_left", label: "Left mouse" },
+  { button: 2, type: "mouse_right", label: "Right mouse" },
+  { button: 1, type: "mouse_middle", label: "Middle mouse" },
+  { button: 3, type: "mouse_back", label: "Back mouse" },
+  { button: 4, type: "mouse_forward", label: "Forward mouse" },
+];
+
 export function MacroManagerPanel({ service, library }: { service: MacroLibraryService; library?: Library }) {
   return library ? <MacroManagerEditor library={library} service={service} /> : <LocalMacroManager service={service} />;
 }
@@ -44,14 +53,21 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
   };
   const record = (event: MouseEvent<HTMLDivElement>, action: "down" | "up") => {
     const current = session.current;
-    if (!current || unavailable || (event.button !== 0 && event.button !== 2)) return;
+    const button = mouseButtons.find((candidate) => candidate.button === event.button);
+    if (!current || unavailable || !button) return;
+    // Cancel armed-zone defaults even for duplicate downs and unmatched ups.
+    event.preventDefault();
     if ((action === "down") === current.held.has(event.button)) return;
     if (action === "down") event.currentTarget.focus();
-    event.preventDefault();
     // Schema compatibility only: zero requests no pause locally, not instant firmware playback.
     if (action === "down") current.held.add(event.button); else current.held.delete(event.button);
-    current.events.push({ type: event.button === 0 ? "mouse_left" : "mouse_right", action, delay_ms: 0 });
+    current.events.push({ type: button.type, action, delay_ms: 0 });
     setRecordingMessage(`Recording armed · ${current.events.length} captured events (not saved).`);
+  };
+  const preventRecordingDefault = (event: MouseEvent<HTMLDivElement>) => {
+    if (session.current && !unavailable && mouseButtons.some((button) => button.button === event.button)) {
+      event.preventDefault();
+    }
   };
   const stopRecording = () => {
     const current = session.current;
@@ -110,6 +126,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
       <article className="card macro-detail" aria-label="Macro details">
         <h2>{draft?.id ? "Macro details" : "New macro"}</h2>
         <p className="hint">Save to library only; no device changes. To assign a saved macro, open Button remapping, choose its name and fixed repetitions (1–255), then Apply remap. Playback and device persistence remain unverified.</p>
+        <p className="hint">Hardware boundary: one or two complete zero-delay clicks using left/right/middle/back/forward actions. Local save also preserves other event layouts and delays without projecting them into supported hardware timing. The assignment UI retains its narrower admission until its separate update; transport confirmation does not prove playback or device persistence.</p>
         <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
         <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
         {reading && <p role="status">Loading macro…</p>}
@@ -121,7 +138,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
             </label>
             <section className="group" aria-label="Local browser recording">
               <h3>Local browser recording</h3>
-              <p className="hint">Left/right mouse only, inside the zone below. Stop appends balanced events to this draft; an incomplete session is discarded. No hardware capture or verified X6 playback timing.</p>
+              <p className="hint">Left/right/middle/back/forward mouse buttons only, inside the zone below. Stop appends balanced events to this draft; an incomplete session is discarded. No hardware capture or verified X6 playback timing.</p>
               <p className="hint">Records event order only, without configurable pauses. New events use a local no-pause-request placeholder, not a guarantee of instantaneous device playback. Leaving with a button held or losing zone focus discards the session.</p>
               <div className="macro-actions">
                 <button type="button" className="button" disabled={unavailable || armed} onClick={armRecording}>Arm recording</button>
@@ -132,7 +149,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
                 onMouseDown={(event) => record(event, "down")} onMouseUp={(event) => record(event, "up")}
                 onMouseLeave={() => { if (session.current?.held.size) discardRecording(); }}
                 onBlur={() => discardRecording()}
-                onContextMenu={(event) => { if (session.current) event.preventDefault(); }}>
+                onAuxClick={preventRecordingDefault} onContextMenu={preventRecordingDefault}>
                 {armed ? "Recording armed — press and release here" : "Recording disarmed"}
               </div>
               {recordingMessage && <p role="status">{recordingMessage}</p>}
@@ -140,7 +157,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
             </section>
             <section className="group macro-events" aria-label="Ordered events">
               <h3>Events · {draft.events.length}</h3>
-              <p className="hint">Ordered left/right press and release events.</p>
+              <p className="hint">Ordered left/right/middle/back/forward press and release events.</p>
               {draft.events.some((event) => Number(event.delay_ms) !== 0) && (
                 <p className="hint">Existing delay values are preserved for compatibility, not editable here. Vendor pause support is unverified; Button remapping rejects unsupported timing rather than discarding it.</p>
               )}
@@ -148,12 +165,12 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
               {draft.events.length === 0 ? <p className="macro-empty">No events yet. Empty macros can be saved.</p> : (
                 <ol>{draft.events.map((event, index) => (
                   <li key={index}>
-                    <span>{event.type === "mouse_left" ? "Left mouse" : "Right mouse"} · {event.action}</span>
+                    <span>{mouseButtons.find((button) => button.type === event.type)?.label} · {event.action}</span>
                     <div className="macro-event-fields">
                       <label>Event {index + 1} button
                         <select disabled={editorDisabled} value={event.type}
                           onChange={(change) => library.updateEvent(index, { type: change.target.value as typeof event.type })}>
-                          <option value="mouse_left">Left mouse</option><option value="mouse_right">Right mouse</option>
+                          {mouseButtons.map((button) => <option key={button.type} value={button.type}>{button.label}</option>)}
                         </select>
                       </label>
                       <label>Event {index + 1} action

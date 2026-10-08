@@ -94,6 +94,71 @@ for (const offline of [false, true]) {
   });
 }
 
+test("editor records real left/middle/right clicks and synthetic back/forward without saving implicitly", async ({ page }) => {
+  await page.goto("/e2e.html?offline");
+  await page.getByRole("link", { name: "Macros", exact: true }).click();
+  await page.getByRole("button", { name: "New macro", exact: true }).click();
+  await page.getByLabel("Macro name", { exact: true }).fill("Five buttons");
+  const zone = page.getByRole("region", { name: "Mouse recording zone" });
+  await zone.click({ button: "middle" }); // Passive input must not enter the draft.
+  await page.getByRole("button", { name: "Arm recording" }).click();
+  for (const button of ["left", "middle", "right"] as const) await zone.click({ button });
+  // Playwright's mouse API has no back/forward buttons. These test DOM mapping,
+  // not native browser history-navigation suppression.
+  for (const button of [3, 4]) {
+    await zone.dispatchEvent("mousedown", { button, bubbles: true, cancelable: true });
+    await zone.dispatchEvent("mouseup", { button, bubbles: true, cancelable: true });
+    await zone.dispatchEvent("auxclick", { button, bubbles: true, cancelable: true });
+  }
+  await page.getByRole("button", { name: "Stop recording" }).click();
+  expect(await page.evaluate(() => window.__macroTest.calls)).toEqual([]);
+  const types = ["mouse_left", "mouse_middle", "mouse_right", "mouse_back", "mouse_forward"];
+  for (const [index, type] of types.entries()) {
+    await expect(page.getByLabel(`Event ${index * 2 + 1} button`)).toHaveValue(type);
+    await expect(page.getByLabel(`Event ${index * 2 + 2} action`)).toHaveValue("up");
+  }
+  await page.getByRole("button", { name: "Save to library" }).click();
+  await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+  expect(await page.evaluate(() => window.__macroTest.library()[0].events)).toEqual(
+    types.flatMap((type) => ["down", "up"].map((action) => ({ type, action, delay_ms: 0 }))),
+  );
+  expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation !== "SelectDevice"))).toEqual([]);
+});
+
+test("armed-zone real middle click prevents link navigation while passive middle click remains available", async ({ page, context }) => {
+  await page.goto("/e2e.html?offline");
+  await page.getByRole("link", { name: "Macros", exact: true }).click();
+  await page.getByRole("button", { name: "New macro", exact: true }).click();
+  const zone = page.getByRole("region", { name: "Mouse recording zone" });
+  const addLink = () => zone.evaluate((element) => {
+    const link = document.createElement("a");
+    link.href = "/e2e.html?offline&middle-link";
+    link.textContent = "Middle navigation probe";
+    element.append(link);
+  });
+  await page.getByRole("button", { name: "Arm recording" }).click();
+  await addLink();
+  const opened: string[] = [];
+  const track = (popup: import("@playwright/test").Page) => { opened.push(popup.url()); };
+  context.on("page", track);
+  await page.getByRole("link", { name: "Middle navigation probe" }).click({ button: "middle" });
+  await page.getByRole("button", { name: "Stop recording" }).click();
+  await expect(page.getByLabel("Event 1 button")).toHaveValue("mouse_middle");
+  expect(opened).toEqual([]);
+  context.off("page", track);
+  // A positive passive control verifies that actual Chromium middle-link
+  // navigation is supported here, unlike synthetic back/forward dispatch.
+  await addLink();
+  const popupPromise = context.waitForEvent("page");
+  await page.getByRole("link", { name: "Middle navigation probe" }).last().click({ button: "middle" });
+  const popup = await popupPromise;
+  await popup.waitForLoadState();
+  expect(popup.url()).toContain("middle-link");
+  await popup.close();
+  await expect(page.getByLabel("Event 2 action")).toHaveValue("up");
+  await expect(page.getByLabel("Event 3 button")).toHaveCount(0);
+});
+
 test("macro cards and details stack without horizontal overflow on narrow screens", async ({ page }) => {
   await page.setViewportSize({ width: 620, height: 900 });
   await page.goto("/e2e.html?offline");
