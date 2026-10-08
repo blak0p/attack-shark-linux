@@ -34,7 +34,7 @@ const remapFactory = (): RemapConfig => ({ Buttons: [
   { Button: 7, Action: null, PreservedDefault: "DPI-" },
 ] });
 const actions: RemapAction[] = ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire", "browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
-const remaps = new Map<string, RemapSnapshot>(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
+const remaps = new Map<string, RemapSnapshot>(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, MacroPending: null, MacroApplied: null, MacroProgress: { Assignment: 0, Upload: 0 }, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
 const remapSnapshot = () => structuredClone(remaps.get(selected.ID.Serial)!);
 const validateRemap = (config: RemapConfig) => {
   if (config.Buttons.length !== 7 || config.Buttons.some((button, index) =>
@@ -123,13 +123,15 @@ const service = {
   StageMacroAssignment: async (id: string, button: number, repeat: number) => {
     const macro = readMacro(id);
     if (offline || !Number.isInteger(button) || button < 1 || button > 7 ||
-        !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || macro.events.length !== 2 ||
-        !["mouse_left", "mouse_right"].includes(macro.events[0].type) ||
-        macro.events[0].type !== macro.events[1].type || macro.events[0].action !== "down" ||
-        macro.events[1].action !== "up" || macro.events.some((event) => event.delay_ms !== 0)) throw new Error("Invalid macro assignment");
+        !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || ![2, 4].includes(macro.events.length) ||
+        !macro.events.every((event, index, events) =>
+          ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
+          event.delay_ms === 0 && (index % 2 === 0
+            ? event.action === "down" && event.type === events[index + 1].type
+            : event.action === "up"))) throw new Error("Invalid macro assignment");
     record("StageMacroAssignment");
     const current = remapSnapshot();
-    remaps.set(selected.ID.Serial, { ...current, MacroPending: { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: macro.events }, Revision: current.Revision + 1, Error: { Code: "" } });
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: structuredClone(macro.events) }, Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();
   },
   StageRemap: async (config: RemapConfig) => {

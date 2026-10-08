@@ -32,6 +32,31 @@ const clickMacro = { id: "click", name: "Saved click", events: [
 afterEach(cleanup);
 
 describe("ButtonRemapPanel", () => {
+  it.each(["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"])("stages one or two complete %s clicks by saved ID", (type) => {
+    const onStageMacro = vi.fn();
+    const events = ["down", "up"].map((action) => ({ type, action, delay_ms: 0 }));
+    const macros = [{ id: "single", name: "Same name", events }, { id: "mixed", name: "Same name", events: [...events, ...clickMacro.events] }];
+    render(<ButtonRemapPanel remap={remap} ready macros={macros as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
+    fireEvent.change(screen.getByLabelText("Macro target button"), { target: { value: "4" } });
+    for (const id of ["single", "mixed"]) {
+      fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: id } });
+      expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+      expect(onStageMacro).toHaveBeenLastCalledWith(id, 4, 1);
+    }
+  });
+
+  it("rechecks the selected saved ID after library changes", () => {
+    const onStageMacro = vi.fn();
+    const props = { remap, ready: true, onStage: vi.fn(), onStageMacro };
+    const view = render(<ButtonRemapPanel {...props} macros={[clickMacro] as never} />);
+    fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "click" } });
+    view.rerender(<ButtonRemapPanel {...props} macros={[{ ...clickMacro, events: [] }] as never} />);
+    expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
+    view.rerender(<ButtonRemapPanel {...props} macros={[]} />);
+    expect(screen.getByLabelText("Saved macro")).toHaveValue("");
+    expect(onStageMacro).not.toHaveBeenCalled();
+  });
   it("stages a saved name and fixed repeat without applying, rejecting invalid repeats", () => {
     const onStageMacro = vi.fn(); const onApply = vi.fn();
     render(<ButtonRemapPanel remap={remap} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
@@ -53,7 +78,7 @@ describe("ButtonRemapPanel", () => {
     render(<ButtonRemapPanel remap={remap} ready macros={[unsupported] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} onDiscard={onDiscard} />);
     fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "timed" } });
     expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
-    expect(screen.getByText(/exactly two same-button/)).toBeInTheDocument();
+    expect(screen.getByText(/Backend admission/)).toHaveTextContent("one or two complete");
     fireEvent.keyDown(screen.getByLabelText("Fixed repetitions"), { key: "Enter" });
     fireEvent.keyDown(screen.getByLabelText("Saved macro"), { key: "Escape" });
     expect(onApply).not.toHaveBeenCalled(); expect(onDiscard).not.toHaveBeenCalled();
@@ -67,7 +92,13 @@ describe("ButtonRemapPanel", () => {
   });
   it.each([
     [],
-    [...clickMacro.events, ...clickMacro.events],
+    [...clickMacro.events, ...clickMacro.events, ...clickMacro.events],
+    [clickMacro.events[0]],
+    [...clickMacro.events, clickMacro.events[0]],
+    [clickMacro.events[0], clickMacro.events[0]],
+    [clickMacro.events[0], { ...clickMacro.events[1], delay_ms: 1 }],
+    [{ ...clickMacro.events[0], type: "keyboard" }, { ...clickMacro.events[1], type: "keyboard" }],
+    [...clickMacro.events, clickMacro.events[1], clickMacro.events[0]],
     [clickMacro.events[1], clickMacro.events[0]],
     [clickMacro.events[0], { ...clickMacro.events[1], type: "mouse_right" }],
   ].map((events) => ({ events })))("does not stage unsupported event layout %j", ({ events }) => {

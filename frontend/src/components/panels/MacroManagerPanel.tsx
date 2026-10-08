@@ -126,7 +126,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
       <article className="card macro-detail" aria-label="Macro details">
         <h2>{draft?.id ? "Macro details" : "New macro"}</h2>
         <p className="hint">Save to library only; no device changes. To assign a saved macro, open Button remapping, choose its name and fixed repetitions (1–255), then Apply remap. Playback and device persistence remain unverified.</p>
-        <p className="hint">Hardware boundary: one or two complete zero-delay clicks using left/right/middle/back/forward actions. Local save also preserves other event layouts and delays without projecting them into supported hardware timing. The assignment UI retains its narrower admission until its separate update; transport confirmation does not prove playback or device persistence.</p>
+        <p className="hint">Backend admission: one or two complete zero-delay clicks using left/right/middle/back/forward actions. Local save preserves other event layouts and delays; these cannot be assigned. Transport confirmation does not prove playback or device persistence.</p>
         <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
         <p className="hint">Exports saved name and events without the local ID. Unsaved editor changes are not exported.</p>
         {reading && <p role="status">Loading macro…</p>}

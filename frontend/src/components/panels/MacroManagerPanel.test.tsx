@@ -387,7 +387,7 @@ it("displays and saves imported five-button raw events and delays losslessly", a
   expect(service.CreateMacro).toHaveBeenCalledWith("Raw five", events);
   fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
   await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("new", "Raw five", events));
-  expect(screen.getByText(/Hardware boundary/)).toHaveTextContent("one or two complete zero-delay clicks");
+  expect(screen.getByText(/Backend admission/)).toHaveTextContent("one or two complete zero-delay clicks");
 });
 
 const macro = (id = "one", name = "Clicks"): Macro => ({ id, name, events: [

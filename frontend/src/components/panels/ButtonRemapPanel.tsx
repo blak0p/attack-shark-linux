@@ -15,11 +15,12 @@ type Remap = {
   MacroProgress?: MacroProgress;
 };
 
-const compatible = (macro: Macro) => macro.events.length === 2 &&
-  ["mouse_left", "mouse_right"].includes(macro.events[0].type) &&
-  macro.events[0].type === macro.events[1].type &&
-  macro.events[0].action === "down" && macro.events[1].action === "up" &&
-  macro.events.every((event) => event.delay_ms === 0);
+const compatible = (macro: Macro) => [2, 4].includes(macro.events.length) &&
+  macro.events.every((event, index, events) =>
+    ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
+    event.delay_ms === 0 && (index % 2 === 0
+      ? event.action === "down" && event.type === events[index + 1].type
+      : event.action === "up"));
 
 const labelFor = (action: Action) =>
   ({
@@ -135,7 +136,7 @@ export function ButtonRemapPanel({
         </label>
         <button type="button" className="button" disabled={!canStage} onClick={() => { if (canStage) onStageMacro!(macroID, target, Number(repeat)); }}>Stage macro assignment</button>
       </fieldset>
-      <p className="hint">Save locally in Macros, then stage here and use Apply remap. Only exactly two same-button left/right down/up events with zero delays are compatible; fixed repetitions 1–255. One macro overlay per device; staging another replaces it. Playback and device persistence remain unverified.</p>
+      <p className="hint">Save locally in Macros, then stage here and use Apply remap. Backend admission: one or two complete ordered down/up clicks using left/right/middle/back/forward, with zero delay on every event and fixed repetitions 1–255. The target button is independent of the macro actions. One macro overlay per device; staging another replaces it. Playback and device persistence remain unverified.</p>
       {!libraryReady && <p className="hint">Saved library unavailable or loading. Open Macros to retry.</p>}
       {error && <p role="alert">{error}</p>}
 
