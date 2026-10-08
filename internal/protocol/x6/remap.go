@@ -64,6 +64,12 @@ type MacroAssignment struct {
 	Button uint8
 }
 
+// MultiMacroAssignment overlays multiple macro actions on a valid pending remap config.
+type MultiMacroAssignment struct {
+	Config  RemapConfig
+	Buttons []uint8
+}
+
 // MacroDestinationForButton maps logical buttons to report08 groups/report09 IDs.
 // Groups 05/06 are capture-backed; other mapped groups are authorized extrapolation.
 func MacroDestinationForButton(button uint8) (byte, error) {
@@ -84,16 +90,24 @@ func ValidateMacroDestination(destination byte) error {
 }
 
 func EncodeMacroAssignmentReport(assignment MacroAssignment) ([]byte, error) {
-	report, err := EncodeRemapReport(assignment.Config)
+	return EncodeMultiMacroAssignmentReport(assignment.Config, []uint8{assignment.Button})
+}
+
+// EncodeMultiMacroAssignmentReport overlays multiple macro actions on a valid pending remap config.
+// For each button, it writes 0x12, 0, destination at 3 + int(destination-1)*3 and updates the checksum.
+func EncodeMultiMacroAssignmentReport(config RemapConfig, buttons []uint8) ([]byte, error) {
+	report, err := EncodeRemapReport(config)
 	if err != nil {
 		return nil, err
 	}
-	destination, err := MacroDestinationForButton(assignment.Button)
-	if err != nil {
-		return nil, err
+	for _, button := range buttons {
+		destination, err := MacroDestinationForButton(button)
+		if err != nil {
+			return nil, err
+		}
+		offset := 3 + int(destination-1)*3
+		report[offset], report[offset+1], report[offset+2] = 0x12, 0, destination
 	}
-	offset := 3 + int(destination-1)*3
-	report[offset], report[offset+1], report[offset+2] = 0x12, 0, destination
 	setRemapChecksum(report)
 	return report, nil
 }

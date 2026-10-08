@@ -197,3 +197,23 @@ print('PASS: seven original/copy hashes/sizes; nine frame groups, destination06,
 PY
 git diff --check
 ```
+
+## XM-8a: multi-macro assignment capture (two-macros.pcapng)
+
+`two-macros.pcapng` proves that the Attack Shark X6 firmware supports multiple simultaneous macro button assignments in report 0x08 and independent report 0x09 sequence uploads.
+
+| External original | Repository copy | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| `/home/alejandro/x6-capturas/2 macros.pcapng` | `two-macros.pcapng` | 1148748 | `1121cf4b6b28b60939dce02a1515361f6e1ae120ff97c35c7d5821c7bd5cdc30` |
+
+### Observed frames
+
+- **Frame 7155 (Report 0x08)**: Single macro assignment to Button 6 (dest 05, bytes `12 00 05` at offset 15..17).
+- **Frames 7353, 8309, 8313 (Report 0x09)**: Macro upload targeting destination 05 (`09 40 05 00`, `09 40 05 01`, `09 0c 05 02`).
+- **Frame 11647 (Report 0x08)**: Multi-macro assignment with **both Button 6 and Button 7 active**:
+  - Offset 15..17 (Group 5, Button 6): `12 00 05`
+  - Offset 18..20 (Group 6, Button 7): `12 00 06`
+  - Checksum at offset 57..58: `00 a6` (sum of bytes 3..56 is 166 = `0x00a6`).
+  - Wire bytes (59):
+    `08 3b 01 02 00 00 03 00 00 04 00 00 0d 00 00 12 00 05 12 00 06 06 00 00 05 00 00 3c 00 00 01 00 00 01 00 00 01 00 00 01 00 00 01 00 00 01 00 00 01 00 00 0a 00 00 09 00 00 00 a6`
+- **Frames 12427, 12561, 12801 (Report 0x09)**: Macro upload targeting destination 06 (`09 40 06 00`, `09 40 06 01`, `09 0c 06 02`).

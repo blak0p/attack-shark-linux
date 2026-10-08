@@ -253,3 +253,90 @@ func TestRemapDefaultsPreserveDPIMarkersAndReturnCopies(t *testing.T) {
 		t.Fatal("DefaultRemapConfig() returned aliased button storage")
 	}
 }
+
+func TestEncodeMultiMacroAssignmentReport(t *testing.T) {
+	// 1. Single button assignment matches EncodeMacroAssignmentReport
+	for i := 1; i <= 7; i++ {
+		button := uint8(i)
+		config := DefaultRemapConfig()
+		want, err := EncodeMacroAssignmentReport(MacroAssignment{Config: config, Button: button})
+		if err != nil {
+			t.Fatalf("EncodeMacroAssignmentReport(button %d): %v", button, err)
+		}
+		got, err := EncodeMultiMacroAssignmentReport(config, []uint8{button})
+		if err != nil {
+			t.Fatalf("EncodeMultiMacroAssignmentReport(button %d): %v", button, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("button %d mismatch: got %x, want %x", button, got, want)
+		}
+	}
+
+	// 2. Empty or nil buttons slice preserves plain remap report
+	plainConfig := DefaultRemapConfig()
+	plainWant, err := EncodeRemapReport(plainConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainGot, err := EncodeMultiMacroAssignmentReport(plainConfig, nil)
+	if err != nil || !bytes.Equal(plainGot, plainWant) {
+		t.Fatalf("nil buttons: got %x, want %x (err: %v)", plainGot, plainWant, err)
+	}
+	plainGotEmpty, err := EncodeMultiMacroAssignmentReport(plainConfig, []uint8{})
+	if err != nil || !bytes.Equal(plainGotEmpty, plainWant) {
+		t.Fatalf("empty buttons: got %x, want %x (err: %v)", plainGotEmpty, plainWant, err)
+	}
+
+	// 3. Frame 11647 from two-macros.pcapng regression:
+	// Buttons 6 (dest 05) and 7 (dest 06) active simultaneously with default remap config.
+	const frame11647Hex = "083b010200000300000400000d00001200051200060600000500003c00000100000100000100000100000100000100000100000a000009000000a6"
+	want11647, err := hex.DecodeString(frame11647Hex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got11647, err := EncodeMultiMacroAssignmentReport(DefaultRemapConfig(), []uint8{6, 7})
+	if err != nil {
+		t.Fatalf("EncodeMultiMacroAssignmentReport(6, 7): %v", err)
+	}
+	if !bytes.Equal(got11647, want11647) {
+		t.Fatalf("Frame 11647 mismatch:\ngot:  %x\nwant: %x", got11647, want11647)
+	}
+
+	// Order independence of buttons in multi-macro assignment
+	got11647Reversed, err := EncodeMultiMacroAssignmentReport(DefaultRemapConfig(), []uint8{7, 6})
+	if err != nil {
+		t.Fatalf("EncodeMultiMacroAssignmentReport(7, 6): %v", err)
+	}
+	if !bytes.Equal(got11647Reversed, want11647) {
+		t.Fatalf("Frame 11647 reversed buttons mismatch:\ngot:  %x\nwant: %x", got11647Reversed, want11647)
+	}
+
+	// Verify MultiMacroAssignment struct
+	assignment := MultiMacroAssignment{
+		Config:  DefaultRemapConfig(),
+		Buttons: []uint8{6, 7},
+	}
+	if len(assignment.Buttons) != 2 || assignment.Buttons[0] != 6 || assignment.Buttons[1] != 7 {
+		t.Fatalf("MultiMacroAssignment struct fields mismatch: %+v", assignment)
+	}
+
+	// 4. Invalid buttons rejected
+	for _, badButtons := range [][]uint8{
+		{0},
+		{8},
+		{255},
+		{6, 0},
+		{8, 7},
+	} {
+		if _, err := EncodeMultiMacroAssignmentReport(DefaultRemapConfig(), badButtons); err == nil {
+			t.Fatalf("expected error for bad buttons %v, got nil", badButtons)
+		}
+	}
+
+	// 5. Invalid remap config rejected
+	invalidConfig := DefaultRemapConfig()
+	invalidConfig.Buttons[0].Action = "macro"
+	if _, err := EncodeMultiMacroAssignmentReport(invalidConfig, []uint8{6, 7}); err == nil {
+		t.Fatal("expected error for invalid config, got nil")
+	}
+}
