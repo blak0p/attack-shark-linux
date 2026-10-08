@@ -26,6 +26,62 @@ func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Cont
 	c.calls++
 	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
 }
+func (c *compositeCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+
+func TestTargetedMultiMacroSequenceSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	_, _ = svc.Refresh(context.Background())
+	binding, _ := svc.Selection()
+	cfg := x6.DefaultRemapConfig()
+	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	items := []MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 7, Sequence: s2},
+	}
+	// Empty items rejected
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, nil); err == nil || command.calls != 0 {
+		t.Fatal("empty items accepted")
+	}
+	// Duplicate button rejected
+	dup := []MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 6, Sequence: s2},
+	}
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, dup); err == nil || command.calls != 0 {
+		t.Fatal("duplicate button accepted")
+	}
+	// Invalid sequence rejected
+	bad := []MacroSequenceItem{
+		{Button: 6, Sequence: macros.X6Sequence{}},
+		{Button: 7, Sequence: s2},
+	}
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, bad); err == nil || command.calls != 0 {
+		t.Fatal("invalid sequence reached transport")
+	}
+	// Stale binding rejected
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), stale, cfg, items); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	// Canceled context rejected
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(ctx, binding, cfg, items); !errors.Is(err, context.Canceled) || command.calls != 0 {
+		t.Fatal(err)
+	}
+	// Successful multi-macro assignment
+	p, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, items)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
 
 func TestTargetedSequenceMacroSeam(t *testing.T) {
 	registry, _ := NewProfileRegistry(targetedProfile{})

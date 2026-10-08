@@ -21,6 +21,8 @@ type macroCommandFake struct {
 	during            func()
 	assignment        protocol.MacroAssignment
 	sequence          macros.X6Sequence
+	multiConfig       protocol.RemapConfig
+	items             []mouse.MacroSequenceItem
 }
 
 func (f *macroCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []byte, _ func([]byte) bool) error {
@@ -31,6 +33,19 @@ func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context,
 	f.composite++
 	f.assignment = a
 	f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat}
+	if f.during != nil {
+		f.during()
+	}
+	return f.progress, f.err
+}
+func (f *macroCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ Binding, cfg protocol.RemapConfig, items []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
+	f.composite++
+	f.multiConfig = cfg
+	f.items = append([]mouse.MacroSequenceItem(nil), items...)
+	if len(items) == 1 {
+		f.assignment = protocol.MacroAssignment{Config: cfg, Button: items[0].Button}
+		f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat}
+	}
 	if f.during != nil {
 		f.during()
 	}
@@ -440,5 +455,53 @@ func TestMacroSelectionRevisionAndLibraryRacesDoNotAdvance(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSimultaneousMultiMacroAssignment(t *testing.T) {
+	s, c, m1 := macroFixture(t)
+	m2, err := s.CreateMacro("right-pair", []macros.Event{{Type: macros.MouseRight, Action: macros.Down}, {Type: macros.MouseRight, Action: macros.Up}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage on button 6 and button 7 simultaneously
+	_ = s.StageMacroAssignment(m1.ID, 6, 1)
+	staged7 := s.StageMacroAssignment(m2.ID, 7, 2)
+	if len(staged7.MacroDrafts) != 2 {
+		t.Fatalf("expected 2 staged drafts, got %d", len(staged7.MacroDrafts))
+	}
+	if staged7.MacroDrafts[6].ID != m1.ID || staged7.MacroDrafts[7].ID != m2.ID {
+		t.Fatalf("staged drafts mismatch: %+v", staged7.MacroDrafts)
+	}
+
+	// Apply both macros
+	applied := s.ApplyRemap(staged7.Pending)
+	if applied.Error.Code != "" || applied.Firmware != "success" {
+		t.Fatalf("apply failed: %+v", applied)
+	}
+	if len(applied.MacroAppliedDrafts) != 2 {
+		t.Fatalf("expected 2 applied drafts, got %d", len(applied.MacroAppliedDrafts))
+	}
+	if applied.MacroAppliedDrafts[6].ID != m1.ID || applied.MacroAppliedDrafts[7].ID != m2.ID {
+		t.Fatalf("applied drafts mismatch: %+v", applied.MacroAppliedDrafts)
+	}
+	if c.composite != 1 || len(c.items) != 2 {
+		t.Fatalf("command mismatch: calls=%d items=%d", c.composite, len(c.items))
+	}
+
+	// Clear button 6 while keeping button 7
+	cleared6 := s.ClearButtonMacroAssignment(6)
+	if len(cleared6.MacroDrafts) != 1 || cleared6.MacroDrafts[7].ID != m2.ID {
+		t.Fatalf("clear button 6 failed: %+v", cleared6.MacroDrafts)
+	}
+	if cleared6.MacroPending == nil || cleared6.MacroPending.Button != 7 {
+		t.Fatalf("MacroPending mismatch: %+v", cleared6.MacroPending)
+	}
+
+	// Discard clears all staged macros
+	discarded := s.DiscardRemap()
+	if len(discarded.MacroDrafts) != 0 || discarded.MacroPending != nil {
+		t.Fatalf("discard failed: %+v", discarded)
 	}
 }

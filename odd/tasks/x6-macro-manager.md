@@ -280,7 +280,7 @@ User authorized:
 3. Updating backend/desktop contract to support multiple macro drafts by button and multi-sequence upload.
 
 - [x] XM-8a: Preserve `2 macros.pcapng` evidence in captures/0x09-macro and update protocol remap encoder to admit multiple macro destinations.
-- [ ] XM-8b: Extend desktop service and contract from single `MacroPending` overlay to multi-button macro drafts map, with multi-upload on ApplyRemap and tests.
+- [x] XM-8b: Extend desktop service and contract from single `MacroPending` overlay to multi-button macro drafts map, with multi-upload on ApplyRemap and tests.
 - [ ] XM-8c: Clean up MacroManagerPanel (styled file import button, remove redundant recording and raw events accordion, remove footer disclaimers, clean guidance).
 - [ ] XM-8d: Redesign ButtonRemapPanel macro assignment into per-button selection (macro + repetitions), removing top fieldset and jargon text.
 - [ ] XM-8e: End-to-end integration verification (frontend Vitest + Chromium E2E + Go test/vet), and build verification.

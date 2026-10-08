@@ -39,10 +39,86 @@ func (n *macroNode) SendFeatureReport(r []byte) (int, error) {
 	return len(r), nil
 }
 func (n *macroNode) Read(p []byte) (int, error) {
-	if len(n.writes) != 3 && !(len(n.writes) == 1 && n.writes[0][0] == 8) && !(len(n.writes) == 4 && n.writes[0][0] == 8) {
+	if len(n.writes) != 3 && !(len(n.writes) == 1 && n.writes[0][0] == 8) && !(len(n.writes) >= 4 && n.writes[0][0] == 8) {
 		return 0, errors.New("read before all chunks")
 	}
 	return n.commandHidrawNode.Read(p)
+}
+
+func TestCompositeMultiSequenceOrderAndProgress(t *testing.T) {
+	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+	cfg := x6.DefaultRemapConfig()
+	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	items := []mouse.MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 7, Sequence: s2},
+	}
+	p, err := b.sendX6MultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, items, noMacroWait)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	report, _ := x6.EncodeMultiMacroAssignmentReport(cfg, []uint8{6, 7})
+	chunks1, _ := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: 5, Sequence: s1})
+	chunks2, _ := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: 6, Sequence: s2})
+	wantWrites := append([][]byte{report}, chunks1...)
+	wantWrites = append(wantWrites, chunks2...)
+	if !reflect.DeepEqual(n.writes, wantWrites) {
+		t.Fatalf("writes mismatch:\ngot %d writes\nwant %d writes", len(n.writes), len(wantWrites))
+	}
+	if p.Assignment != mouse.MacroAssignmentACKConfirmed || p.Upload != mouse.MacroUploadConfirmed {
+		t.Fatalf("unexpected progress: %+v", p)
+	}
+}
+
+func TestCompositeMultiSequenceGuards(t *testing.T) {
+	cfg := x6.DefaultRemapConfig()
+	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	items := []mouse.MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 7, Sequence: s2},
+	}
+	// Empty items rejected
+	b, binding, n, _ := macroFixture(t, nil)
+	p, err := b.sendX6MultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, nil, noMacroWait)
+	if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
+		t.Fatalf("empty items should fail: p=%+v err=%v", p, err)
+	}
+	// Duplicate buttons rejected
+	dup := []mouse.MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 6, Sequence: s2},
+	}
+	b, binding, n, _ = macroFixture(t, nil)
+	p, err = b.sendX6MultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, dup, noMacroWait)
+	if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
+		t.Fatalf("duplicate button should fail: p=%+v err=%v", p, err)
+	}
+	// Invalid button rejected
+	badButton := []mouse.MacroSequenceItem{
+		{Button: 8, Sequence: s1},
+	}
+	b, binding, n, _ = macroFixture(t, nil)
+	p, err = b.sendX6MultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, badButton, noMacroWait)
+	if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
+		t.Fatalf("invalid button should fail: p=%+v err=%v", p, err)
+	}
+	// Partial failure during chunk write
+	for at := 1; at <= 7; at++ {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+		n.failAt, n.short = at, true
+		p, err := b.sendX6MultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, items, noMacroWait)
+		if err == nil || len(n.writes) != at || !strings.Contains(err.Error(), "partial mutation") {
+			t.Fatalf("failAt=%d: expected partial mutation error, got %v (writes=%d)", at, err, len(n.writes))
+		}
+		if at == 1 && (p.Assignment != mouse.MacroAssignmentUnknown || p.Upload != mouse.MacroUploadNotStarted) {
+			t.Fatalf("failAt=1 unexpected progress: %+v", p)
+		}
+		if at > 1 && (p.Assignment != mouse.MacroAssignmentACKConfirmed || p.Upload != mouse.MacroUploadPossiblyPartial) {
+			t.Fatalf("failAt=%d unexpected progress: %+v", at, p)
+		}
+	}
 }
 func macroFixture(t *testing.T, reports [][]byte) (*HidrawBackend, mouse.Binding, *macroNode, string) {
 	t.Helper()

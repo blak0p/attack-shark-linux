@@ -96,6 +96,8 @@ type NormalSleepSnapshot struct {
 }
 type RemapSnapshot struct {
 	MacroPending, MacroApplied *MacroDraft
+	MacroDrafts                map[uint8]MacroDraft
+	MacroAppliedDrafts         map[uint8]MacroDraft
 	MacroProgress              mouse.MacroProgress
 	Pending, Applied, Factory  x6.RemapConfig
 	Actions                    []x6.RemapAction

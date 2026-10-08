@@ -40,9 +40,9 @@ func TestValidateAnnotatedTagAcceptsOnlyAnnotatedNormalizedReleaseTags(t *testin
 		}
 	}
 	runGit("init")
-	runGit("-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "commit", "--allow-empty", "-m", "initial")
-	runGit("-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "tag", "-a", "v1.2.3", "-m", "stable")
-	runGit("tag", "v1.2.3-rc.1")
+	runGit("-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "initial")
+	runGit("-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid", "-c", "tag.gpgsign=false", "tag", "-a", "v1.2.3", "-m", "stable")
+	runGit("-c", "tag.gpgsign=false", "tag", "v1.2.3-rc.1")
 
 	if err := validateAnnotatedTag("v1.2.3", repository); err != nil {
 		t.Fatalf("validate annotated stable tag: %v", err)

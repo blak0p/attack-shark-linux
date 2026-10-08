@@ -3,6 +3,7 @@ package mouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
@@ -89,9 +90,56 @@ type TargetedMacroCommand interface {
 	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error)
 }
 
+// MacroSequenceItem associates one button with an offline sequence.
+type MacroSequenceItem struct {
+	Button   uint8
+	Sequence macros.X6Sequence
+}
+
 // TargetedMacroSequenceCommand is additive: legacy click-only commands remain valid.
 type TargetedMacroSequenceCommand interface {
 	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Sequence) (MacroProgress, error)
+	SendX6MultiMacroSequenceAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroSequenceItem) (MacroProgress, error)
+}
+
+func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if len(items) == 0 {
+		return empty, errors.New("no macro sequence items")
+	}
+	buttons := make([]uint8, len(items))
+	clonedItems := make([]MacroSequenceItem, len(items))
+	seen := make(map[uint8]bool, len(items))
+	for i, item := range items {
+		if seen[item.Button] {
+			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
+		}
+		seen[item.Button] = true
+		buttons[i] = item.Button
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return empty, err
+		}
+		if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence}); err != nil {
+			return empty, err
+		}
+		clonedSeq := item.Sequence
+		clonedSeq.Buttons = append([]macros.EventType(nil), item.Sequence.Buttons...)
+		clonedItems[i] = MacroSequenceItem{
+			Button:   item.Button,
+			Sequence: clonedSeq,
+		}
+	}
+	if _, err := x6.EncodeMultiMacroAssignmentReport(config, buttons); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroSequenceCommand)
+	if !ok {
+		return empty, errors.New("bound macro sequence command unavailable")
+	}
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MultiMacroSequenceAssignmentBound(ctx, binding, config, clonedItems)
+	})
 }
 
 func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (MacroProgress, error) {

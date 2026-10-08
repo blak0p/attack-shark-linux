@@ -66,7 +66,36 @@ func (s *Service) StageMacroAssignment(id string, button uint8, repeat int) Rema
 		state.err = Error{Code: StaleBinding}
 		return remapSnapshotLocked(state)
 	}
-	state.macroPending = &MacroDraft{ID: m.ID, Name: m.Name, Button: button, Repeat: repeat, Events: append([]macros.Event(nil), m.Events...)}
+	if state.macroPendingMap == nil {
+		state.macroPendingMap = make(map[uint8]*MacroDraft)
+	}
+	draft := &MacroDraft{ID: m.ID, Name: m.Name, Button: button, Repeat: repeat, Events: append([]macros.Event(nil), m.Events...)}
+	state.macroPendingMap[button] = draft
+	state.macroPending = draft
+	state.revision++
+	state.err = Error{}
+	return remapSnapshotLocked(state)
+}
+
+// ClearButtonMacroAssignment clears a specific button's staged macro assignment.
+func (s *Service) ClearButtonMacroAssignment(button uint8) RemapSnapshot {
+	binding, ok := s.selectedBinding()
+	if !ok {
+		return failRemap(s.remapComponent.legacy, SelectionRequired)
+	}
+	state := s.remapComponent.stateForBinding(binding)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if !s.bindingCurrent(binding) {
+		state.err = Error{Code: StaleBinding}
+		return remapSnapshotLocked(state)
+	}
+	if state.macroPendingMap != nil {
+		delete(state.macroPendingMap, button)
+	}
+	if state.macroPending != nil && state.macroPending.Button == button {
+		state.macroPending = pickMacroDraft(state.macroPendingMap)
+	}
 	state.revision++
 	state.err = Error{}
 	return remapSnapshotLocked(state)
@@ -101,6 +130,7 @@ func (s *Service) ClearMacroAssignment() RemapSnapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.macroPending = nil
+	state.macroPendingMap = make(map[uint8]*MacroDraft)
 	state.revision++
 	state.err = Error{}
 	return remapSnapshotLocked(state)
@@ -114,6 +144,7 @@ func (s *Service) DiscardRemap() RemapSnapshot {
 	defer state.mu.Unlock()
 	state.pending = cloneRemapConfig(state.applied)
 	state.macroPending = nil
+	state.macroPendingMap = make(map[uint8]*MacroDraft)
 	state.revision++
 	state.err = Error{}
 	return remapSnapshotLocked(state)
@@ -129,20 +160,21 @@ func (s *Service) macroDraftCurrent(d *MacroDraft) bool {
 // The remap apply guards are held. The immutable copy is what reaches transport,
 // even if the library changes while I/O is in flight. Completion checks reject
 // stale drafts and retain the observed progress instead of claiming full apply.
-func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, revision uint64, pending x6.RemapConfig, draft *MacroDraft) {
+func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, revision uint64, pending x6.RemapConfig, drafts []*MacroDraft) {
 	s := c.service
 	if !s.bindingCurrent(binding) {
 		failRemap(state, StaleBinding)
 		return
 	}
-	if !s.macroDraftCurrent(draft) {
-		failRemap(state, InvalidConfiguration)
-		return
-	}
-	sequence, valid := admittedSequence(draft.Events, draft.Repeat)
-	if !valid {
-		failRemap(state, InvalidConfiguration)
-		return
+	for _, draft := range drafts {
+		if !s.macroDraftCurrent(draft) {
+			failRemap(state, InvalidConfiguration)
+			return
+		}
+		if _, valid := admittedSequence(draft.Events, draft.Repeat); !valid {
+			failRemap(state, InvalidConfiguration)
+			return
+		}
 	}
 	s.mu.Lock()
 	inventory := s.inventory
@@ -151,8 +183,22 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		failRemap(state, StaleBinding)
 		return
 	}
-	progress, err := inventory.ApplyMacroSequenceAssignmentBound(context.Background(), binding, protocol.MacroAssignment{Config: pending, Button: draft.Button}, sequence)
-	libraryCurrent := s.macroDraftCurrent(draft)
+	items := make([]mouse.MacroSequenceItem, len(drafts))
+	for i, draft := range drafts {
+		sequence, _ := admittedSequence(draft.Events, draft.Repeat)
+		items[i] = mouse.MacroSequenceItem{
+			Button:   draft.Button,
+			Sequence: sequence,
+		}
+	}
+	progress, err := inventory.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, pending, items)
+	libraryCurrent := true
+	for _, draft := range drafts {
+		if !s.macroDraftCurrent(draft) {
+			libraryCurrent = false
+			break
+		}
+	}
 	state.mu.Lock()
 	state.macroProgress = progress
 	if state.revision != revision || !s.bindingCurrent(binding) || !libraryCurrent {
@@ -163,7 +209,17 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		state.firmware, state.err = "failed", Error{Code: ApplyFailed}
 	} else {
 		state.applied = cloneRemapConfig(pending)
-		state.macroApplied = cloneMacroDraft(draft)
+		state.macroAppliedMap = make(map[uint8]*MacroDraft, len(drafts))
+		for _, draft := range drafts {
+			state.macroAppliedMap[draft.Button] = cloneMacroDraft(draft)
+		}
+		if state.macroPending != nil && state.macroAppliedMap[state.macroPending.Button] != nil {
+			state.macroApplied = cloneMacroDraft(state.macroAppliedMap[state.macroPending.Button])
+		} else if len(drafts) > 0 {
+			state.macroApplied = cloneMacroDraft(drafts[0])
+		} else {
+			state.macroApplied = nil
+		}
 		state.firmware, state.err = "success", Error{}
 		// Ordinary config persistence cannot represent this macro overlay. Do not
 		// persist an ordinary config as though it described the uploaded assignment.

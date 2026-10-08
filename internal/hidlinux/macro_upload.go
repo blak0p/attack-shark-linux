@@ -5,6 +5,7 @@ package hidlinux
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -130,6 +131,43 @@ func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, 
 		return mouse.MacroProgress{}, err
 	}
 	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
+}
+
+// SendX6MultiMacroSequenceAssignmentBound admits multiple macro sequences on distinct buttons.
+func (b *HidrawBackend) SendX6MultiMacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
+	return b.sendX6MultiMacroSequenceAssignmentBound(ctx, binding, config, items, waitMacroChunk)
+}
+
+func (b *HidrawBackend) sendX6MultiMacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroSequenceItem, wait macroWait) (mouse.MacroProgress, error) {
+	if len(items) == 0 {
+		return mouse.MacroProgress{}, errors.New("no macro sequence items")
+	}
+	buttons := make([]uint8, len(items))
+	seen := make(map[uint8]bool, len(items))
+	for i, item := range items {
+		if seen[item.Button] {
+			return mouse.MacroProgress{}, fmt.Errorf("duplicate macro button %d", item.Button)
+		}
+		seen[item.Button] = true
+		buttons[i] = item.Button
+	}
+	report, err := x6.EncodeMultiMacroAssignmentReport(config, buttons)
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	var allChunks [][]byte
+	for _, item := range items {
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return mouse.MacroProgress{}, err
+		}
+		chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence})
+		if err != nil {
+			return mouse.MacroProgress{}, err
+		}
+		allChunks = append(allChunks, chunks...)
+	}
+	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, allChunks, wait)
 }
 
 func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, binding mouse.Binding, report []byte, chunks [][]byte, wait macroWait) (progress mouse.MacroProgress, err error) {
