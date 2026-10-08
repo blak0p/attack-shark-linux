@@ -2,13 +2,15 @@
 
 ## Local draft → explicit Apply remap
 
-The shared saved library remains independent of device assignments. For XM-5c,
+The shared saved library remains independent of device assignments. For XM-7d2,
 list saved macros by name in Button remapping, then call
 `StageMacroAssignment(id, button, repeat)`. There is no standalone upload action.
 Logical buttons 1–7 are accepted; fixed repeat is an integer from 1 through 255.
-Admission requires exactly two left or right events, same button, down then up,
-both with zero local delay. Unsupported sequences/timing are rejected without
-changing saved data or replacing a valid draft.
+Admission requires one or two ordered complete click pairs using left, right,
+middle, back or forward. Each pair must use the same action button, down then up,
+with zero local delay on both events. The destination is independent of those
+action buttons. Longer sequences, incomplete pairs and timing are rejected
+without changing saved data or replacing a valid draft.
 
 `GetRemapSnapshot` and `GetMacroAssignmentSnapshot` return the ordinary remap
 snapshot plus `MacroPending`, `MacroApplied`, and `MacroProgress`. All event
@@ -29,9 +31,10 @@ the previous draft when moved; it is not an inventory of independent slots.
 
 `ApplyRemap(config)` uses the captured selected binding and existing operation
 and per-device apply guards. With a macro draft it calls the typed mouse
-`ApplyMacroAssignmentBound`: report08 assignment/ACK followed by destination-aware
-report09 upload/final status. The existing inventory command supports this via
-`TargetedMacroCommand`; the shared hidraw backend already implements that seam,
+`ApplyMacroSequenceAssignmentBound` with an ordered `macros.X6Sequence`:
+report08 assignment/ACK followed by destination-aware report09 upload/final
+status. The existing inventory command supports this via
+`TargetedMacroSequenceCommand`; the shared hidraw backend already implements that seam,
 so composition needs no alternate transport or startup hardware operation.
 Without a macro draft, the existing typed ordinary remap operation and local
 persistence behavior remain unchanged.

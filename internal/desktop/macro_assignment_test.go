@@ -20,17 +20,17 @@ type macroCommandFake struct {
 	err               error
 	during            func()
 	assignment        protocol.MacroAssignment
-	click             macros.X6Click
+	sequence          macros.X6Sequence
 }
 
 func (f *macroCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []byte, _ func([]byte) bool) error {
 	f.normal++
 	return nil
 }
-func (f *macroCommandFake) SendX6MacroAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macros.X6Click) (mouse.MacroProgress, error) {
+func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macros.X6Sequence) (mouse.MacroProgress, error) {
 	f.composite++
 	f.assignment = a
-	f.click = c
+	f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat}
 	if f.during != nil {
 		f.during()
 	}
@@ -57,7 +57,7 @@ func macroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro) {
 }
 func TestMacroStrictPositiveAdmissionStageWithoutIO(t *testing.T) {
 	for _, button := range []uint8{1, 2, 3, 4, 5, 6, 7} {
-		for _, kind := range []macros.EventType{macros.MouseLeft, macros.MouseRight} {
+		for _, kind := range []macros.EventType{macros.MouseLeft, macros.MouseRight, "mouse_middle", "mouse_back", "mouse_forward"} {
 			for _, repeat := range []int{1, 255} {
 				s, c, m := macroFixture(t)
 				m, err := s.UpdateMacro(m.ID, m.Name, []macros.Event{{Type: kind, Action: macros.Down}, {Type: kind, Action: macros.Up}})
@@ -78,6 +78,39 @@ func TestMacroStrictPositiveAdmissionStageWithoutIO(t *testing.T) {
 	}
 }
 
+func TestMacroOrderedSequenceApplyFrozenDraft(t *testing.T) {
+	kinds := []macros.EventType{macros.MouseLeft, macros.MouseRight, macros.MouseMiddle, macros.MouseBack, macros.MouseForward}
+	for _, first := range kinds {
+		for _, second := range kinds {
+			for _, destination := range []uint8{1, 2, 3, 4, 5, 6, 7} {
+				for _, repeat := range []int{1, 255} {
+					s, c, m := macroFixture(t)
+					events := []macros.Event{{Type: first, Action: macros.Down}, {Type: first, Action: macros.Up}, {Type: second, Action: macros.Down}, {Type: second, Action: macros.Up}}
+					m, err := s.UpdateMacro(m.ID, "ordered clicks", events)
+					if err != nil {
+						t.Fatal(err)
+					}
+					staged := s.StageMacroAssignment(m.ID, destination, repeat)
+					if staged.Error.Code != "" || staged.MacroPending == nil {
+						t.Fatalf("stage %s/%s destination=%d repeat=%d: %+v", first, second, destination, repeat, staged)
+					}
+					want := cloneMacroDraft(staged.MacroPending)
+					staged.MacroPending.Name = "mutated snapshot"
+					staged.MacroPending.Events[2].Type = macros.MouseLeft
+					got := s.ApplyRemap(staged.Pending)
+					if got.Error.Code != "" || got.Firmware != "success" || !reflect.DeepEqual(got.MacroApplied, want) || c.assignment.Button != destination || c.sequence.Repeat != repeat || !reflect.DeepEqual(c.sequence.Buttons, []macros.EventType{first, second}) || c.composite != 1 || c.normal != 0 {
+						t.Fatalf("ordered frozen assignment lost: snapshot=%+v command=%+v", got, c)
+					}
+					got.MacroApplied.Events[0].DelayMS = 42
+					if !reflect.DeepEqual(s.GetMacroAssignmentSnapshot().MacroApplied, want) {
+						t.Fatal("applied events alias returned snapshot")
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestMacroStrictNegativeAdmissionPreservesDraftAndLibrary(t *testing.T) {
 	valid := []macros.Event{{Type: macros.MouseLeft, Action: macros.Down}, {Type: macros.MouseLeft, Action: macros.Up}}
 	cases := []struct {
@@ -88,7 +121,11 @@ func TestMacroStrictNegativeAdmissionPreservesDraftAndLibrary(t *testing.T) {
 	}{
 		{"empty", nil, 1, 1},
 		{"single", valid[:1], 1, 1},
-		{"multi sequence", append(append([]macros.Event{}, valid...), valid...), 1, 1},
+		{"incomplete second pair", append(append([]macros.Event{}, valid...), valid[0]), 1, 1},
+		{"multi sequence (three clicks)", append(append(append([]macros.Event{}, valid...), valid...), valid...), 1, 1},
+		{"second pair timing", append(append([]macros.Event{}, valid...), macros.Event{Type: macros.MouseRight, Action: macros.Down}, macros.Event{Type: macros.MouseRight, Action: macros.Up, DelayMS: 1}), 1, 1},
+		{"second pair reversed", append(append([]macros.Event{}, valid...), valid[1], valid[0]), 1, 1},
+		{"second pair unmatched", append(append([]macros.Event{}, valid...), valid[0], macros.Event{Type: macros.MouseRight, Action: macros.Up}), 1, 1},
 		{"different buttons", []macros.Event{valid[0], {Type: macros.MouseRight, Action: macros.Up}}, 1, 1},
 		{"reversed", []macros.Event{valid[1], valid[0]}, 1, 1},
 		{"two downs", []macros.Event{valid[0], valid[0]}, 1, 1},
@@ -117,7 +154,7 @@ func TestMacroStrictNegativeAdmissionPreservesDraftAndLibrary(t *testing.T) {
 		{{Type: macros.MouseLeft, Action: "unknown"}, {Type: macros.MouseLeft, Action: macros.Up}},
 		{{Type: macros.MouseLeft, Action: macros.Down, DelayMS: -1}, {Type: macros.MouseLeft, Action: macros.Up}},
 	} {
-		if _, ok := admittedClick(events, 1); ok {
+		if _, ok := admittedSequence(events, 1); ok {
 			t.Fatal("invalid data admitted")
 		}
 	}
@@ -172,7 +209,7 @@ func TestMacroApplySuccessOnlyStateAdvanceNormalRemapRegression(t *testing.T) {
 	if got.Error.Code != "" || got.Firmware != "success" || got.MacroApplied == nil || got.MacroProgress != c.progress || got.Persistence != "not_supported" || c.composite != 1 || c.normal != 0 {
 		t.Fatalf("%+v command=%+v", got, c)
 	}
-	if !reflect.DeepEqual(c.assignment.Config, pending) || c.assignment.Button != 7 || c.click.Repeat != 255 {
+	if !reflect.DeepEqual(c.assignment.Config, pending) || c.assignment.Button != 7 || c.sequence.Repeat != 255 {
 		t.Fatal("unrelated fields or assignment lost")
 	}
 	s.ClearMacroAssignment()
@@ -344,7 +381,7 @@ func TestMacroLibraryEditDeleteRejectBeforeIO(t *testing.T) {
 }
 
 func TestMacroSelectionRevisionAndLibraryRacesDoNotAdvance(t *testing.T) {
-	for _, mutation := range []string{"selection", "replacement", "clear", "discard", "edit", "delete"} {
+	for _, mutation := range []string{"selection", "replacement", "clear", "discard", "edit", "rename", "delete"} {
 		t.Run(mutation, func(t *testing.T) {
 			s, c, m := macroFixture(t)
 			inventory := s.RefreshInventory(context.Background())
@@ -356,7 +393,15 @@ func TestMacroSelectionRevisionAndLibraryRacesDoNotAdvance(t *testing.T) {
 					other = device.ID
 				}
 			}
+			m, err := s.UpdateMacro(m.ID, "mixed sequence", []macros.Event{
+				{Type: macros.MouseForward, Action: macros.Down}, {Type: macros.MouseForward, Action: macros.Up},
+				{Type: macros.MouseMiddle, Action: macros.Down}, {Type: macros.MouseMiddle, Action: macros.Up},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			staged := s.StageMacroAssignment(m.ID, 6, 2)
+			frozen := cloneMacroDraft(staged.MacroPending)
 			before := staged.Applied
 			c.during = func() {
 				switch mutation {
@@ -371,6 +416,8 @@ func TestMacroSelectionRevisionAndLibraryRacesDoNotAdvance(t *testing.T) {
 				case "edit":
 					m.Events[0].DelayMS = 31
 					_, _ = s.UpdateMacro(m.ID, m.Name, m.Events)
+				case "rename":
+					_, _ = s.UpdateMacro(m.ID, "renamed during apply", m.Events)
 				case "delete":
 					_ = s.DeleteMacro(m.ID)
 				}
@@ -379,8 +426,13 @@ func TestMacroSelectionRevisionAndLibraryRacesDoNotAdvance(t *testing.T) {
 			if got.Error.Code != StaleBinding || got.Firmware != "failed" || got.MacroApplied != nil || !reflect.DeepEqual(got.Applied, before) || got.MacroProgress != c.progress || c.composite != 1 {
 				t.Fatalf("stale completion advanced: %+v", got)
 			}
-			if c.click.Button != macros.MouseLeft || c.click.Repeat != 2 {
+			if !reflect.DeepEqual(c.sequence.Buttons, []macros.EventType{macros.MouseForward, macros.MouseMiddle}) || c.sequence.Repeat != 2 {
 				t.Fatal("transport snapshot changed")
+			}
+			if mutation == "edit" || mutation == "rename" || mutation == "delete" {
+				if !reflect.DeepEqual(got.MacroPending, frozen) {
+					t.Fatal("library mutation changed frozen identity/name/events")
+				}
 			}
 			if mutation == "clear" || mutation == "discard" {
 				if got.MacroPending != nil {
