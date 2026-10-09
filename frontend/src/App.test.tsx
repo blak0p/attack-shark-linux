@@ -28,9 +28,7 @@ it("shares one guarded saved library between manager and remapping", async () =>
   render(<App service={service} />);
   expect(await screen.findByRole("button", { name: "Button 1 action" })).toBeInTheDocument();
   expect(service.ListMacros).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Button 1 action" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
-  fireEvent.click(within(screen.getByRole("menu", { name: "Macro actions" })).getByRole("menuitem", { name: "Saved click" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Button 1 saved macro" }), { target: { value: "saved" } });
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
   expect(service.ApplyRemap).not.toHaveBeenCalled();
 });
@@ -58,9 +56,7 @@ it("renders clean guidance text in macro manager and retains dirty draft when na
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
   fireEvent.click(screen.getByRole("link", { name: "Button remapping" }));
   expect(screen.getByRole("region", { name: "Button remapping" })).toHaveAttribute("data-active", "true");
-  fireEvent.click(screen.getByRole("button", { name: "Button 7 action" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
-  fireEvent.click(within(screen.getByRole("menu", { name: "Macro actions" })).getByRole("menuitem", { name: "Saved two clicks" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Button 7 saved macro" }), { target: { value: "shortcut" } });
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 1));
   fireEvent.change(screen.getByLabelText("Button 7 repetitions"), { target: { value: "255" } });
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 255));

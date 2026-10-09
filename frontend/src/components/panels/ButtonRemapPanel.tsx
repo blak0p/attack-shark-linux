@@ -156,13 +156,6 @@ export function ButtonRemapPanel({
   };
 
   const compatibleMacros = libraryReady && isAvailable ? macros.filter(compatible) : [];
-  const baseMacroOptions: GnomeSelectOption[] = compatibleMacros.length > 0
-    ? compatibleMacros.map((macro) => ({
-        value: `macro:${macro.id}`,
-        label: macro.name,
-        group: "Macro",
-      }))
-    : [{ value: "no-macro", label: "No saved macros", group: "Macro", disabled: true }];
 
   const optionsForButton = (button: Button) => {
     const actionOptions: GnomeSelectOption[] = remap.Actions.map((action) => ({
@@ -172,17 +165,7 @@ export function ButtonRemapPanel({
       disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
     }));
 
-    const draft = getButtonMacroDraft(remap, button.Button);
-    const macroOptions = [...baseMacroOptions];
-    if (draft && !macroOptions.some((opt) => opt.value === `macro:${draft.ID}`)) {
-      macroOptions.unshift({
-        value: `macro:${draft.ID}`,
-        label: draft.Name,
-        group: "Macro",
-      });
-    }
-
-    return [...actionOptions, ...macroOptions];
+    return actionOptions;
   };
 
   const stagedDrafts = getAllStagedDrafts(remap);
@@ -221,10 +204,10 @@ export function ButtonRemapPanel({
       {remap.Pending.Buttons.map((button) => {
         const draft = getButtonMacroDraft(remap, button.Button);
         const assignedLabel = assignmentLabel(button);
-        const selectValue = draft ? `macro:${draft.ID}` : (button.Action ?? "");
+        const selectValue = draft ? "" : (button.Action ?? "");
 
         return (
-          <div className="binding" key={button.Button}>
+          <div className="binding remap-binding" key={button.Button}>
             <div>
               <b>
                 Button {button.Button}
@@ -234,10 +217,32 @@ export function ButtonRemapPanel({
                 {assignedLabel}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-              {draft && (
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                  <span className="hint" style={{ fontSize: "0.85rem" }}>Reps</span>
+            <div className="remap-button-controls">
+              <label className="remap-macro-choice">
+                <span>Saved macro</span>
+                <select
+                  className="select"
+                  aria-label={`Button ${button.Button} saved macro`}
+                  disabled={!isAvailable || !libraryReady || !onStageMacro}
+                  value={draft?.ID ?? ""}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    if (!id) {
+                      onClearMacro?.(button.Button);
+                    } else if (compatibleMacros.some((macro) => macro.id === id)) {
+                      const repeat = Number(repeats[button.Button] ?? draft?.Repeat ?? 1);
+                      onStageMacro?.(id, button.Button, Number.isInteger(repeat) && repeat >= 1 && repeat <= 255 ? repeat : 1);
+                    }
+                  }}
+                >
+                  <option value="">{compatibleMacros.length ? "No macro (use action)" : "No compatible saved macros"}</option>
+                  {draft && !compatibleMacros.some((macro) => macro.id === draft.ID) &&
+                    <option value={draft.ID} disabled>{draft.Name} (saved version unavailable)</option>}
+                  {compatibleMacros.map((macro) => <option key={macro.id} value={macro.id}>{macro.name}</option>)}
+                </select>
+              </label>
+              <label className="remap-repeat">
+                  <span>Repeat (1–255)</span>
                   <input
                     aria-label={`Button ${button.Button} repetitions`}
                     className="input"
@@ -245,34 +250,27 @@ export function ButtonRemapPanel({
                     min={1}
                     max={255}
                     step={1}
-                    disabled={!isAvailable}
-                    style={{ width: "56px", padding: "4px 6px" }}
-                    value={repeats[button.Button] ?? String(draft.Repeat)}
+                    disabled={!isAvailable || !draft || !onStageMacro}
+                    value={repeats[button.Button] ?? String(draft?.Repeat ?? 1)}
                     onChange={(event) => {
                       const val = event.target.value;
                       setRepeats((prev) => ({ ...prev, [button.Button]: val }));
                       const num = Number(val);
-                      if (val.trim() !== "" && Number.isInteger(num) && num >= 1 && num <= 255) {
+                      if (draft && val.trim() !== "" && Number.isInteger(num) && num >= 1 && num <= 255) {
                         onStageMacro?.(draft.ID, button.Button, num);
                       }
                     }}
                   />
                 </label>
-              )}
+              <div className="remap-action-choice">
+                <span>Action</span>
               <GnomeSelect
                 aria-label={`Button ${button.Button} action`}
                 disabled={!isAvailable}
                 value={selectValue}
-                placeholder={button.PreservedDefault || "Default"}
+                placeholder={draft ? "Choose action instead" : button.PreservedDefault || "Default"}
                 options={optionsForButton(button)}
                 onChange={(val) => {
-                  if (val.startsWith("macro:")) {
-                    const macroId = val.slice("macro:".length);
-                    const repStr = repeats[button.Button] ?? String(draft?.Repeat ?? 1);
-                    const repNum = Number(repStr);
-                    const currentRepeat = Number.isInteger(repNum) && repNum >= 1 && repNum <= 255 ? repNum : 1;
-                    onStageMacro?.(macroId, button.Button, currentRepeat);
-                  } else {
                     const action = val as Action;
                     if (!(button.Button === 1 && (isMultimedia(action) || isMouseControls(action)))) {
                       onStage(button.Button, action);
@@ -280,9 +278,9 @@ export function ButtonRemapPanel({
                         onClearMacro?.(button.Button);
                       }
                     }
-                  }
                 }}
               />
+              </div>
             </div>
           </div>
         );

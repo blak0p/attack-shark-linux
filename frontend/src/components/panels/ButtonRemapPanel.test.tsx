@@ -32,15 +32,44 @@ const clickMacro = { id: "click", name: "Saved click", events: [
 afterEach(cleanup);
 
 describe("ButtonRemapPanel", () => {
-  it("stages a macro directly from a button's GnomeSelect under Macro category", () => {
+  it("makes saved macro and repeat controls discoverable for every button before assignment", () => {
+    const onStageMacro = vi.fn(); const onApply = vi.fn();
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
+    for (let button = 1; button <= 7; button++) {
+      expect(screen.getByRole("combobox", { name: `Button ${button} saved macro` })).toBeEnabled();
+      expect(screen.getByLabelText(`Button ${button} repetitions`)).toHaveValue(1);
+      expect(screen.getByLabelText(`Button ${button} repetitions`)).toBeDisabled();
+    }
+    fireEvent.change(screen.getByRole("combobox", { name: "Button 1 saved macro" }), { target: { value: "click" } });
+    expect(onStageMacro).toHaveBeenCalledWith("click", 1, 1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+  it("admits only compatible saved macros and clears only the chosen button", () => {
+    const onClearMacro = vi.fn(); const onStageMacro = vi.fn();
+    const draft = { ID: "click", Name: "Saved click", Button: 6, Repeat: 2, Events: [...clickMacro.events] };
+    render(<ButtonRemapPanel remap={{ ...remap, MacroDrafts: { 6: draft, 7: { ...draft, Button: 7, Repeat: 5 } } } as never}
+      ready macros={[clickMacro, { ...clickMacro, id: "timed", name: "Timed", events: clickMacro.events.map((event) => ({ ...event, delay_ms: 10 })) }] as never}
+      onStage={vi.fn()} onStageMacro={onStageMacro} onClearMacro={onClearMacro} />);
+    const selector = screen.getByRole("combobox", { name: "Button 6 saved macro" });
+    expect(within(selector).queryByRole("option", { name: "Timed" })).not.toBeInTheDocument();
+    fireEvent.change(selector, { target: { value: "" } });
+    expect(onClearMacro).toHaveBeenCalledExactlyOnceWith(6);
+    expect(screen.getByLabelText("Button 7 repetitions")).toHaveValue(5);
+    expect(onStageMacro).not.toHaveBeenCalled();
+  });
+
+  it("disables macro controls while the library is unavailable or assignment is busy", () => {
+    const { rerender } = render(<ButtonRemapPanel remap={remap as never} ready libraryReady={false} macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Button 2 saved macro" })).toBeDisabled();
+    rerender(<ButtonRemapPanel remap={remap as never} ready assignmentAvailable={false} macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Button 2 saved macro" })).toBeDisabled();
+  });
+
+  it("stages a saved macro directly within its button", () => {
     const onStageMacro = vi.fn();
     render(<ButtonRemapPanel remap={remap} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Button 6 action" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
-    const submenu = screen.getByRole("menu", { name: "Macro actions" });
-    const macroOption = within(submenu).getByRole("menuitem", { name: "Saved click" });
-    fireEvent.click(macroOption);
+    fireEvent.change(screen.getByRole("combobox", { name: "Button 6 saved macro" }), { target: { value: "click" } });
 
     expect(onStageMacro).toHaveBeenCalledWith("click", 6, 1);
   });
@@ -51,21 +80,16 @@ describe("ButtonRemapPanel", () => {
     const macros = [{ id: "single", name: "Single Click", events }, { id: "mixed", name: "Double Click", events: [...events, ...clickMacro.events] }];
     render(<ButtonRemapPanel remap={remap} ready macros={macros as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Button 4 action" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
-    const submenu = screen.getByRole("menu", { name: "Macro actions" });
-    fireEvent.click(within(submenu).getByRole("menuitem", { name: "Double Click" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Button 4 saved macro" }), { target: { value: "mixed" } });
 
     expect(onStageMacro).toHaveBeenCalledWith("mixed", 4, 1);
   });
 
   it("shows disabled 'No saved macros' item when no compatible macros exist", () => {
     render(<ButtonRemapPanel remap={remap} ready macros={[]} onStage={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Button 6 action" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
-    const submenu = screen.getByRole("menu", { name: "Macro actions" });
-    const emptyOption = within(submenu).getByRole("menuitem", { name: "No saved macros" });
-    expect(emptyOption).toHaveAttribute("aria-disabled", "true");
+    const selector = screen.getByRole("combobox", { name: "Button 6 saved macro" });
+    expect(within(selector).getAllByRole("option")).toHaveLength(1);
+    expect(selector).toHaveTextContent("No compatible saved macros");
   });
 
   it("displays inline repetitions input when a button has a macro assigned and tunes 1-255", () => {
@@ -109,8 +133,8 @@ describe("ButtonRemapPanel", () => {
       { id: "click2", name: "Macro Two", events: [...clickMacro.events] },
     ] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
 
-    expect(screen.getByRole("button", { name: "Button 6 action" })).toHaveTextContent("Macro One");
-    expect(screen.getByRole("button", { name: "Button 7 action" })).toHaveTextContent("Macro Two");
+    expect(screen.getByRole("combobox", { name: "Button 6 saved macro" })).toHaveValue("click1");
+    expect(screen.getByRole("combobox", { name: "Button 7 saved macro" })).toHaveValue("click2");
 
     expect(screen.getByLabelText("Button 6 repetitions")).toHaveValue(2);
     expect(screen.getByLabelText("Button 7 repetitions")).toHaveValue(5);

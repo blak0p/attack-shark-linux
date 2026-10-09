@@ -1,9 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 async function assignMacro(page: Page, button: number, name: string, repeat = 1) {
-  await page.getByRole("button", { name: `Button ${button} action`, exact: true }).click();
-  await page.getByRole("menuitem", { name: "Macro", exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
+  await page.getByRole("combobox", { name: `Button ${button} saved macro`, exact: true }).selectOption({ label: name });
   await expect(page.getByLabel(`Button ${button} repetitions`, { exact: true })).toBeVisible();
   if (repeat !== 1) await page.getByLabel(`Button ${button} repetitions`, { exact: true }).fill(String(repeat));
 }
@@ -32,6 +30,16 @@ for (const width of [1280, 620]) {
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Button remapping", exact: true, level: 1 })).toBeVisible();
     expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
+    for (let button = 1; button <= 7; button++) {
+      const selector = page.getByRole("combobox", { name: `Button ${button} saved macro`, exact: true });
+      await selector.scrollIntoViewIfNeeded();
+      await expect(selector).toBeVisible();
+      await expect(page.getByLabel(`Button ${button} repetitions`, { exact: true })).toBeVisible();
+      const bounds = await selector.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+    expect(await page.locator("#remapping-card").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await assignMacro(page, 6, saved.name, 2);
     await expect(page.getByLabel("Remap assignment summary")).toContainText("Saved shortcut × 2");
     const staged = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending);

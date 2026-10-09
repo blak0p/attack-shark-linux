@@ -1,3 +1,36 @@
+/* Per-button remapping: macro and repeat stay visible beside the action. */
+#remapping-card .remap-binding {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.remap-button-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 100px minmax(150px, 1fr);
+  align-items: end;
+  gap: 10px;
+  max-width: 100%;
+}
+.remap-button-controls label, .remap-action-choice {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.remap-button-controls .select, .remap-button-controls .input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+@media (max-width: 760px) {
+  #remapping-card .remap-binding { align-items: stretch; }
+  .remap-button-controls {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) 100px;
+  }
+  .remap-action-choice { grid-column: 1 / -1; }
+}
+
 /* Cards */
 .card, .panel, .panel-section, .lighting-control, .device-status {
   padding: 17px 18px;
