@@ -1,0 +1,72 @@
+.macro-manager {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.macro-library, .macro-detail { min-width: 0; }
+.macro-library .card-head { flex-wrap: wrap; gap: 10px; }
+.macro-cards { display: grid; gap: 10px; margin: 16px 0; }
+.macro-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.macro-card span { color: var(--muted); font-size: 12px; }
+.macro-card[aria-pressed="true"] { border-color: var(--accent); background: var(--rail); }
+.macro-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.macro-card:disabled { opacity: .5; cursor: not-allowed; }
+.macro-name { display: grid; gap: 8px; }
+.macro-name input {
+  width: 100%; min-width: 0; padding: 10px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--rail); color: var(--text); font: inherit;
+}
+.macro-name input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.macro-empty { padding: 24px 0; color: var(--muted); }
+.macro-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.macro-error { color: var(--danger); overflow-wrap: anywhere; }
+
+.macro-editor-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.macro-editor-head h2 { overflow-wrap: anywhere; }
+.macro-kicker { color: var(--accent); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; margin: 0 0 6px; }
+.macro-options { flex: 0 1 180px; min-width: 0; }
+.macro-options[open] { flex-basis: 340px; }
+.macro-manager summary { cursor: pointer; color: var(--text); padding: 8px 0; }
+.macro-manager summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.macro-options-body { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--rail); }
+.macro-options input { max-width: 100%; }
+.macro-file-import { margin-bottom: 8px; }
+.macro-guidance { margin: 0 0 16px; }
+.macro-composer { margin: 24px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--rail); }
+.macro-composer h3 { margin-top: 0; }
+.macro-click-types { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.macro-click-types .button { flex: 1 1 100px; }
+.macro-click-types [aria-pressed="true"] { border-color: var(--accent); background: var(--surface); }
+.macro-sequence-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.macro-timeline ol { list-style: none; padding: 0; margin: 12px 0; }
+.macro-timeline li { display: flex; gap: 14px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.macro-step { color: var(--muted); font-size: 12px; }
+.macro-timeline small { display: block; color: var(--muted); margin-top: 4px; }
+.macro-compatibility { color: var(--muted); font-size: 13px; }
+.macro-compatibility.compatible { color: var(--accent); }
+.macro-save-footer { align-items: center; border-top: 1px solid var(--line); padding-top: 20px; margin-bottom: 0; }
+.macro-save-footer p { flex: 1 1 160px; margin: 0; }
+
+@media (max-width: 700px) {
+  .macro-editor-head { flex-wrap: wrap; }
+  .macro-options, .macro-options[open] { flex-basis: 100%; }
+}
+
+@media (max-width: 900px) {
+  .macro-manager { grid-template-columns: minmax(0, 1fr); }
+}

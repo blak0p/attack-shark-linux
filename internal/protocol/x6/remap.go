@@ -7,36 +7,36 @@ const RemapReportLength = 59
 type RemapAction string
 
 const (
-	RemapOff           RemapAction = "off"
-	RemapLeft          RemapAction = "left"
-	RemapRight         RemapAction = "right"
-	RemapMiddle        RemapAction = "middle"
-	RemapBackward      RemapAction = "backward"
-	RemapForward       RemapAction = "forward"
-	RemapDoubleClick   RemapAction = "double_click"
-	RemapFire          RemapAction = "fire"
-	RemapMediaPlayer   RemapAction = "media_player"
-	RemapPlayPause     RemapAction = "play_pause"
-	RemapStop          RemapAction = "stop"
-	RemapPreviousTrack RemapAction = "previous_track"
-	RemapNextTrack     RemapAction = "next_track"
-	RemapVolumeUp      RemapAction = "volume_up"
-	RemapVolumeDown    RemapAction = "volume_down"
-	RemapMute          RemapAction = "mute"
-	RemapScrollUp      RemapAction = "scroll_up"
-	RemapScrollDown    RemapAction = "scroll_down"
-	RemapDPICycle      RemapAction = "dpi_cycle"
-	RemapDPIPlus       RemapAction = "dpi_plus"
-	RemapDPIMinus      RemapAction = "dpi_minus"
+	RemapOff               RemapAction = "off"
+	RemapLeft              RemapAction = "left"
+	RemapRight             RemapAction = "right"
+	RemapMiddle            RemapAction = "middle"
+	RemapBackward          RemapAction = "backward"
+	RemapForward           RemapAction = "forward"
+	RemapDoubleClick       RemapAction = "double_click"
+	RemapFire              RemapAction = "fire"
+	RemapMediaPlayer       RemapAction = "media_player"
+	RemapPlayPause         RemapAction = "play_pause"
+	RemapStop              RemapAction = "stop"
+	RemapPreviousTrack     RemapAction = "previous_track"
+	RemapNextTrack         RemapAction = "next_track"
+	RemapVolumeUp          RemapAction = "volume_up"
+	RemapVolumeDown        RemapAction = "volume_down"
+	RemapMute              RemapAction = "mute"
+	RemapScrollUp          RemapAction = "scroll_up"
+	RemapScrollDown        RemapAction = "scroll_down"
+	RemapDPICycle          RemapAction = "dpi_cycle"
+	RemapDPIPlus           RemapAction = "dpi_plus"
+	RemapDPIMinus          RemapAction = "dpi_minus"
 	RemapBrowserCalculator RemapAction = "browser_calculator"
-	RemapBrowserEmail RemapAction = "browser_email"
-	RemapBrowserForward RemapAction = "browser_forward"
-	RemapBrowserBackward RemapAction = "browser_backward"
-	RemapBrowserStop RemapAction = "browser_stop"
+	RemapBrowserEmail      RemapAction = "browser_email"
+	RemapBrowserForward    RemapAction = "browser_forward"
+	RemapBrowserBackward   RemapAction = "browser_backward"
+	RemapBrowserStop       RemapAction = "browser_stop"
 	RemapBrowserMyComputer RemapAction = "browser_my_computer"
-	RemapBrowserRefresh RemapAction = "browser_refresh"
-	RemapBrowserHome RemapAction = "browser_home"
-	RemapBrowserSearch RemapAction = "browser_search"
+	RemapBrowserRefresh    RemapAction = "browser_refresh"
+	RemapBrowserHome       RemapAction = "browser_home"
+	RemapBrowserSearch     RemapAction = "browser_search"
 )
 
 type RemapButton struct {
@@ -56,6 +56,61 @@ var remapBaseline = [RemapReportLength]byte{
 }
 
 var remapGroupByButton = [7]byte{1, 2, 3, 7, 8, 5, 6}
+
+// MacroAssignment overlays one macro action on a valid pending remap config.
+// It is separate from the closed generic remap action catalog.
+type MacroAssignment struct {
+	Config RemapConfig
+	Button uint8
+}
+
+// MultiMacroAssignment overlays multiple macro actions on a valid pending remap config.
+type MultiMacroAssignment struct {
+	Config  RemapConfig
+	Buttons []uint8
+}
+
+// MacroDestinationForButton maps logical buttons to report08 groups/report09 IDs.
+// Groups 05/06 are capture-backed; other mapped groups are authorized extrapolation.
+func MacroDestinationForButton(button uint8) (byte, error) {
+	if button < 1 || int(button) > len(remapGroupByButton) {
+		return 0, fmt.Errorf("unsupported macro button %d", button)
+	}
+	return remapGroupByButton[button-1], nil
+}
+
+// ValidateMacroDestination accepts only existing mapped button groups, not group4.
+func ValidateMacroDestination(destination byte) error {
+	for _, group := range remapGroupByButton {
+		if destination == group {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported macro destination %d", destination)
+}
+
+func EncodeMacroAssignmentReport(assignment MacroAssignment) ([]byte, error) {
+	return EncodeMultiMacroAssignmentReport(assignment.Config, []uint8{assignment.Button})
+}
+
+// EncodeMultiMacroAssignmentReport overlays multiple macro actions on a valid pending remap config.
+// For each button, it writes 0x12, 0, destination at 3 + int(destination-1)*3 and updates the checksum.
+func EncodeMultiMacroAssignmentReport(config RemapConfig, buttons []uint8) ([]byte, error) {
+	report, err := EncodeRemapReport(config)
+	if err != nil {
+		return nil, err
+	}
+	for _, button := range buttons {
+		destination, err := MacroDestinationForButton(button)
+		if err != nil {
+			return nil, err
+		}
+		offset := 3 + int(destination-1)*3
+		report[offset], report[offset+1], report[offset+2] = 0x12, 0, destination
+	}
+	setRemapChecksum(report)
+	return report, nil
+}
 
 func DefaultRemapConfig() RemapConfig {
 	return RemapConfig{Buttons: []RemapButton{
@@ -99,12 +154,16 @@ func EncodeRemapReport(config RemapConfig) ([]byte, error) {
 			report[3+(remapGroupByButton[index]-1)*3] = remapActionID(button.Action)
 		}
 	}
+	setRemapChecksum(report)
+	return report, nil
+}
+
+func setRemapChecksum(report []byte) {
 	checksum := 0
 	for _, value := range report[3:57] {
 		checksum += int(value)
 	}
 	report[57], report[58] = byte(checksum>>8), byte(checksum)
-	return report, nil
 }
 
 func remapActionID(action RemapAction) byte {
@@ -151,15 +210,24 @@ func remapActionID(action RemapAction) byte {
 		return 0x0e
 	case RemapDPIMinus:
 		return 0x0f
-	case RemapBrowserCalculator: return 0x1d
-	case RemapBrowserEmail: return 0x1e
-	case RemapBrowserForward: return 0x20
-	case RemapBrowserBackward: return 0x21
-	case RemapBrowserStop: return 0x22
-	case RemapBrowserMyComputer: return 0x23
-	case RemapBrowserRefresh: return 0x24
-	case RemapBrowserHome: return 0x25
-	case RemapBrowserSearch: return 0x26
+	case RemapBrowserCalculator:
+		return 0x1d
+	case RemapBrowserEmail:
+		return 0x1e
+	case RemapBrowserForward:
+		return 0x20
+	case RemapBrowserBackward:
+		return 0x21
+	case RemapBrowserStop:
+		return 0x22
+	case RemapBrowserMyComputer:
+		return 0x23
+	case RemapBrowserRefresh:
+		return 0x24
+	case RemapBrowserHome:
+		return 0x25
+	case RemapBrowserSearch:
+		return 0x26
 	default:
 		return 0
 	}

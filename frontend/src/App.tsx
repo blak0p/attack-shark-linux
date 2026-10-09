@@ -1,5 +1,7 @@
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { WorkspaceViewId } from "./components/workspace/workspace-view-context";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
+import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
 import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
 import { WorkspaceView } from "./components/workspace/WorkspaceView";
@@ -14,6 +16,7 @@ import { LightingEffectSelect } from "./components/panels/LightingEffectSelect";
 import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { DeviceStatusPanel } from "./components/panels/DeviceStatusPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
+import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
 import { UpdateBanner } from "./components/UpdateBanner";
 export type {
   ConfigurationEvent,
@@ -76,6 +79,7 @@ const speedFill = (index: number, count: number) =>
 
 export function App({ service }: { service: DesktopService }) {
   const { model, actions } = useDesktopWorkspace(service);
+  const macroLibrary = useMacroLibrary(service);
   const {
     snapshot,
     polling,
@@ -94,7 +98,26 @@ export function App({ service }: { service: DesktopService }) {
     updateError,
   } = model;
 
-  if (!snapshot) return <main className="app-shell" aria-busy="true">Loading configuration…</main>;
+  const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
+  const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
+  const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
+    snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
+  const assignmentScope = useMemo(() => ({ service, selectedBinding, assignmentAvailable }), [service, selectedBinding, assignmentAvailable]);
+
+  const macroWorkspace = (
+    <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
+      <MacroManagerPanel service={service} library={macroLibrary} />
+    </WorkspaceView>
+  );
+
+  if (!snapshot) return (
+    <WorkspaceShell activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
+      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
+      connectionStatus={<p className="connection offline">Device configuration loading</p>}>
+      {macroWorkspace}
+      <WorkspaceView id="performance" title="Performance"><p role="status">Loading configuration…</p></WorkspaceView>
+    </WorkspaceShell>
+  );
 
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
   const connected = ready && !inventory?.Error.Code &&
@@ -204,12 +227,15 @@ export function App({ service }: { service: DesktopService }) {
 
   return (
     <WorkspaceShell
+      activeView={activeView}
+      onNavigate={setActiveView}
       busy={automaticApplyBusy}
       deviceName="Attack Shark X6"
       deviceSubtitle="Wireless Gaming Mouse"
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}
     >
+      {macroWorkspace}
       {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
@@ -425,7 +451,14 @@ export function App({ service }: { service: DesktopService }) {
         {remap && (
           <ButtonRemapPanel
             remap={remap}
-            ready={ready}
+            ready={ready && !model.remapBusy}
+            macros={macroLibrary.macros}
+            libraryReady={macroLibrary.loaded && !macroLibrary.loading && !macroLibrary.error}
+            assignmentScope={assignmentScope}
+            assignmentAvailable={assignmentAvailable}
+            onStageMacro={actions.stageMacroAssignment}
+            onClearMacro={actions.clearButtonMacroAssignment}
+            error={model.remapError}
             onStage={actions.stageRemap}
             onApply={actions.applyRemap}
             onDiscard={actions.discardRemap}

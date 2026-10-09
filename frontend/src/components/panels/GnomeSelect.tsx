@@ -6,9 +6,11 @@ export type GnomeSelectOption = {
   label: string;
   group?: string;
   disabled?: boolean;
+  /** Render this option directly in the category menu, without a submenu. */
+  direct?: boolean;
 };
 
-type Category = { name: string; options: GnomeSelectOption[] };
+type Category = { name: string; options: GnomeSelectOption[]; direct?: GnomeSelectOption };
 
 export type GnomeSelectProps = {
   id?: string;
@@ -34,8 +36,13 @@ export function GnomeSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const categories = options.reduce<Category[]>((result, option) => {
+    if (option.direct) {
+      result.push({ name: option.label, options: [], direct: option });
+      return result;
+    }
     const name = option.group ?? "Basic";
     const category = result.find((candidate) => candidate.name === name);
     if (category) category.options.push(option);
@@ -48,6 +55,7 @@ export function GnomeSelect({
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [activeActionIndex, setActiveActionIndex] = useState(0);
   const [submenuFlipped, setSubmenuFlipped] = useState(false);
+  const [submenuTop, setSubmenuTop] = useState(0);
   const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
   const submenuCategory = categories.find((category) => category.name === openCategory);
 
@@ -98,6 +106,13 @@ export function GnomeSelect({
     if (!openCategory || !categoryMenuRef.current) return;
     const { right } = categoryMenuRef.current.getBoundingClientRect();
     setSubmenuFlipped(right + 224 > window.innerWidth);
+    if (submenuRef.current) {
+      const height = submenuRef.current.getBoundingClientRect().height;
+      // The submenu is taller than its category popup. Clamp it independently,
+      // retaining the existing adjacent placement and horizontal flipping.
+      const top = Math.max(8, Math.min(popupPosition.top, window.innerHeight - height - 8));
+      setSubmenuTop(top - popupPosition.top);
+    }
   }, [openCategory, popupPosition]);
 
   const openSelector = () => {
@@ -108,14 +123,21 @@ export function GnomeSelect({
 
   const revealCategory = (index: number) => {
     setActiveCategoryIndex(index);
-    setOpenCategory(categories[index]?.name ?? null);
+    const category = categories[index];
+    setOpenCategory(category?.direct ? null : category?.name ?? null);
     setActiveActionIndex(0);
+  };
+
+  const activateCategory = (index: number) => {
+    const category = categories[index];
+    if (category?.direct) handleSelect(category.direct);
+    else revealCategory(index);
   };
 
   const handleSelect = (option: GnomeSelectOption) => {
     if (option.disabled) return;
-    onChange(option.value);
     closeSelector();
+    onChange(option.value);
   };
 
   const moveCategory = (direction: number) => {
@@ -153,7 +175,7 @@ export function GnomeSelect({
     if (["ArrowRight", "Enter", " "].includes(event.key)) {
       event.preventDefault();
       if (openCategory && action) handleSelect(action);
-      else revealCategory(activeCategoryIndex);
+      else activateCategory(activeCategoryIndex);
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -208,18 +230,20 @@ export function GnomeSelect({
               key={category.name}
               id={`${menuId}-category-${index}`}
               role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={openCategory === category.name}
-              className={`gnome-select-option ${activeCategoryIndex === index ? "active" : ""}`}
-              onClick={() => revealCategory(index)}
+              aria-haspopup={category.direct ? undefined : "menu"}
+              aria-expanded={category.direct ? undefined : openCategory === category.name}
+              aria-disabled={category.direct?.disabled ?? false}
+              className={`gnome-select-option ${activeCategoryIndex === index ? "active" : ""} ${category.direct?.disabled ? "disabled" : ""}`}
+              onClick={() => activateCategory(index)}
               onMouseEnter={() => revealCategory(index)}
             >
               {category.name}
-              <span aria-hidden="true" className="gnome-select-submenu-arrow">▸</span>
+              {!category.direct && <span aria-hidden="true" className="gnome-select-submenu-arrow">▸</span>}
             </div>
           ))}
           {submenuCategory && (
-            <div className={`gnome-select-submenu ${submenuFlipped ? "flipped" : ""}`} role="menu" aria-label={`${submenuCategory.name} actions`}>
+            <div ref={submenuRef} className={`gnome-select-submenu ${submenuFlipped ? "flipped" : ""}`} role="menu" aria-label={`${submenuCategory.name} actions`}
+              style={{ top: submenuTop, maxHeight: "min(220px, calc(100vh - 16px))" }}>
               {submenuCategory.options.map((option, index) => (
                 <div
                   key={option.value}

@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "../src/App";
-import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction } from "../src/desktop-contract";
+import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent } from "../src/desktop-contract";
 import "../src/styles.css";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
@@ -34,8 +34,15 @@ const remapFactory = (): RemapConfig => ({ Buttons: [
   { Button: 7, Action: null, PreservedDefault: "DPI-" },
 ] });
 const actions: RemapAction[] = ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire", "browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"];
-const remaps = new Map(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
+const remaps = new Map<string, RemapSnapshot>(ids.map(({ ID }) => [ID.Serial, { Pending: remapFactory(), Applied: remapFactory(), Factory: remapFactory(), Actions: actions, MacroPending: null, MacroApplied: null, MacroProgress: { Assignment: 0, Upload: 0 }, Revision: 0, Firmware: "idle", Persistence: "idle", RetryAvailable: false, Error: { Code: "" } } satisfies RemapSnapshot]));
 const remapSnapshot = () => structuredClone(remaps.get(selected.ID.Serial)!);
+const validateRemap = (config: RemapConfig) => {
+  if (config.Buttons.length !== 7 || config.Buttons.some((button, index) =>
+    button.Button !== index + 1 || (button.Action !== null ? !actions.includes(button.Action) :
+      button.PreservedDefault !== (button.Button === 6 ? "DPI+" : button.Button === 7 ? "DPI-" : "" ) || button.Button < 6))) {
+    throw new Error("Invalid mock remap draft");
+  }
+};
 let selected = ids[0];
 let currentPolling = polling();
 let currentDPI = snapshot();
@@ -43,8 +50,30 @@ let failNext = false;
 const record = (operation: string, value?: number, requested?: DeviceID) => {
   calls.push({ operation, destination: { ...selected.ID }, ...(requested ? { requested: { ...requested } } : {}), ...(value === undefined ? {} : { value }) });
 };
-const inventory = () => ({ Devices: ids, Selected: selected, Error: { Code: "" } });
+const offline = new URLSearchParams(window.location.search).has("offline");
+if (offline) currentDPI = { ...currentDPI, Error: { Code: "device_disconnected" } };
+const inventory = () => ({ Devices: offline ? [] : ids, Selected: offline ? null : selected, Error: { Code: "" } });
+const macros = new Map<string, Macro>();
+const macroCalls: string[] = [];
+let macroID = 0;
+const readMacro = (id: string) => {
+  const macro = macros.get(id);
+  if (!macro) throw new Error("Macro not found");
+  return structuredClone(macro);
+};
 const service = {
+  ListMacros: async () => [...macros.values()].map((macro) => structuredClone(macro)),
+  ReadMacro: async (id: string) => readMacro(id),
+  CreateMacro: async (name: string, events: MacroEvent[]) => {
+    const macro = { id: `macro-${++macroID}`, name, events: structuredClone(events) };
+    macros.set(macro.id, macro); macroCalls.push("CreateMacro"); return structuredClone(macro);
+  },
+  UpdateMacro: async (id: string, name: string, events: MacroEvent[]) => {
+    readMacro(id);
+    const macro = { id, name, events: structuredClone(events) };
+    macros.set(id, macro); macroCalls.push("UpdateMacro"); return structuredClone(macro);
+  },
+  DeleteMacro: async (id: string) => { readMacro(id); macros.delete(id); macroCalls.push("DeleteMacro"); },
   GetApplicationVersion: undefined, CheckForUpdate: undefined,
   RefreshStatus: async () => currentDPI, GetSnapshot: async () => currentDPI,
   RefreshInventory: async () => inventory(),
@@ -90,11 +119,77 @@ const service = {
   GetLightingSnapshot: async () => ({ Pending: { Mode: 0, TemplateID: "off" }, Applied: null, Effects: [], Revision: 0, Error: { Code: "" } }),
   GetNormalSleepSnapshot: async () => ({ Pending: 0.5, Applied: 0.5, Persisted: 0.5, Revision: 0, Error: { Code: "" } }),
   GetRemapSnapshot: async () => remapSnapshot(),
+  GetMacroAssignmentSnapshot: async () => remapSnapshot(),
+  StageMacroAssignment: async (id: string, button: number, repeat: number) => {
+    const macro = readMacro(id);
+    if (offline || !Number.isInteger(button) || button < 1 || button > 7 ||
+        !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || ![2, 4].includes(macro.events.length) ||
+        !macro.events.every((event, index, events) =>
+          ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
+          event.delay_ms === 0 && (index % 2 === 0
+            ? event.action === "down" && event.type === events[index + 1].type
+            : event.action === "up"))) throw new Error("Invalid macro assignment");
+    record("StageMacroAssignment");
+    const current = remapSnapshot();
+    const draft = { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: structuredClone(macro.events) };
+    const drafts = { ...(current.MacroDrafts ?? {}), [button]: draft };
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: draft, MacroDrafts: drafts, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  StageRemap: async (config: RemapConfig) => {
+    validateRemap(config); record("StageRemap");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  ClearButtonMacroAssignment: async (button: number) => {
+    record("ClearButtonMacroAssignment");
+    const current = remapSnapshot();
+    const drafts = { ...(current.MacroDrafts ?? {}) };
+    delete drafts[button];
+    const remaining = Object.values(drafts);
+    const macroPending = remaining.length > 0 ? remaining[0] : null;
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: macroPending, MacroDrafts: drafts, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  ClearMacroAssignment: async () => {
+    record("ClearMacroAssignment");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: null, MacroDrafts: {}, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
+  DiscardRemap: async () => {
+    record("DiscardRemap");
+    const current = remapSnapshot();
+    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(current.Applied), MacroPending: null, MacroDrafts: {}, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
   ApplyRemap: async (config: RemapConfig) => {
-    if (config.Buttons.length !== 7 || config.Buttons.some((button, index) => button.Button !== index + 1 || (button.Action !== null && !actions.includes(button.Action)))) throw new Error("Invalid mock remap draft");
+    validateRemap(config);
     calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
-    const updated = { ...remapSnapshot(), Pending: structuredClone(config), Applied: structuredClone(config), Revision: remaps.get(selected.ID.Serial)!.Revision + 1, Firmware: "success" };
-    remaps.set(selected.ID.Serial, updated);
+    const current = remapSnapshot();
+    const draft = current.MacroPending;
+    const drafts = current.MacroDrafts ?? (draft ? { [draft.Button]: draft } : {});
+    const allDrafts = Object.values(drafts);
+    const libraryCurrent = allDrafts.every((d) =>
+      JSON.stringify(macros.get(d.ID)) === JSON.stringify({ id: d.ID, name: d.Name, events: d.Events })
+    );
+    if (!libraryCurrent) {
+      remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Firmware: "failed", Persistence: "", Error: { Code: "invalid_configuration" } });
+      return remapSnapshot();
+    }
+    const failed = failNext;
+    failNext = false;
+    const hasMacros = allDrafts.length > 0;
+    remaps.set(selected.ID.Serial, {
+      ...current, Pending: structuredClone(config), Revision: current.Revision + 1,
+      Applied: failed ? current.Applied : structuredClone(config),
+      MacroApplied: failed ? current.MacroApplied : structuredClone(draft ?? null),
+      MacroAppliedDrafts: failed ? current.MacroAppliedDrafts : structuredClone(drafts),
+      MacroProgress: hasMacros ? { Assignment: 2, Upload: failed ? 1 : 2 } : current.MacroProgress,
+      Firmware: failed ? "failed" : "success", Persistence: failed ? "" : hasMacros ? "not_supported" : "success",
+      Error: { Code: failed ? "apply_failed" : "" },
+    });
     return remapSnapshot();
   },
   OnStatusEvent: () => () => {}, OnConfiguration: () => () => {},
@@ -107,7 +202,7 @@ const guarded = new Proxy(service, {
     return Reflect.get(target, key);
   },
 }) as unknown as DesktopService;
-Object.assign(window, { __routingTest: {
+Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)) }, __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
   dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });

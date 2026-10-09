@@ -5,5 +5,8 @@ export {
     Binding,
     Device,
     DeviceID,
+    MacroAssignmentProgress,
+    MacroProgress,
+    MacroUploadProgress,
     TargetedService
 } from "./models.js";

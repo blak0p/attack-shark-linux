@@ -3,8 +3,11 @@ package mouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
+	"github.com/blak0p/attack-shark-linux/internal/macros"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -60,6 +63,145 @@ type ProfileValidator interface {
 // discover a replacement device during an operation.
 type TargetedCommand interface {
 	SendAndAwaitBound(context.Context, Binding, []byte, func([]byte) bool) error
+}
+
+// MacroProgress records transport evidence only, never playback or persistence.
+// Zero values explicitly mean neither phase was started.
+type MacroProgress struct {
+	Assignment MacroAssignmentProgress
+	Upload     MacroUploadProgress
+}
+type MacroAssignmentProgress uint8
+type MacroUploadProgress uint8
+
+const (
+	MacroAssignmentNotStarted MacroAssignmentProgress = iota
+	MacroAssignmentUnknown
+	MacroAssignmentACKConfirmed
+)
+const (
+	MacroUploadNotStarted MacroUploadProgress = iota
+	MacroUploadPossiblyPartial
+	MacroUploadConfirmed
+)
+
+// TargetedMacroCommand is deliberately separate from generic report admission.
+type TargetedMacroCommand interface {
+	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error)
+}
+
+// MacroSequenceItem associates one button with an offline sequence.
+type MacroSequenceItem struct {
+	Button   uint8
+	Sequence macros.X6Sequence
+}
+
+// TargetedMacroSequenceCommand is additive: legacy click-only commands remain valid.
+type TargetedMacroSequenceCommand interface {
+	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Sequence) (MacroProgress, error)
+	SendX6MultiMacroSequenceAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroSequenceItem) (MacroProgress, error)
+}
+
+func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if len(items) == 0 {
+		return empty, errors.New("no macro sequence items")
+	}
+	buttons := make([]uint8, len(items))
+	clonedItems := make([]MacroSequenceItem, len(items))
+	seen := make(map[uint8]bool, len(items))
+	for i, item := range items {
+		if seen[item.Button] {
+			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
+		}
+		seen[item.Button] = true
+		buttons[i] = item.Button
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return empty, err
+		}
+		if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence}); err != nil {
+			return empty, err
+		}
+		clonedSeq := item.Sequence
+		clonedSeq.Buttons = append([]macros.EventType(nil), item.Sequence.Buttons...)
+		clonedItems[i] = MacroSequenceItem{
+			Button:   item.Button,
+			Sequence: clonedSeq,
+		}
+	}
+	if _, err := x6.EncodeMultiMacroAssignmentReport(config, buttons); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroSequenceCommand)
+	if !ok {
+		return empty, errors.New("bound macro sequence command unavailable")
+	}
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MultiMacroSequenceAssignmentBound(ctx, binding, config, clonedItems)
+	})
+}
+
+func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
+		return empty, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return empty, err
+	}
+	if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence}); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroSequenceCommand)
+	if !ok {
+		return empty, errors.New("bound macro sequence command unavailable")
+	}
+	// Freeze the caller-owned slice before waiting for serialization.
+	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence)
+	})
+}
+
+func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macros.X6Click) (MacroProgress, error) {
+	empty := MacroProgress{}
+	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
+		return empty, err
+	}
+	destination, err := x6.MacroDestinationForButton(assignment.Button)
+	if err != nil {
+		return empty, err
+	}
+	if _, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click}); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroCommand)
+	if !ok {
+		return empty, errors.New("bound macro command unavailable")
+	}
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MacroAssignmentBound(ctx, binding, assignment, click)
+	})
+}
+
+func (s *TargetedService) applyMacroBound(ctx context.Context, binding Binding, send func() (MacroProgress, error)) (MacroProgress, error) {
+	empty := MacroProgress{}
+	selected, state, _, err := s.selectedState()
+	if err != nil || selected != binding {
+		return empty, ErrStaleBinding
+	}
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	selected, _, _, err = s.selectedState()
+	if err != nil || selected != binding || !s.bindingCurrent(ctx, binding) {
+		return empty, ErrStaleBinding
+	}
+	return send()
 }
 
 type deviceState struct {

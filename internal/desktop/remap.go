@@ -10,13 +10,17 @@ import (
 )
 
 type remapState struct {
-	mu                        sync.Mutex
-	applyMu                   sync.Mutex
-	pending, applied, factory x6.RemapConfig
-	retry                     *x6.RemapConfig
-	revision                  uint64
-	firmware, persistence     string
-	err                       Error
+	macroPendingMap            map[uint8]*MacroDraft
+	macroAppliedMap            map[uint8]*MacroDraft
+	macroPending, macroApplied *MacroDraft
+	macroProgress              mouse.MacroProgress
+	mu                         sync.Mutex
+	applyMu                    sync.Mutex
+	pending, applied, factory  x6.RemapConfig
+	retry                      *x6.RemapConfig
+	revision                   uint64
+	firmware, persistence      string
+	err                        Error
 }
 
 type remapComponent struct {
@@ -26,7 +30,13 @@ type remapComponent struct {
 }
 
 func newRemapState(applied, factory x6.RemapConfig) *remapState {
-	return &remapState{applied: cloneRemapConfig(applied), pending: cloneRemapConfig(applied), factory: cloneRemapConfig(factory)}
+	return &remapState{
+		applied:         cloneRemapConfig(applied),
+		pending:         cloneRemapConfig(applied),
+		factory:         cloneRemapConfig(factory),
+		macroPendingMap: make(map[uint8]*MacroDraft),
+		macroAppliedMap: make(map[uint8]*MacroDraft),
+	}
 }
 
 func (c *remapComponent) currentState() *remapState {
@@ -75,7 +85,7 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
-	if remapConfigsEqual(state.applied, config) && state.firmware == "success" {
+	if len(state.macroPendingMap) == 0 && state.macroPending == nil && len(state.macroAppliedMap) == 0 && state.macroApplied == nil && remapConfigsEqual(state.applied, config) && state.firmware == "success" {
 		retry := state.retry != nil
 		snapshot := remapSnapshotLocked(state)
 		state.mu.Unlock()
@@ -88,8 +98,21 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 	state.revision++
 	revision := state.revision
 	state.firmware, state.persistence, state.retry, state.err = "pending", "", nil, Error{}
+	var drafts []*MacroDraft
+	for b := uint8(1); b <= 7; b++ {
+		if d := state.macroPendingMap[b]; d != nil {
+			drafts = append(drafts, cloneMacroDraft(d))
+		}
+	}
+	if len(drafts) == 0 && state.macroPending != nil {
+		drafts = append(drafts, cloneMacroDraft(state.macroPending))
+	}
 	state.mu.Unlock()
-	c.applyBound(binding, state, revision, cloneRemapConfig(config))
+	if len(drafts) > 0 {
+		c.applyMacroBound(binding, state, revision, cloneRemapConfig(config), drafts)
+	} else {
+		c.applyBound(binding, state, revision, cloneRemapConfig(config))
+	}
 	return remapSnapshotOf(state)
 }
 
@@ -123,6 +146,8 @@ func (c *remapComponent) applyBound(binding Binding, state *remapState, revision
 		return
 	}
 	state.applied, state.firmware, state.err = cloneRemapConfig(pending), "success", Error{}
+	state.macroApplied = nil
+	state.macroAppliedMap = make(map[uint8]*MacroDraft)
 	state.mu.Unlock()
 	if binding.SessionOnly || persistence == nil {
 		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
@@ -190,6 +215,9 @@ func (c *remapComponent) reconcileFactoryReset() {
 	defaults := x6.DefaultRemapConfig()
 	state.pending, state.applied, state.retry = cloneRemapConfig(defaults), cloneRemapConfig(defaults), nil
 	state.revision++
+	state.macroPending, state.macroApplied, state.macroProgress = nil, nil, mouse.MacroProgress{}
+	state.macroPendingMap = make(map[uint8]*MacroDraft)
+	state.macroAppliedMap = make(map[uint8]*MacroDraft)
 	state.firmware, state.persistence, state.err = "success", "success", Error{}
 }
 
@@ -206,6 +234,15 @@ func remapSnapshotOf(state *remapState) RemapSnapshot {
 	return remapSnapshotLocked(state)
 }
 
+func pickMacroDraft(m map[uint8]*MacroDraft) *MacroDraft {
+	for b := uint8(1); b <= 7; b++ {
+		if d := m[b]; d != nil {
+			return cloneMacroDraft(d)
+		}
+	}
+	return nil
+}
+
 func remapSnapshotLocked(state *remapState) RemapSnapshot {
 	actions := []x6.RemapAction{
 		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
@@ -214,7 +251,42 @@ func remapSnapshotLocked(state *remapState) RemapSnapshot {
 		x6.RemapBrowserCalculator, x6.RemapBrowserEmail, x6.RemapBrowserForward, x6.RemapBrowserBackward, x6.RemapBrowserStop,
 		x6.RemapBrowserMyComputer, x6.RemapBrowserRefresh, x6.RemapBrowserHome, x6.RemapBrowserSearch,
 	}
-	return RemapSnapshot{Pending: cloneRemapConfig(state.pending), Applied: cloneRemapConfig(state.applied), Factory: cloneRemapConfig(state.factory), Actions: actions, Revision: state.revision, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, Error: state.err}
+	drafts := make(map[uint8]MacroDraft, len(state.macroPendingMap))
+	for b, d := range state.macroPendingMap {
+		if d != nil {
+			drafts[b] = *cloneMacroDraft(d)
+		}
+	}
+	appliedDrafts := make(map[uint8]MacroDraft, len(state.macroAppliedMap))
+	for b, d := range state.macroAppliedMap {
+		if d != nil {
+			appliedDrafts[b] = *cloneMacroDraft(d)
+		}
+	}
+	pendingDraft := cloneMacroDraft(state.macroPending)
+	if pendingDraft == nil && len(drafts) > 0 {
+		pendingDraft = pickMacroDraft(state.macroPendingMap)
+	}
+	appliedDraft := cloneMacroDraft(state.macroApplied)
+	if appliedDraft == nil && len(appliedDrafts) > 0 {
+		appliedDraft = pickMacroDraft(state.macroAppliedMap)
+	}
+	return RemapSnapshot{
+		MacroPending:       pendingDraft,
+		MacroApplied:       appliedDraft,
+		MacroDrafts:        drafts,
+		MacroAppliedDrafts: appliedDrafts,
+		MacroProgress:      state.macroProgress,
+		Pending:            cloneRemapConfig(state.pending),
+		Applied:            cloneRemapConfig(state.applied),
+		Factory:            cloneRemapConfig(state.factory),
+		Actions:            actions,
+		Revision:           state.revision,
+		Firmware:           state.firmware,
+		Persistence:        state.persistence,
+		RetryAvailable:     state.retry != nil,
+		Error:              state.err,
+	}
 }
 
 func cloneRemapConfig(config x6.RemapConfig) x6.RemapConfig {

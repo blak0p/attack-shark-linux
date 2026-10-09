@@ -8,8 +8,131 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/macros"
+	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
+
+type compositeCommandFake struct {
+	commandFake
+	calls int
+}
+
+func (c *compositeCommandFake) SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.MacroAssignment, _ macros.X6Sequence) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+func (c *compositeCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
+	c.calls++
+	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+
+func TestTargetedMultiMacroSequenceSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	_, _ = svc.Refresh(context.Background())
+	binding, _ := svc.Selection()
+	cfg := x6.DefaultRemapConfig()
+	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	items := []MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 7, Sequence: s2},
+	}
+	// Empty items rejected
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, nil); err == nil || command.calls != 0 {
+		t.Fatal("empty items accepted")
+	}
+	// Duplicate button rejected
+	dup := []MacroSequenceItem{
+		{Button: 6, Sequence: s1},
+		{Button: 6, Sequence: s2},
+	}
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, dup); err == nil || command.calls != 0 {
+		t.Fatal("duplicate button accepted")
+	}
+	// Invalid sequence rejected
+	bad := []MacroSequenceItem{
+		{Button: 6, Sequence: macros.X6Sequence{}},
+		{Button: 7, Sequence: s2},
+	}
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, bad); err == nil || command.calls != 0 {
+		t.Fatal("invalid sequence reached transport")
+	}
+	// Stale binding rejected
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), stale, cfg, items); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	// Canceled context rejected
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(ctx, binding, cfg, items); !errors.Is(err, context.Canceled) || command.calls != 0 {
+		t.Fatal(err)
+	}
+	// Successful multi-macro assignment
+	p, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, items)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
+
+func TestTargetedSequenceMacroSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	_, _ = svc.Refresh(context.Background())
+	binding, _ := svc.Selection()
+	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
+	s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, macros.X6Sequence{}); err == nil || command.calls != 0 {
+		t.Fatal("invalid sequence reached transport")
+	}
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), stale, a, s); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(ctx, binding, a, s); !errors.Is(err, context.Canceled) || command.calls != 0 {
+		t.Fatal(err)
+	}
+	p, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, s)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
+
+func TestTargetedCompositeMacroSeam(t *testing.T) {
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	command := &compositeCommandFake{}
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	if _, err := svc.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, _ := svc.Selection()
+	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
+	click := macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
+	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, macros.X6Click{}); err == nil || command.calls != 0 {
+		t.Fatal("invalid click reached transport")
+	}
+	stale := binding
+	stale.Path = "other"
+	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), stale, assignment, click); !errors.Is(err, ErrStaleBinding) {
+		t.Fatal(err)
+	}
+	p, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, click)
+	if err != nil || command.calls != 1 || p.Upload != MacroUploadConfirmed {
+		t.Fatal(p, err)
+	}
+}
 
 func TestTargetedServiceSelectsSoleDeviceAndRequiresSelectionForMany(t *testing.T) {
 	profile := targetedProfile{}

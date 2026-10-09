@@ -1,10 +1,123 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
+import type { Macro } from "./desktop-contract";
 
+beforeAll(() => {
+  // Chromium exercises native top-layer focus/inertness; jsdom only models open.
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+});
 afterEach(cleanup);
+
+function openMacroAssignment(button: number) {
+  fireEvent.click(screen.getByRole("button", { name: `Button ${button} action` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Macro", exact: true }));
+  return screen.getByRole("dialog", { name: `Button ${button} macro assignment` });
+}
+
+it("shares one guarded saved library between manager and remapping", async () => {
+  const macro: Macro = { id: "saved", name: "Saved click", events: [
+    { type: "mouse_left", action: "down", delay_ms: 0 },
+    { type: "mouse_left", action: "up", delay_ms: 0 },
+  ] };
+  const config = { Buttons: [
+    { Button: 1, Action: "left", PreservedDefault: "" }, { Button: 2, Action: "right", PreservedDefault: "" },
+    { Button: 3, Action: "middle", PreservedDefault: "" }, { Button: 4, Action: "forward", PreservedDefault: "" },
+    { Button: 5, Action: "backward", PreservedDefault: "" }, { Button: 6, Action: null, PreservedDefault: "DPI+" },
+    { Button: 7, Action: null, PreservedDefault: "DPI-" },
+  ] } as RemapSnapshot["Pending"];
+  const service = serviceFor(snapshot(), {
+    ListMacros: vi.fn().mockResolvedValue([macro]), ReadMacro: vi.fn().mockResolvedValue(macro),
+    GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot({ Pending: config, Applied: config, Factory: config })),
+    StageMacroAssignment: vi.fn().mockResolvedValue(remapSnapshot({ Pending: config, Applied: config, Factory: config,
+      MacroPending: { ID: macro.id, Name: macro.name, Button: 1, Repeat: 1, Events: macro.events },
+    })),
+  });
+  render(<App service={service} />);
+  expect(await screen.findByRole("button", { name: "Button 1 action" })).toBeInTheDocument();
+  expect(service.ListMacros).toHaveBeenCalledTimes(1);
+  const dialog = openMacroAssignment(1);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "saved" } });
+  expect(service.StageMacroAssignment).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
+  expect(service.ApplyRemap).not.toHaveBeenCalled();
+});
+
+const shortcutMacro: Macro = { id: "shortcut", name: "Saved two clicks", events: [
+  { type: "mouse_middle", action: "down", delay_ms: 0 },
+  { type: "mouse_middle", action: "up", delay_ms: 0 },
+  { type: "mouse_forward", action: "down", delay_ms: 0 },
+  { type: "mouse_forward", action: "up", delay_ms: 0 },
+] };
+const shortcutService = (overrides: Partial<DesktopService> = {}) => serviceFor(snapshot(), {
+  ListMacros: vi.fn().mockResolvedValue([shortcutMacro]),
+  ReadMacro: vi.fn().mockResolvedValue(shortcutMacro),
+  ...overrides,
+});
+it("renders clean guidance text in macro manager and retains dirty draft when navigating to button remapping", async () => {
+  const service = shortcutService();
+  render(<App service={service} />);
+  fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Saved two clicks · 4 events" }));
+  await screen.findByDisplayValue("Saved two clicks");
+  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Assign to button" })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Dirty name" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add click" }));
+  fireEvent.click(screen.getByRole("link", { name: "Button remapping" }));
+  expect(screen.getByRole("region", { name: "Button remapping" })).toHaveAttribute("data-active", "true");
+  const dialog = openMacroAssignment(7);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "shortcut" } });
+  expect(service.StageMacroAssignment).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 1));
+  const reopened = openMacroAssignment(7);
+  expect(within(reopened).getByRole("combobox", { name: "Saved macro" })).toHaveValue("shortcut");
+  fireEvent.change(within(reopened).getByLabelText("Repeat (1–255)"), { target: { value: "255" } });
+  expect(service.StageMacroAssignment).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(reopened).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 255));
+  fireEvent.click(screen.getByRole("button", { name: "Apply remap" }));
+  await waitFor(() => expect(service.ApplyRemap).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Dirty name");
+  expect(screen.getByRole("list", { name: "Ordered timeline" }).children).toHaveLength(3);
+  expect(service.ListMacros).toHaveBeenCalledTimes(1);
+});
+
+it.each(["device_disconnected", "permission_denied"])("keeps saved and unsaved data local when configuration reports %s", async (code) => {
+  const offline = snapshot({ Error: { Code: code } });
+  const service = shortcutService({ GetSnapshot: vi.fn().mockResolvedValue(offline), RefreshStatus: vi.fn().mockResolvedValue(offline) });
+  render(<App service={service} />);
+  fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Saved two clicks · 4 events" }));
+  await screen.findByDisplayValue("Saved two clicks");
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline dirty" } });
+  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Macro name")).toHaveValue("Offline dirty");
+  fireEvent.click(screen.getByRole("link", { name: "Button remapping", exact: true }));
+  expect(screen.getByRole("button", { name: "Apply remap" })).toBeDisabled();
+  expect(service.StageMacroAssignment).not.toHaveBeenCalled();
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+it("does not use an obsolete async macro read after switching services", async () => {
+  const read = deferred<Macro>();
+  const original = shortcutService({ ReadMacro: vi.fn().mockReturnValue(read.promise) });
+  const next = shortcutService();
+  const view = render(<App service={original} />);
+  fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Saved two clicks · 4 events" }));
+  view.rerender(<App service={next} />);
+  await act(async () => read.resolve(shortcutMacro));
+  await waitFor(() => expect(next.ListMacros).toHaveBeenCalledTimes(1));
+  expect(screen.queryByLabelText("Macro name")).not.toBeInTheDocument();
+  expect(next.StageMacroAssignment).not.toHaveBeenCalled();
+});
 
 const configuration = (firstDPI = 800) => ({
   DPI: [firstDPI, 1200, 1600, 2400, 3200, 6400, 12800, 26000],
@@ -61,8 +174,18 @@ const debounceSnapshot = (overrides = {}) => ({ Desired: 8, Applied: 8, Persiste
   ...overrides,
 });
 
+const defaultRemapButtons = [
+  { Button: 1, Action: "left" as const, PreservedDefault: "" as const },
+  { Button: 2, Action: "right" as const, PreservedDefault: "" as const },
+  { Button: 3, Action: "middle" as const, PreservedDefault: "" as const },
+  { Button: 4, Action: "forward" as const, PreservedDefault: "" as const },
+  { Button: 5, Action: "backward" as const, PreservedDefault: "" as const },
+  { Button: 6, Action: null, PreservedDefault: "DPI+" as const },
+  { Button: 7, Action: null, PreservedDefault: "DPI-" as const },
+];
+
 const remapSnapshot = (overrides: Partial<RemapSnapshot> = {}): RemapSnapshot => ({
-  Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] },
+  Pending: { Buttons: defaultRemapButtons }, Applied: { Buttons: defaultRemapButtons }, Factory: { Buttons: defaultRemapButtons },
   Actions: ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire"], Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" },
   ...overrides,
 });
@@ -73,14 +196,35 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   let pendingDPI = initial.Pending;
   let desiredPolling = pollingSnapshot().Desired;
   let pendingLighting = lightingSnapshot().Pending;
+  let remapDraft = remapSnapshot({ MacroPending: null, MacroApplied: null, MacroProgress: { Assignment: 0, Upload: 0 } });
 
   return {
+  ListMacros: vi.fn().mockResolvedValue([]), ReadMacro: vi.fn(), CreateMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
   GetSnapshot: vi.fn().mockResolvedValue(initial),
   GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot()),
       GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot()),
 	GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot()),
       GetNormalSleepSnapshot: vi.fn().mockResolvedValue(normalSleepSnapshot()),
-	GetRemapSnapshot: vi.fn().mockResolvedValue(remapSnapshot()),
+	GetRemapSnapshot: vi.fn().mockImplementation(async () => remapDraft),
+  StageMacroAssignment: vi.fn().mockImplementation(async (id, button, repeat) => {
+    if (!overrides.ReadMacro) throw new Error("Macro not found");
+    const macro = await overrides.ReadMacro(id);
+    remapDraft = { ...remapDraft, MacroPending: { ID: macro.id, Name: macro.name, Button: button, Repeat: repeat, Events: macro.events.map((event) => ({ ...event })) }, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  StageRemap: vi.fn().mockImplementation(async (config) => {
+    remapDraft = { ...remapDraft, Pending: config, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  ClearMacroAssignment: vi.fn().mockImplementation(async () => {
+    remapDraft = { ...remapDraft, MacroPending: null, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  DiscardRemap: vi.fn().mockImplementation(async () => {
+    remapDraft = { ...remapDraft, Pending: remapDraft.Applied, MacroPending: null, Revision: remapDraft.Revision + 1 };
+    return remapDraft;
+  }),
+  GetMacroAssignmentSnapshot: vi.fn().mockImplementation(async () => remapDraft),
   RefreshStatus: vi.fn().mockResolvedValue(initial),
   RefreshInventory: vi.fn().mockResolvedValue({ Devices: [selectedDevice], Selected: selectedDevice, Error: { Code: "" } }),
   SelectDevice: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "" } }),
@@ -95,7 +239,7 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
       ApplyNormalSleep: vi.fn().mockResolvedValue(normalSleepSnapshot({ Firmware: "success" })),
       RetryNormalSleepPersistence: vi.fn().mockResolvedValue(normalSleepSnapshot()),
 	StageLighting: vi.fn().mockImplementation(async (selection) => { pendingLighting = selection; return lightingSnapshot({ Pending: selection, Revision: 1 }); }),
-	StageRemap: vi.fn().mockResolvedValue(remapSnapshot()),
+	ApplyRemap: vi.fn().mockResolvedValue(remapSnapshot()),
 	ApplyLighting: vi.fn().mockImplementation(async () => lightingSnapshot({ Pending: pendingLighting, Applied: pendingLighting, Firmware: "success" })),
 	RetryRemapPersistence: vi.fn().mockResolvedValue(remapSnapshot()),
   RetryPollingPersistence: vi.fn().mockResolvedValue(pollingSnapshot()),
@@ -108,6 +252,61 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   ...overrides,
   };
 };
+
+describe("serviceFor remap fixture", () => {
+  const appliedConfig = { Buttons: [
+    { Button: 1, Action: "left" as const, PreservedDefault: "" as const },
+    { Button: 2, Action: "right" as const, PreservedDefault: "" as const },
+    { Button: 3, Action: "middle" as const, PreservedDefault: "" as const },
+    { Button: 4, Action: "forward" as const, PreservedDefault: "" as const },
+    { Button: 5, Action: "backward" as const, PreservedDefault: "" as const },
+    { Button: 6, Action: null, PreservedDefault: "DPI+" as const },
+    { Button: 7, Action: null, PreservedDefault: "DPI-" as const },
+  ] };
+  const pendingConfig = { Buttons: appliedConfig.Buttons.map((button) =>
+    button.Button === 2 ? { ...button, Action: "off" as const } : { ...button },
+  ) };
+  const clickEvents = [
+    { type: "mouse_left" as const, action: "down" as const, delay_ms: 0 },
+    { type: "mouse_left" as const, action: "up" as const, delay_ms: 0 },
+  ];
+
+  it("preserves the staged macro when staging ordinary remap fields", async () => {
+    const service = serviceFor(snapshot(), {
+      ReadMacro: vi.fn().mockResolvedValue({ id: "draft", name: "Draft macro", events: clickEvents }),
+    });
+    const staged = await service.StageMacroAssignment("draft", 1, 3);
+    staged.Applied = appliedConfig;
+
+    const result = await service.StageRemap(pendingConfig);
+
+    expect(result.MacroPending).toEqual(staged.MacroPending);
+    expect(result.Pending).toEqual(pendingConfig);
+    expect(result.Revision).toBe(staged.Revision + 1);
+    expect((await service.GetRemapSnapshot()).MacroPending).toEqual(staged.MacroPending);
+  });
+
+  it.each([false, true])("clears the staged macro on discard with an applied macro: %s", async (hasAppliedMacro) => {
+    const service = serviceFor(snapshot(), {
+      ReadMacro: vi.fn().mockResolvedValue({ id: "draft", name: "Draft macro", events: clickEvents }),
+    });
+    const staged = await service.StageMacroAssignment("draft", 1, 3);
+    // Seed applied state through the fixture's shared snapshot; no device apply is simulated.
+    staged.Applied = appliedConfig;
+    staged.MacroApplied = hasAppliedMacro ? { ...staged.MacroPending!, ID: "applied", Name: "Applied macro" } : null;
+    await service.StageRemap(pendingConfig);
+    const appliedMacro = staged.MacroApplied;
+
+    const result = await service.DiscardRemap();
+
+    expect(result.MacroPending).toBeNull();
+    expect(result.MacroApplied).toEqual(appliedMacro);
+    expect(result.Pending).toEqual(appliedConfig);
+    expect(result.Pending).not.toEqual(pendingConfig);
+    expect(result.Revision).toBe(staged.Revision + 2);
+    expect((await service.GetMacroAssignmentSnapshot()).MacroPending).toBeNull();
+  });
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -122,6 +321,40 @@ const chooseLightingEffect = async (label: string) => {
 };
 
 describe("App", () => {
+  it("navigates to the shared library without selected/connected devices or device writes", async () => {
+    const service = serviceFor(snapshot({ Error: { Code: "device_disconnected" } }), {
+      RefreshInventory: vi.fn().mockResolvedValue({ Devices: [], Selected: null, Error: { Code: "device_disconnected" } }),
+      CreateMacro: vi.fn().mockResolvedValue({ id: "local", name: "Offline", events: [] }),
+    });
+    render(<App service={service} />);
+    fireEvent.click(await screen.findByRole("link", { name: "Macros" }));
+    expect(screen.getByRole("region", { name: "Macros" })).toHaveAttribute("data-active", "true");
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+    expect(await screen.findByRole("button", { name: "Offline · 0 events" })).toBeInTheDocument();
+    expect(service.ApplyDPI).not.toHaveBeenCalled();
+    expect(service.ApplyPollingRate).not.toHaveBeenCalled();
+    expect(service.ApplyRemap).not.toHaveBeenCalled();
+    expect(service.StageDPI).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("link", { name: "Device" }));
+    fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+    expect(screen.getByLabelText("Macro name")).toHaveValue("Offline");
+  });
+
+  it("keeps the library usable while device configuration is still loading", async () => {
+    const pending = deferred<Snapshot>();
+    const service = serviceFor(snapshot(), { RefreshStatus: vi.fn().mockReturnValue(pending.promise) });
+    render(<App service={service} />);
+    fireEvent.click(screen.getByRole("link", { name: "Macros" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New macro" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Keep draft" } });
+    await act(async () => pending.resolve(snapshot()));
+    expect(screen.getByLabelText("Macro name")).toHaveValue("Keep draft");
+    expect(screen.getByRole("region", { name: "Macros" })).toHaveAttribute("data-active", "true");
+    expect(service.ListMacros).toHaveBeenCalledTimes(1);
+  });
   it("shows the installed application version in Device, not the update target or firmware", async () => {
     const service = serviceFor(snapshot({ Firmware: "success" }), {
       GetApplicationVersion: vi.fn().mockResolvedValue("1.2.0-rc.5"),
@@ -512,7 +745,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(await screen.findByText("Device available")).toBeInTheDocument();
     expect(screen.queryByText(/ambiguous identity/)).not.toBeInTheDocument();
 	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
-    expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole("button", { name: /^Stage \d/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
     expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
   });
 
@@ -577,8 +810,19 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     render(<App service={serviceFor(snapshot())} />);
 
     await screen.findByText("Device available");
-	 expect(screen.queryByRole("button", { name: /macro|profile/i })).not.toBeInTheDocument();
-	expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Macros" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New macro" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Import macro JSON")).toHaveAttribute("type", "file");
+    expect(screen.getByRole("button", { name: "Import JSON" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export saved macro" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+    expect(screen.getByRole("button", { name: "Add click" })).toBeEnabled();
+    expect(screen.getByRole("group", { name: "Click type" })).toBeInTheDocument();
+    expect(screen.queryByText("Advanced events and recording")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Mouse recording zone" })).not.toBeInTheDocument();
+    // Local file exchange and click composer are implemented; hardware playback/profiles are not.
+    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
 

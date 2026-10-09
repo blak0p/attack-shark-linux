@@ -1,3 +1,26 @@
+/* One action selector per button; macro edits stay in the modal until Confirm. */
+#remapping-card .remap-binding { flex-wrap: wrap; gap: 12px; }
+.remap-button-controls { width: 220px; max-width: 100%; min-width: 0; }
+.remap-button-controls .select { width: 100%; box-sizing: border-box; }
+.macro-assignment-dialog {
+  width: min(420px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  box-sizing: border-box;
+  overflow: auto;
+  color: var(--text);
+}
+.macro-assignment-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.macro-assignment-dialog form { display: grid; gap: 18px; }
+.macro-assignment-dialog h2 { margin: 0; }
+.macro-assignment-dialog label { display: grid; gap: 6px; color: var(--muted); }
+.macro-assignment-dialog .select, .macro-assignment-dialog .input {
+  width: 100%; min-width: 0; box-sizing: border-box;
+}
+@media (max-width: 760px) {
+  #remapping-card .remap-binding { align-items: stretch; }
+  .remap-button-controls { width: 100%; }
+}
+
 /* Cards */
 .card, .panel, .panel-section, .lighting-control, .device-status {
   padding: 17px 18px;
@@ -385,7 +408,7 @@ select option {
 /* Remapping Bindings */
 .binding {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 0;

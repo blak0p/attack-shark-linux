@@ -10,9 +10,76 @@ const options = [
   { value: "mute", label: "Mute", group: "Multimedia", disabled: true },
 ];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("GnomeSelect", () => {
+  it.each(["pointer", "keyboard"])("selects a direct category entry by %s without a submenu", (mode) => {
+    const onChange = vi.fn();
+    render(<GnomeSelect aria-label="Button action" value="left" options={[...options, { value: "macro", label: "Macro", direct: true }]} onChange={onChange} />);
+    const trigger = screen.getByRole("button", { name: "Button action" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const macro = screen.getByRole("menuitem", { name: "Macro" });
+    expect(macro).not.toHaveAttribute("aria-haspopup");
+    fireEvent.mouseEnter(macro);
+    expect(screen.queryByRole("menu", { name: "Macro actions" })).not.toBeInTheDocument();
+    if (mode === "pointer") fireEvent.click(macro);
+    else fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("macro");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not activate a disabled direct entry", () => {
+    const onChange = vi.fn();
+    render(<GnomeSelect aria-label="Button action" value="left" options={[...options, { value: "macro", label: "Macro", direct: true, disabled: true }]} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Button action" }));
+    const macro = screen.getByRole("menuitem", { name: "Macro" });
+    expect(macro).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(macro);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+  it.each([200, 900])("keeps a %ipx submenu inside the vertical viewport near Button 7", (height) => {
+    vi.stubGlobal("innerHeight", 600);
+    vi.stubGlobal("innerWidth", 620);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      const top = this.classList.contains("gnome-select-submenu") ? 510 : 550;
+      const measuredHeight = this.classList.contains("gnome-select-submenu")
+        && this.style.maxHeight ? Math.min(height, 220) : height;
+      return { x: 460, y: top, left: 460, right: 620, top, bottom: top + measuredHeight,
+        width: 160, height: measuredHeight, toJSON: () => ({}) };
+    });
+    const onChange = vi.fn();
+    render(<GnomeSelect aria-label="Button 7 action" value="left" options={options} onChange={onChange} />);
+    const trigger = screen.getByRole("button", { name: "Button 7 action" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    const submenu = screen.getByRole("menu", { name: "Basic actions" });
+    // Two categories anchor the popup at 510px; the taller action menu must move up.
+    const top = 510 + Number.parseFloat(submenu.style.top || "0");
+    const visibleHeight = submenu.getBoundingClientRect().height;
+    expect(submenu.style.maxHeight).toContain("220px");
+    expect(submenu.style.maxHeight).toContain("100vh");
+    expect(top).toBeGreaterThanOrEqual(8);
+    expect(top + visibleHeight).toBeLessThanOrEqual(592);
+    expect(submenu).toHaveClass("flipped");
+    vi.stubGlobal("innerHeight", 500);
+    fireEvent.resize(window);
+    const popup = screen.getByRole("menu", { name: "Button 7 action categories" });
+    const resizedTop = Number.parseFloat(popup.style.top) + Number.parseFloat(submenu.style.top);
+    expect(resizedTop).toBeGreaterThanOrEqual(8);
+    expect(resizedTop + visibleHeight).toBeLessThanOrEqual(492);
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("fire");
+    expect(trigger).toHaveFocus();
+  });
+
   it("opens with categories only and opens an adjacent submenu by pointer", () => {
     render(<GnomeSelect aria-label="Button action" value="left" options={options} onChange={vi.fn()} />);
 

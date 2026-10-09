@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
+	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
@@ -94,12 +95,16 @@ type NormalSleepSnapshot struct {
 	Error                 Error
 }
 type RemapSnapshot struct {
-	Pending, Applied, Factory x6.RemapConfig
-	Actions                   []x6.RemapAction
-	Revision                  uint64
-	Firmware, Persistence     string
-	RetryAvailable            bool
-	Error                     Error
+	MacroPending, MacroApplied *MacroDraft
+	MacroDrafts                map[uint8]MacroDraft
+	MacroAppliedDrafts         map[uint8]MacroDraft
+	MacroProgress              mouse.MacroProgress
+	Pending, Applied, Factory  x6.RemapConfig
+	Actions                    []x6.RemapAction
+	Revision                   uint64
+	Firmware, Persistence      string
+	RetryAvailable             bool
+	Error                      Error
 }
 type StatusReader interface {
 	Status(context.Context) (x6.Status, error)
@@ -209,9 +214,11 @@ type lightingState struct {
 }
 
 type Service struct {
-	status StatusReader
-	writer DPIWriter
-	store  AppliedStore
+	macroLibrary      *macros.Library
+	macroLibraryError error
+	status            StatusReader
+	writer            DPIWriter
+	store             AppliedStore
 	*listenerComponent
 	*inventoryComponent
 	*dpiComponent
@@ -243,8 +250,16 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	s.lightingComponent = &lightingComponent{service: s, states: make(map[DeviceID]*lightingState)}
 	return s
 }
-func Compose(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
-	return New(status, writer, store)
+
+// Option configures app-owned dependencies before the service is published.
+type Option func(*Service)
+
+func Compose(status StatusReader, writer DPIWriter, store AppliedStore, options ...Option) *Service {
+	s := New(status, writer, store)
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 // AttachListener wires the always-on status listener and the frontend event

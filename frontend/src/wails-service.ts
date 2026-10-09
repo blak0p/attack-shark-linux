@@ -1,16 +1,74 @@
 import { Events } from "@wailsio/runtime";
 import * as bindings from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
-import type { DesktopService } from "./desktop-contract";
+import type { Action, EventType, Macro as GeneratedMacro } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
+import type { RemapSnapshot as GeneratedRemapSnapshot } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
+import { RemapAction as GeneratedRemapAction, type RemapConfig as GeneratedRemapConfig } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models";
+import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig } from "./desktop-contract";
+
+const bindingRemap = (config: RemapConfig): GeneratedRemapConfig => ({
+  Buttons: config.Buttons.map((button) => {
+    // Only existing preserved DPI defaults may use Go's zero action.
+    if (button.Action === null || String(button.Action) === "") {
+      if (!((button.Button === 6 && button.PreservedDefault === "DPI+") ||
+            (button.Button === 7 && button.PreservedDefault === "DPI-"))) {
+        throw new Error("Unsupported preserved remap default");
+      }
+      return { ...button, Action: GeneratedRemapAction.$zero };
+    }
+    const action = Object.values(GeneratedRemapAction).find((value) =>
+      value !== GeneratedRemapAction.$zero && value === button.Action);
+    if (action === undefined) throw new Error("Unsupported remap action");
+    return { ...button, Action: action };
+  }),
+});
+
+const bindingEvents = (events: MacroEvent[]) => events.map((event) => ({
+  ...event, type: event.type as EventType, action: event.action as Action,
+}));
+const localMacro = (macro: GeneratedMacro): Macro => ({
+  id: macro.id, name: macro.name,
+  events: macro.events.map((event): MacroEvent => {
+    if ((event.type !== "mouse_left" && event.type !== "mouse_right" &&
+         event.type !== "mouse_middle" && event.type !== "mouse_back" && event.type !== "mouse_forward") ||
+        (event.action !== "down" && event.action !== "up")) throw new Error("Unsupported local macro event");
+    return { type: event.type, action: event.action, delay_ms: event.delay_ms };
+  }),
+});
+
+const localDraft = (draft: GeneratedRemapSnapshot["MacroPending"] | undefined): MacroDraft | null | undefined => draft == null ? draft : ({
+  ID: draft.ID, Name: draft.Name, Button: draft.Button, Repeat: draft.Repeat,
+  Events: localMacro({ id: draft.ID, name: draft.Name, events: draft.Events }).events,
+});
+const localDraftMap = (drafts: GeneratedRemapSnapshot["MacroDrafts"] | undefined): Record<number, MacroDraft> | undefined => {
+  if (!drafts) return undefined;
+  const res: Record<number, MacroDraft> = {};
+  for (const [k, v] of Object.entries(drafts)) {
+    const d = localDraft(v);
+    if (d) res[Number(k)] = d;
+  }
+  return res;
+};
+const localRemap = (snapshot: GeneratedRemapSnapshot): RemapSnapshot => ({
+  ...snapshot,
+  MacroPending: localDraft(snapshot.MacroPending),
+  MacroApplied: localDraft(snapshot.MacroApplied),
+  MacroDrafts: localDraftMap(snapshot.MacroDrafts),
+  MacroAppliedDrafts: localDraftMap(snapshot.MacroAppliedDrafts),
+});
 
 type ExplicitApplyBindings = {
   ApplyDPI(): ReturnType<DesktopService["ApplyDPI"]>;
   ApplyPollingRate(): ReturnType<DesktopService["ApplyPollingRate"]>;
-  ApplyRemap(config: Parameters<DesktopService["ApplyRemap"]>[0]): ReturnType<DesktopService["ApplyRemap"]>;
   ResetToFactory(): ReturnType<DesktopService["ResetToFactory"]>;
 };
 const explicitApplyBindings = bindings as typeof bindings & ExplicitApplyBindings;
 
 export const desktopService: DesktopService = {
+  ListMacros: async () => (await bindings.ListMacros()).map(localMacro),
+  CreateMacro: async (name, events) => localMacro(await bindings.CreateMacro(name, bindingEvents(events))),
+  ReadMacro: async (id) => localMacro(await bindings.ReadMacro(id)),
+  UpdateMacro: async (id, name, events) => localMacro(await bindings.UpdateMacro(id, name, bindingEvents(events))),
+  DeleteMacro: bindings.DeleteMacro,
   GetApplicationVersion: bindings.GetApplicationVersion,
   CheckForUpdate: bindings.CheckForUpdate as DesktopService["CheckForUpdate"],
   ApplyVerifiedUpdate: bindings.ApplyVerifiedUpdate as DesktopService["ApplyVerifiedUpdate"],
@@ -19,7 +77,7 @@ export const desktopService: DesktopService = {
   GetDebounceSnapshot: bindings.GetDebounceSnapshot,
 	GetLightingSnapshot: bindings.GetLightingSnapshot,
   GetNormalSleepSnapshot: bindings.GetNormalSleepSnapshot,
-	GetRemapSnapshot: bindings.GetRemapSnapshot,
+	GetRemapSnapshot: async () => localRemap(await bindings.GetRemapSnapshot()),
   RefreshStatus: bindings.RefreshStatus,
   RefreshInventory: bindings.RefreshInventory,
   SelectDevice: bindings.SelectDevice,
@@ -34,9 +92,16 @@ export const desktopService: DesktopService = {
   StageNormalSleep: bindings.StageNormalSleep,
   ApplyNormalSleep: bindings.ApplyNormalSleep,
   RetryNormalSleepPersistence: bindings.RetryNormalSleepPersistence,
-	ApplyRemap: explicitApplyBindings.ApplyRemap,
+  StageMacroAssignment: async (id, button, repeat) => localRemap(await bindings.StageMacroAssignment(id, button, repeat)),
+  StageRemap: async (config) => localRemap(await bindings.StageRemap(bindingRemap(config))),
+  ClearButtonMacroAssignment: async (button: number) =>
+    localRemap(await bindings.ClearButtonMacroAssignment(button)),
+  ClearMacroAssignment: async () => localRemap(await bindings.ClearMacroAssignment()),
+  DiscardRemap: async () => localRemap(await bindings.DiscardRemap()),
+  GetMacroAssignmentSnapshot: async () => localRemap(await bindings.GetMacroAssignmentSnapshot()),
+  ApplyRemap: async (config) => localRemap(await bindings.ApplyRemap(bindingRemap(config))),
 	ApplyLighting: bindings.ApplyLighting,
-	RetryRemapPersistence: bindings.RetryRemapPersistence,
+	RetryRemapPersistence: async () => localRemap(await bindings.RetryRemapPersistence()),
   RetryPollingPersistence: bindings.RetryPollingPersistence,
   ResetToFactory: explicitApplyBindings.ResetToFactory,
   RetryPersistence: bindings.RetryPersistence,
