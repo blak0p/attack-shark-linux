@@ -131,7 +131,9 @@ const service = {
             : event.action === "up"))) throw new Error("Invalid macro assignment");
     record("StageMacroAssignment");
     const current = remapSnapshot();
-    remaps.set(selected.ID.Serial, { ...current, MacroPending: { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: structuredClone(macro.events) }, Revision: current.Revision + 1, Error: { Code: "" } });
+    const draft = { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: structuredClone(macro.events) };
+    const drafts = { ...(current.MacroDrafts ?? {}), [button]: draft };
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: draft, MacroDrafts: drafts, Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();
   },
   StageRemap: async (config: RemapConfig) => {
@@ -140,16 +142,26 @@ const service = {
     remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();
   },
+  ClearButtonMacroAssignment: async (button: number) => {
+    record("ClearButtonMacroAssignment");
+    const current = remapSnapshot();
+    const drafts = { ...(current.MacroDrafts ?? {}) };
+    delete drafts[button];
+    const remaining = Object.values(drafts);
+    const macroPending = remaining.length > 0 ? remaining[0] : null;
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: macroPending, MacroDrafts: drafts, Revision: current.Revision + 1, Error: { Code: "" } });
+    return remapSnapshot();
+  },
   ClearMacroAssignment: async () => {
     record("ClearMacroAssignment");
     const current = remapSnapshot();
-    remaps.set(selected.ID.Serial, { ...current, MacroPending: null, Revision: current.Revision + 1, Error: { Code: "" } });
+    remaps.set(selected.ID.Serial, { ...current, MacroPending: null, MacroDrafts: {}, Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();
   },
   DiscardRemap: async () => {
     record("DiscardRemap");
     const current = remapSnapshot();
-    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(current.Applied), MacroPending: null, Revision: current.Revision + 1, Error: { Code: "" } });
+    remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(current.Applied), MacroPending: null, MacroDrafts: {}, Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();
   },
   ApplyRemap: async (config: RemapConfig) => {
@@ -157,19 +169,25 @@ const service = {
     calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
     const current = remapSnapshot();
     const draft = current.MacroPending;
-    const libraryCurrent = !draft || JSON.stringify(macros.get(draft.ID)) === JSON.stringify({ id: draft.ID, name: draft.Name, events: draft.Events });
+    const drafts = current.MacroDrafts ?? (draft ? { [draft.Button]: draft } : {});
+    const allDrafts = Object.values(drafts);
+    const libraryCurrent = allDrafts.every((d) =>
+      JSON.stringify(macros.get(d.ID)) === JSON.stringify({ id: d.ID, name: d.Name, events: d.Events })
+    );
     if (!libraryCurrent) {
       remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Firmware: "failed", Persistence: "", Error: { Code: "invalid_configuration" } });
       return remapSnapshot();
     }
     const failed = failNext;
     failNext = false;
+    const hasMacros = allDrafts.length > 0;
     remaps.set(selected.ID.Serial, {
       ...current, Pending: structuredClone(config), Revision: current.Revision + 1,
       Applied: failed ? current.Applied : structuredClone(config),
       MacroApplied: failed ? current.MacroApplied : structuredClone(draft ?? null),
-      MacroProgress: draft ? { Assignment: 2, Upload: failed ? 1 : 2 } : current.MacroProgress,
-      Firmware: failed ? "failed" : "success", Persistence: failed ? "" : draft ? "not_supported" : "success",
+      MacroAppliedDrafts: failed ? current.MacroAppliedDrafts : structuredClone(drafts),
+      MacroProgress: hasMacros ? { Assignment: 2, Upload: failed ? 1 : 2 } : current.MacroProgress,
+      Firmware: failed ? "failed" : "success", Persistence: failed ? "" : hasMacros ? "not_supported" : "success",
       Error: { Code: failed ? "apply_failed" : "" },
     });
     return remapSnapshot();

@@ -457,6 +457,7 @@ export function App({ service }: { service: DesktopService }) {
             assignmentScope={assignmentScope}
             assignmentAvailable={assignmentAvailable}
             onStageMacro={actions.stageMacroAssignment}
+            onClearMacro={actions.clearButtonMacroAssignment}
             error={model.remapError}
             onStage={actions.stageRemap}
             onApply={actions.applyRemap}

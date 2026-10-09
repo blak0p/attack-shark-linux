@@ -34,6 +34,7 @@ export function GnomeSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const categories = options.reduce<Category[]>((result, option) => {
     const name = option.group ?? "Basic";
@@ -48,6 +49,7 @@ export function GnomeSelect({
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [activeActionIndex, setActiveActionIndex] = useState(0);
   const [submenuFlipped, setSubmenuFlipped] = useState(false);
+  const [submenuTop, setSubmenuTop] = useState(0);
   const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
   const submenuCategory = categories.find((category) => category.name === openCategory);
 
@@ -98,6 +100,13 @@ export function GnomeSelect({
     if (!openCategory || !categoryMenuRef.current) return;
     const { right } = categoryMenuRef.current.getBoundingClientRect();
     setSubmenuFlipped(right + 224 > window.innerWidth);
+    if (submenuRef.current) {
+      const height = submenuRef.current.getBoundingClientRect().height;
+      // The submenu is taller than its category popup. Clamp it independently,
+      // retaining the existing adjacent placement and horizontal flipping.
+      const top = Math.max(8, Math.min(popupPosition.top, window.innerHeight - height - 8));
+      setSubmenuTop(top - popupPosition.top);
+    }
   }, [openCategory, popupPosition]);
 
   const openSelector = () => {
@@ -219,7 +228,8 @@ export function GnomeSelect({
             </div>
           ))}
           {submenuCategory && (
-            <div className={`gnome-select-submenu ${submenuFlipped ? "flipped" : ""}`} role="menu" aria-label={`${submenuCategory.name} actions`}>
+            <div ref={submenuRef} className={`gnome-select-submenu ${submenuFlipped ? "flipped" : ""}`} role="menu" aria-label={`${submenuCategory.name} actions`}
+              style={{ top: submenuTop, maxHeight: "min(220px, calc(100vh - 16px))" }}>
               {submenuCategory.options.map((option, index) => (
                 <div
                   key={option.value}

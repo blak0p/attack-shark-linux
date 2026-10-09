@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
@@ -26,11 +26,11 @@ it("shares one guarded saved library between manager and remapping", async () =>
     })),
   });
   render(<App service={service} />);
-  await waitFor(() => expect(screen.getByLabelText("Saved macro")).toHaveTextContent("Saved click"));
+  expect(await screen.findByRole("button", { name: "Button 1 action" })).toBeInTheDocument();
   expect(service.ListMacros).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("link", { name: "Button remapping", exact: true }));
-  fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "saved" } });
-  fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Button 1 action" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
+  fireEvent.click(within(screen.getByRole("menu", { name: "Macro actions" })).getByRole("menuitem", { name: "Saved click" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
   expect(service.ApplyRemap).not.toHaveBeenCalled();
 });
@@ -58,10 +58,11 @@ it("renders clean guidance text in macro manager and retains dirty draft when na
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
   fireEvent.click(screen.getByRole("link", { name: "Button remapping" }));
   expect(screen.getByRole("region", { name: "Button remapping" })).toHaveAttribute("data-active", "true");
-  fireEvent.change(screen.getByLabelText("Saved macro"), { target: { value: "shortcut" } });
-  fireEvent.change(screen.getByLabelText("Macro target button"), { target: { value: "7" } });
-  fireEvent.change(screen.getByLabelText("Fixed repetitions"), { target: { value: "255" } });
-  fireEvent.click(screen.getByRole("button", { name: "Stage macro assignment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Button 7 action" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Macro" }));
+  fireEvent.click(within(screen.getByRole("menu", { name: "Macro actions" })).getByRole("menuitem", { name: "Saved two clicks" }));
+  await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 1));
+  fireEvent.change(screen.getByLabelText("Button 7 repetitions"), { target: { value: "255" } });
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 255));
   fireEvent.click(screen.getByRole("button", { name: "Apply remap" }));
   await waitFor(() => expect(service.ApplyRemap).toHaveBeenCalledTimes(1));
@@ -82,7 +83,7 @@ it.each(["device_disconnected", "permission_denied"])("keeps saved and unsaved d
   expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
   expect(screen.getByLabelText("Macro name")).toHaveValue("Offline dirty");
   fireEvent.click(screen.getByRole("link", { name: "Button remapping", exact: true }));
-  expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Apply remap" })).toBeDisabled();
   expect(service.StageMacroAssignment).not.toHaveBeenCalled();
   expect(service.UpdateMacro).not.toHaveBeenCalled();
 });
@@ -98,7 +99,6 @@ it("does not use an obsolete async macro read after switching services", async (
   await act(async () => read.resolve(shortcutMacro));
   await waitFor(() => expect(next.ListMacros).toHaveBeenCalledTimes(1));
   expect(screen.queryByLabelText("Macro name")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Saved macro")).toHaveValue("");
   expect(next.StageMacroAssignment).not.toHaveBeenCalled();
 });
 
@@ -157,8 +157,18 @@ const debounceSnapshot = (overrides = {}) => ({ Desired: 8, Applied: 8, Persiste
   ...overrides,
 });
 
+const defaultRemapButtons = [
+  { Button: 1, Action: "left" as const, PreservedDefault: "" as const },
+  { Button: 2, Action: "right" as const, PreservedDefault: "" as const },
+  { Button: 3, Action: "middle" as const, PreservedDefault: "" as const },
+  { Button: 4, Action: "forward" as const, PreservedDefault: "" as const },
+  { Button: 5, Action: "backward" as const, PreservedDefault: "" as const },
+  { Button: 6, Action: null, PreservedDefault: "DPI+" as const },
+  { Button: 7, Action: null, PreservedDefault: "DPI-" as const },
+];
+
 const remapSnapshot = (overrides: Partial<RemapSnapshot> = {}): RemapSnapshot => ({
-  Pending: { Buttons: [] }, Applied: { Buttons: [] }, Factory: { Buttons: [] },
+  Pending: { Buttons: defaultRemapButtons }, Applied: { Buttons: defaultRemapButtons }, Factory: { Buttons: defaultRemapButtons },
   Actions: ["off", "left", "right", "middle", "forward", "backward", "double_click", "fire"], Revision: 0, Firmware: "", Persistence: "", RetryAvailable: false, Error: { Code: "" },
   ...overrides,
 });
@@ -719,7 +729,6 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.queryByText(/ambiguous identity/)).not.toBeInTheDocument();
 	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: /^Stage \d/ }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
-    expect(screen.getByRole("button", { name: "Stage macro assignment" })).toBeDisabled();
     expect(screen.getAllByRole("slider").every((slider) => !(slider as HTMLInputElement).disabled)).toBe(true);
   });
 

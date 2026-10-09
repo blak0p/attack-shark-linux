@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
   ListMacros: vi.fn(), CreateMacro: vi.fn(), ReadMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
-  StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearMacroAssignment: vi.fn(),
-  DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
+  StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearButtonMacroAssignment: vi.fn(),
+  ClearMacroAssignment: vi.fn(), DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
   GetApplicationVersion: vi.fn(),
   CheckForUpdate: vi.fn(),
   ApplyVerifiedUpdate: vi.fn(),
@@ -52,6 +52,7 @@ describe("desktopService", () => {
       Firmware: "failed", Persistence: "not_supported", Error: { Code: "apply_failed" } };
     bindings.StageMacroAssignment.mockResolvedValue(snapshot);
     bindings.StageRemap.mockResolvedValue(snapshot);
+    bindings.ClearButtonMacroAssignment.mockResolvedValue(snapshot);
     bindings.ClearMacroAssignment.mockResolvedValue(snapshot);
     bindings.DiscardRemap.mockResolvedValue(snapshot);
     bindings.GetMacroAssignmentSnapshot.mockResolvedValue(snapshot);
@@ -63,6 +64,8 @@ describe("desktopService", () => {
       expect(await desktopService[name]()).toEqual(snapshot);
       expect(bindings[name]).toHaveBeenCalledWith();
     }
+    expect(await desktopService.ClearButtonMacroAssignment(6)).toEqual(snapshot);
+    expect(bindings.ClearButtonMacroAssignment).toHaveBeenCalledWith(6);
     const failure = new Error("native service unavailable");
     bindings.StageMacroAssignment.mockRejectedValueOnce(failure);
     await expect(desktopService.StageMacroAssignment("stable", 6, 1)).rejects.toBe(failure);
@@ -82,6 +85,21 @@ describe("desktopService", () => {
     bindings.ApplyRemap.mockRejectedValueOnce(failure);
     await expect(desktopService.ApplyRemap(config)).rejects.toBe(failure);
   });
+  it("converts every pending and applied map value without dropping events or other buttons", async () => {
+    const events = [{ type: "mouse_right", action: "down", delay_ms: 0 },
+      { type: "mouse_right", action: "up", delay_ms: 0 }];
+    const six = { ID: "six", Name: "Six", Button: 6, Repeat: 2, Events: events };
+    const seven = { ID: "seven", Name: "Seven", Button: 7, Repeat: 255, Events: events };
+    const snapshot = { MacroPending: seven, MacroApplied: six,
+      MacroDrafts: { 6: six, 7: seven }, MacroAppliedDrafts: { 6: six } };
+    bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce(snapshot);
+    const result = await desktopService.GetMacroAssignmentSnapshot();
+    expect(result).toEqual(snapshot);
+    expect(result.MacroDrafts?.[6]).not.toBe(six);
+    expect(result.MacroDrafts?.[7]?.Events).not.toBe(events);
+    expect(result.MacroAppliedDrafts?.[6]).not.toBe(six);
+  });
+
   it("maps local macro CRUD to generated APIs with lowercase JSON fields and no device apply", async () => {
     const events = [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 15 }];
     const macro = { id: "stable", name: "Clicks", events };

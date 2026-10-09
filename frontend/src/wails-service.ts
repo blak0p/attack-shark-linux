@@ -39,8 +39,21 @@ const localDraft = (draft: GeneratedRemapSnapshot["MacroPending"] | undefined): 
   ID: draft.ID, Name: draft.Name, Button: draft.Button, Repeat: draft.Repeat,
   Events: localMacro({ id: draft.ID, name: draft.Name, events: draft.Events }).events,
 });
+const localDraftMap = (drafts: GeneratedRemapSnapshot["MacroDrafts"] | undefined): Record<number, MacroDraft> | undefined => {
+  if (!drafts) return undefined;
+  const res: Record<number, MacroDraft> = {};
+  for (const [k, v] of Object.entries(drafts)) {
+    const d = localDraft(v);
+    if (d) res[Number(k)] = d;
+  }
+  return res;
+};
 const localRemap = (snapshot: GeneratedRemapSnapshot): RemapSnapshot => ({
-  ...snapshot, MacroPending: localDraft(snapshot.MacroPending), MacroApplied: localDraft(snapshot.MacroApplied),
+  ...snapshot,
+  MacroPending: localDraft(snapshot.MacroPending),
+  MacroApplied: localDraft(snapshot.MacroApplied),
+  MacroDrafts: localDraftMap(snapshot.MacroDrafts),
+  MacroAppliedDrafts: localDraftMap(snapshot.MacroAppliedDrafts),
 });
 
 type ExplicitApplyBindings = {
@@ -81,6 +94,8 @@ export const desktopService: DesktopService = {
   RetryNormalSleepPersistence: bindings.RetryNormalSleepPersistence,
   StageMacroAssignment: async (id, button, repeat) => localRemap(await bindings.StageMacroAssignment(id, button, repeat)),
   StageRemap: async (config) => localRemap(await bindings.StageRemap(bindingRemap(config))),
+  ClearButtonMacroAssignment: async (button: number) =>
+    localRemap(await bindings.ClearButtonMacroAssignment(button)),
   ClearMacroAssignment: async () => localRemap(await bindings.ClearMacroAssignment()),
   DiscardRemap: async () => localRemap(await bindings.DiscardRemap()),
   GetMacroAssignmentSnapshot: async () => localRemap(await bindings.GetMacroAssignmentSnapshot()),

@@ -153,6 +153,15 @@ export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null>
 }
 
 /**
+ * ClearButtonMacroAssignment clears a specific button's staged macro assignment.
+ */
+export function ClearButtonMacroAssignment(button: number): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(3007927288, button).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
  * ClearMacroAssignment returns to the ordinary remap draft, never a device write.
  */
 export function ClearMacroAssignment(): $CancellablePromise<$models.RemapSnapshot> {

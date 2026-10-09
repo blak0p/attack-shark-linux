@@ -1,4 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function assignMacro(page: Page, button: number, name: string, repeat = 1) {
+  await page.getByRole("button", { name: `Button ${button} action`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Macro", exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+  await expect(page.getByLabel(`Button ${button} repetitions`, { exact: true })).toBeVisible();
+  if (repeat !== 1) await page.getByLabel(`Button ${button} repetitions`, { exact: true }).fill(String(repeat));
+}
 import type { Macro } from "../src/desktop-contract";
 
 declare global {
@@ -23,15 +31,12 @@ for (const width of [1280, 620]) {
     const saved = await page.evaluate(() => window.__macroTest.library()[0]);
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Button remapping", exact: true, level: 1 })).toBeVisible();
-    await page.getByLabel("Saved macro", { exact: true }).selectOption(saved.id);
     expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
-    await page.getByLabel("Macro target button").selectOption("6");
-    await page.getByLabel("Fixed repetitions").fill("2");
-    await page.getByRole("button", { name: "Stage macro assignment" }).click();
+    await assignMacro(page, 6, saved.name, 2);
     await expect(page.getByLabel("Remap assignment summary")).toContainText("Saved shortcut × 2");
     const staged = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending);
     expect(staged).toMatchObject({ ID: saved.id, Name: saved.name, Events: saved.events, Button: 6, Repeat: 2 });
-    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment"]);
+    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment", "StageMacroAssignment"]);
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
     expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
@@ -53,16 +58,13 @@ test("saved macro stages one device overlay, discards locally and reports confir
   await page.getByRole("button", { name: "Button 4 action" }).click();
   await page.getByRole("menuitem", { name: "Basic", exact: true }).click();
   await page.getByRole("menuitem", { name: "Fire", exact: true }).click();
-  await page.getByLabel("Saved macro", { exact: true }).selectOption({ label: "Left pair" });
-  await page.getByLabel("Macro target button").selectOption("7");
-  await page.getByLabel("Fixed repetitions").fill("255");
-  await page.getByRole("button", { name: "Stage macro assignment" }).click();
+  await assignMacro(page, 7, "Left pair", 255);
   await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 7: Left pair × 255");
   await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 4: Fire");
   expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation === "ApplyRemap"))).toEqual([]);
   await page.getByRole("button", { name: "Discard remap" }).click();
   await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 7: DPI-");
-  await page.getByRole("button", { name: "Stage macro assignment" }).click();
+  await assignMacro(page, 7, "Left pair", 255);
   await page.getByRole("combobox", { name: "Mouse device" }).selectOption("beta");
   await expect(page.getByLabel("Remap assignment summary")).not.toContainText("Left pair");
   await page.getByRole("combobox", { name: "Mouse device" }).selectOption("alpha");
@@ -74,11 +76,8 @@ test("saved macro stages one device overlay, discards locally and reports confir
   expect(applied?.Button).toBe(7);
   expect(applied?.Events).toEqual(["mouse_back", "mouse_forward"].flatMap((type) =>
     ["down", "up"].map((action) => ({ type, action, delay_ms: 0 }))));
-  await page.getByLabel("Saved macro", { exact: true }).selectOption({ label: "Left pair" });
-  await page.getByLabel("Fixed repetitions").fill("255");
-  await page.getByLabel("Macro target button").selectOption("6");
-  await page.getByRole("button", { name: "Stage macro assignment" }).click();
-  await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 7: DPI-");
+  await assignMacro(page, 6, "Left pair", 255);
+  await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 7: Left pair × 255");
   await page.evaluate(() => window.__routingTest.failNextApply());
   await page.getByRole("button", { name: "Apply remap" }).click();
   await expect(page.getByLabel("Button remapping status")).toContainText("partial or unknown");
@@ -87,7 +86,11 @@ test("saved macro stages one device overlay, discards locally and reports confir
   await page.getByRole("menuitem", { name: "Basic", exact: true }).click();
   await page.getByRole("menuitem", { name: "Fire", exact: true }).click();
   await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 6: Fire");
-  expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending)).toBeNull();
+  expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroDrafts?.[6])).toBeUndefined();
+  expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroDrafts?.[7]?.Name)).toBe("Left pair");
+  await page.getByRole("button", { name: "Button 7 action" }).click();
+  await page.getByRole("menuitem", { name: "Basic", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Fire", exact: true }).click();
   await page.getByRole("button", { name: "Apply remap" }).click();
   await expect(page.getByLabel("Button remapping status")).toContainText("Button remapping applied");
   await expect(page.getByLabel("Button remapping status")).not.toContainText("macro transport confirmed");
@@ -115,9 +118,7 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
     expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation !== "SelectDevice"))).toEqual([]);
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
-    await page.getByLabel("Saved macro", { exact: true }).selectOption({ label: type });
-    await page.getByLabel("Macro target button").selectOption("6");
-    await page.getByRole("button", { name: "Stage macro assignment" }).click();
+    await assignMacro(page, 6, type);
     const frozen = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending);
     expect(frozen?.Button).toBe(6);
     expect(frozen?.Events.map((event) => event.type)).toEqual([type, type]);
@@ -130,7 +131,7 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("not confirmed");
     expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroApplied)).toBeNull();
-    await page.getByRole("button", { name: "Stage macro assignment" }).click();
+    await assignMacro(page, 6, "Changed saved name");
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
     expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroApplied?.Name)).toBe("Changed saved name");

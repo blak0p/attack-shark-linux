@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import type { Macro, MacroDraft, MacroProgress } from "../../desktop-contract";
-import { GnomeSelect } from "./GnomeSelect";
+import { useEffect, useState } from "react";
+import type { Macro, MacroDraft, MacroProgress, RemapAction as Action } from "../../desktop-contract";
+import { GnomeSelect, type GnomeSelectOption } from "./GnomeSelect";
 
-import type { RemapAction as Action } from "../../desktop-contract";
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
 type Remap = {
   Pending: { Buttons: Button[] };
@@ -12,6 +11,8 @@ type Remap = {
   Error: { Code: string };
   MacroPending?: MacroDraft | null;
   MacroApplied?: MacroDraft | null;
+  MacroDrafts?: Record<number, MacroDraft>;
+  MacroAppliedDrafts?: Record<number, MacroDraft>;
   MacroProgress?: MacroProgress;
 };
 
@@ -60,6 +61,45 @@ const isMultimedia = (action: Action) => ["media_player", "play_pause", "stop", 
 const isMouseControls = (action: Action) => ["scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"].includes(action);
 const isBrowser = (action: Action) => ["browser_calculator", "browser_email", "browser_forward", "browser_backward", "browser_stop", "browser_my_computer", "browser_refresh", "browser_home", "browser_search"].includes(action);
 
+const getButtonMacroDraft = (remap: Remap, buttonNum: number): MacroDraft | null => {
+  if (remap.MacroDrafts !== undefined) {
+    return remap.MacroDrafts[buttonNum] ?? null;
+  }
+  if (remap.MacroPending && remap.MacroPending.Button === buttonNum) {
+    return remap.MacroPending;
+  }
+  return null;
+};
+
+const getAllStagedDrafts = (remap: Remap): MacroDraft[] => {
+  if (remap.MacroDrafts && Object.keys(remap.MacroDrafts).length > 0) {
+    return Object.values(remap.MacroDrafts);
+  }
+  if (remap.MacroPending) {
+    return [remap.MacroPending];
+  }
+  return [];
+};
+
+const getAllAppliedDrafts = (remap: Remap): MacroDraft[] => {
+  if (remap.MacroAppliedDrafts && Object.keys(remap.MacroAppliedDrafts).length > 0) {
+    return Object.values(remap.MacroAppliedDrafts);
+  }
+  if (remap.MacroApplied) {
+    return [remap.MacroApplied];
+  }
+  return [];
+};
+
+const normalizeDrafts = (draftsMap?: Record<number, MacroDraft>, single?: MacroDraft | null) => {
+  if (draftsMap && Object.keys(draftsMap).length > 0) {
+    const keys = Object.keys(draftsMap).map(Number).sort((a, b) => a - b);
+    return keys.map((k) => draftsMap[k]);
+  }
+  if (single) return [single];
+  return [];
+};
+
 export function ButtonRemapPanel({
   remap,
   ready,
@@ -70,57 +110,90 @@ export function ButtonRemapPanel({
   macros = [],
   libraryReady = true,
   onStageMacro,
+  onClearMacro,
   error = "",
-  assignmentIntent,
-  assignmentScope,
+  assignmentIntent: _assignmentIntent,
+  assignmentScope: _assignmentScope,
   assignmentAvailable = ready,
-  onConsumeIntent,
+  onConsumeIntent: _onConsumeIntent,
 }: {
   remap: Remap;
   ready: boolean;
-  assignmentIntent?: { token: number; id: string };
-  assignmentScope?: unknown;
-  assignmentAvailable?: boolean;
-  onConsumeIntent?(token: number): void;
   macros?: Macro[];
   libraryReady?: boolean;
   onStageMacro?(id: string, button: number, repeat: number): void;
+  onClearMacro?(button: number): void;
   error?: string;
   onStage(button: number, action: Action): void;
   onApply?(): void;
   onDiscard?(): void;
   feedbackFor?: (code: string) => string;
+  assignmentIntent?: { token: number; id: string };
+  assignmentScope?: unknown;
+  assignmentAvailable?: boolean;
+  onConsumeIntent?(token: number): void;
 }) {
-  const [target, setTarget] = useState(1);
-  const [selection, setSelection] = useState({ id: "", scope: assignmentScope });
-  const macroID = selection.scope === assignmentScope ? selection.id : "";
-  const setMacroID = (id: string) => setSelection({ id, scope: assignmentScope });
-  const consumedToken = useRef(0);
-  // Invalidate missing IDs permanently: a later reload must not resurrect them.
+  const isAvailable = ready && assignmentAvailable;
+  const [repeats, setRepeats] = useState<Record<number, string>>({});
+
   useEffect(() => {
-    if (selection.scope !== assignmentScope || !assignmentAvailable || !libraryReady || !macros.some((macro) => macro.id === selection.id)) {
-      if (selection.id) setSelection({ id: "", scope: assignmentScope });
+    const nextRepeats: Record<number, string> = {};
+    for (const button of remap.Pending.Buttons) {
+      const draft = getButtonMacroDraft(remap, button.Button);
+      if (draft) {
+        nextRepeats[button.Button] = String(draft.Repeat);
+      }
     }
-    if (!assignmentIntent || assignmentIntent.token <= consumedToken.current) return;
-    consumedToken.current = assignmentIntent.token;
-    const saved = macros.find((macro) => macro.id === assignmentIntent.id);
-    if (assignmentAvailable && libraryReady && saved && compatible(saved)) {
-      setSelection({ id: saved.id, scope: assignmentScope });
+    setRepeats(nextRepeats);
+  }, [remap]);
+
+  const assignmentLabel = (button: Button) => {
+    const draft = getButtonMacroDraft(remap, button.Button);
+    if (draft) {
+      return `${draft.Name} × ${draft.Repeat}`;
     }
-    onConsumeIntent?.(assignmentIntent.token);
-  }, [assignmentIntent, assignmentScope, assignmentAvailable, libraryReady, macros, selection, onConsumeIntent]);
-  const [repeat, setRepeat] = useState("1");
-  const selectedMacro = macros.find((macro) => macro.id === macroID);
-  const validRepeat = repeat.trim() !== "" && Number.isInteger(Number(repeat)) && Number(repeat) >= 1 && Number(repeat) <= 255;
-  const canStage = ready && assignmentAvailable && libraryReady && !!onStageMacro && !!selectedMacro && compatible(selectedMacro) && validRepeat;
-  const assignmentLabel = (button: Button) => remap.MacroPending?.Button === button.Button
-    ? `${remap.MacroPending.Name} × ${remap.MacroPending.Repeat}`
-    : button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
-  const draftMatchesApplied = JSON.stringify(remap.MacroPending ?? null) === JSON.stringify(remap.MacroApplied ?? null) &&
+    return button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
+  };
+
+  const compatibleMacros = libraryReady && isAvailable ? macros.filter(compatible) : [];
+  const baseMacroOptions: GnomeSelectOption[] = compatibleMacros.length > 0
+    ? compatibleMacros.map((macro) => ({
+        value: `macro:${macro.id}`,
+        label: macro.name,
+        group: "Macro",
+      }))
+    : [{ value: "no-macro", label: "No saved macros", group: "Macro", disabled: true }];
+
+  const optionsForButton = (button: Button) => {
+    const actionOptions: GnomeSelectOption[] = remap.Actions.map((action) => ({
+      value: action,
+      label: labelFor(action),
+      group: isBrowser(action) ? "Browser" : isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
+      disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
+    }));
+
+    const draft = getButtonMacroDraft(remap, button.Button);
+    const macroOptions = [...baseMacroOptions];
+    if (draft && !macroOptions.some((opt) => opt.value === `macro:${draft.ID}`)) {
+      macroOptions.unshift({
+        value: `macro:${draft.ID}`,
+        label: draft.Name,
+        group: "Macro",
+      });
+    }
+
+    return [...actionOptions, ...macroOptions];
+  };
+
+  const stagedDrafts = getAllStagedDrafts(remap);
+  const appliedDrafts = getAllAppliedDrafts(remap);
+  const macroTransport = stagedDrafts.length > 0 || appliedDrafts.length > 0;
+  const draftMatchesApplied = JSON.stringify(normalizeDrafts(remap.MacroDrafts, remap.MacroPending)) ===
+    JSON.stringify(normalizeDrafts(remap.MacroAppliedDrafts, remap.MacroApplied)) &&
     JSON.stringify(remap.Pending) === JSON.stringify(remap.Applied);
-  const macroTransport = !!(remap.MacroPending || remap.MacroApplied);
-  // Native ordinary apply retains historical macro progress, not macro confirmation.
+
   const residualMacroProgress = !macroTransport && !!(remap.MacroProgress?.Assignment || remap.MacroProgress?.Upload);
+
   return (
     <article
       id="remapping-card"
@@ -128,7 +201,7 @@ export function ButtonRemapPanel({
       aria-labelledby="button-remap-title"
       tabIndex={0}
       onKeyDown={(event) => {
-        if (!ready || event.target !== event.currentTarget) return;
+        if (!isAvailable || event.target !== event.currentTarget) return;
         if (event.key === "Enter") {
           event.preventDefault();
           onApply();
@@ -142,57 +215,78 @@ export function ButtonRemapPanel({
       <h2 id="button-remap-title">Button remapping</h2>
       <p className="hint">Review the complete assignment below, then apply or discard it.</p>
 
-      <fieldset disabled={!ready || !assignmentAvailable || !libraryReady} onKeyDown={(event) => event.stopPropagation()}>
-        <legend>Saved macro assignment</legend>
-        <label>Macro target button
-          <select aria-label="Macro target button" className="select" value={target} onChange={(event) => setTarget(Number(event.target.value))}>
-            {Array.from({ length: 7 }, (_, index) => <option key={index + 1} value={index + 1}>Button {index + 1}</option>)}
-          </select>
-        </label>
-        <label>Saved macro
-          <select aria-label="Saved macro" className="select" value={selectedMacro ? macroID : ""} onChange={(event) => setMacroID(event.target.value)}>
-            <option value="">Choose a saved macro</option>
-            {macros.map((macro) => <option key={macro.id} value={macro.id}>{macro.name}{compatible(macro) ? "" : " (incompatible)"}</option>)}
-          </select>
-        </label>
-        <label>Fixed repetitions
-          <input className="input" type="number" min={1} max={255} step={1} value={repeat} onChange={(event) => setRepeat(event.target.value)} />
-        </label>
-        <button type="button" className="button" disabled={!canStage} onClick={() => { if (canStage) onStageMacro!(macroID, target, Number(repeat)); }}>Stage macro assignment</button>
-      </fieldset>
-      <p className="hint">Save locally in Macros, then stage here and use Apply remap. Backend admission: one or two complete ordered down/up clicks using left/right/middle/back/forward, with zero delay on every event and fixed repetitions 1–255. The target button is independent of the macro actions. One macro overlay per device; staging another replaces it. Playback and device persistence remain unverified.</p>
       {!libraryReady && <p className="hint">Saved library unavailable or loading. Open Macros to retry.</p>}
       {error && <p role="alert">{error}</p>}
 
-      {remap.Pending.Buttons.map((button) => (
-        <div className="binding" key={button.Button}>
-          <div>
-            <b>
-              Button {button.Button}
-              {button.PreservedDefault ? ` (${button.PreservedDefault})` : ""}
-            </b>
-            <span>
-              {assignmentLabel(button)}
-            </span>
+      {remap.Pending.Buttons.map((button) => {
+        const draft = getButtonMacroDraft(remap, button.Button);
+        const assignedLabel = assignmentLabel(button);
+        const selectValue = draft ? `macro:${draft.ID}` : (button.Action ?? "");
+
+        return (
+          <div className="binding" key={button.Button}>
+            <div>
+              <b>
+                Button {button.Button}
+                {button.PreservedDefault ? ` (${button.PreservedDefault})` : ""}
+              </b>
+              <span>
+                {assignedLabel}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+              {draft && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span className="hint" style={{ fontSize: "0.85rem" }}>Reps</span>
+                  <input
+                    aria-label={`Button ${button.Button} repetitions`}
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={255}
+                    step={1}
+                    disabled={!isAvailable}
+                    style={{ width: "56px", padding: "4px 6px" }}
+                    value={repeats[button.Button] ?? String(draft.Repeat)}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setRepeats((prev) => ({ ...prev, [button.Button]: val }));
+                      const num = Number(val);
+                      if (val.trim() !== "" && Number.isInteger(num) && num >= 1 && num <= 255) {
+                        onStageMacro?.(draft.ID, button.Button, num);
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              <GnomeSelect
+                aria-label={`Button ${button.Button} action`}
+                disabled={!isAvailable}
+                value={selectValue}
+                placeholder={button.PreservedDefault || "Default"}
+                options={optionsForButton(button)}
+                onChange={(val) => {
+                  if (val.startsWith("macro:")) {
+                    const macroId = val.slice("macro:".length);
+                    const repStr = repeats[button.Button] ?? String(draft?.Repeat ?? 1);
+                    const repNum = Number(repStr);
+                    const currentRepeat = Number.isInteger(repNum) && repNum >= 1 && repNum <= 255 ? repNum : 1;
+                    onStageMacro?.(macroId, button.Button, currentRepeat);
+                  } else {
+                    const action = val as Action;
+                    if (!(button.Button === 1 && (isMultimedia(action) || isMouseControls(action)))) {
+                      onStage(button.Button, action);
+                      if (draft) {
+                        onClearMacro?.(button.Button);
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
           </div>
-          <GnomeSelect
-            aria-label={`Button ${button.Button} action`}
-            disabled={!ready}
-            value={button.Action ?? ""}
-            placeholder={button.PreservedDefault || "Default"}
-            options={remap.Actions.map((action) => ({
-              value: action,
-              label: labelFor(action),
-              group: isBrowser(action) ? "Browser" : isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
-              disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
-            }))}
-            onChange={(val) => {
-              const action = val as Action;
-              if (!(button.Button === 1 && (isMultimedia(action) || isMouseControls(action)))) onStage(button.Button, action);
-            }}
-          />
-        </div>
-      ))}
+        );
+      })}
 
       <p aria-label="Remap assignment summary" className="hint" style={{ marginTop: 14 }}>
         {remap.Pending.Buttons.map(
@@ -204,10 +298,10 @@ export function ButtonRemapPanel({
       </p>
 
       <div className="actions">
-        <button type="button" className="button" disabled={!ready} onClick={onDiscard}>
+        <button type="button" className="button" disabled={!isAvailable} onClick={onDiscard}>
           Discard remap
         </button>
-        <button type="button" className="button primary" disabled={!ready} onClick={onApply}>
+        <button type="button" className="button primary" disabled={!isAvailable} onClick={onApply}>
           Apply remap
         </button>
       </div>
@@ -218,7 +312,7 @@ export function ButtonRemapPanel({
           ? remap.Firmware === "success"
             ? draftMatchesApplied
               ? "Remap and macro transport confirmed. Playback and device persistence unverified."
-              : remap.MacroApplied
+              : appliedDrafts.length > 0
                 ? "Last remap and macro transport confirmed; current draft not confirmed. Playback and device persistence unverified."
                 : "Macro assignment staged locally; current draft not confirmed. Playback and device persistence unverified."
             : remap.Firmware === "failed"

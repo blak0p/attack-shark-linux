@@ -224,18 +224,24 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       });
 		})),
     stageMacroAssignment: (id, button, repeat) => runRemap("stage", () => service.StageMacroAssignment(id, button, repeat)),
+    clearButtonMacroAssignment: (button: number) => runRemap("stage", () => {
+      if (!service.ClearButtonMacroAssignment) throw new Error("Per-button macro clearing is unavailable");
+      return service.ClearButtonMacroAssignment(button);
+    }),
     stageRemap: (button, action) => {
       const draft = remapValue.current;
       if (!draft) return;
       const pending = { ...draft.Pending, Buttons: draft.Pending.Buttons.map((item) => item.Button === button ? { ...item, Action: action, PreservedDefault: "" as const } : item) };
       runRemap("stage", async (current) => {
         const staged = await service.StageRemap(pending);
-        if (!current() || staged.Error.Code || staged.MacroPending?.Button !== button) return staged;
+        const hasMacro = staged.MacroDrafts ? Boolean(staged.MacroDrafts[button]) : staged.MacroPending?.Button === button;
+        if (!current() || staged.Error.Code || !hasMacro) return staged;
         // Retain the confirmed ordinary draft even if clearing the overlay rejects.
         remapValue.current = staged;
         setRemap(staged);
         // StageRemap preserves the overlay; explicitly clear it only on its target.
-        return service.ClearMacroAssignment();
+        if (!service.ClearButtonMacroAssignment) throw new Error("Per-button macro clearing is unavailable");
+        return service.ClearButtonMacroAssignment(button);
       });
     },
     applyRemap: () => { const draft = remapValue.current; if (draft) runRemap("apply", () => service.ApplyRemap(draft.Pending)); },

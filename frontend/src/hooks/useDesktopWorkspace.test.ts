@@ -49,6 +49,7 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
 		ApplyLighting: vi.fn().mockResolvedValue(lighting()),
     StageRemap: vi.fn().mockImplementation(async (Pending) => remap({ Pending })),
     StageMacroAssignment: vi.fn().mockResolvedValue(remap()),
+    ClearButtonMacroAssignment: vi.fn().mockResolvedValue(remap()),
     ClearMacroAssignment: vi.fn().mockResolvedValue(remap()),
     DiscardRemap: vi.fn().mockResolvedValue(remap()),
     GetMacroAssignmentSnapshot: vi.fn().mockResolvedValue(remap()),
@@ -75,6 +76,7 @@ function deferred<T>() {
 }
 
 const macro = { ID: "click", Name: "Click", Button: 6, Repeat: 2, Events: [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_left" as const, action: "up" as const, delay_ms: 0 }] };
+const macro7 = { ID: "click7", Name: "Click7", Button: 7, Repeat: 3, Events: [{ type: "mouse_right" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_right" as const, action: "up" as const, delay_ms: 0 }] };
 
 describe("remap lifecycle", () => {
   it("requires confirmed reselection after selection rejection and permits staging on recovery", async () => {
@@ -166,7 +168,7 @@ describe("remap lifecycle", () => {
     const harness = serviceFor({
       StageMacroAssignment: vi.fn().mockImplementation(async (ID, Button, Repeat) => (state = { ...state, MacroPending: { ...macro, ID, Button, Repeat } })),
       StageRemap: vi.fn().mockImplementation(async (Pending) => (state = { ...state, Pending })),
-      ClearMacroAssignment: vi.fn().mockImplementation(async () => (state = { ...state, MacroPending: null })),
+      ClearButtonMacroAssignment: vi.fn().mockImplementation(async () => (state = { ...state, MacroPending: null })),
     });
     const { result } = renderHook(() => useDesktopWorkspace(harness.service));
     await waitFor(() => expect(result.current.model.remap).toBeDefined());
@@ -177,8 +179,75 @@ describe("remap lifecycle", () => {
     await act(async () => result.current.actions.stageRemap(2, "off"));
     expect(harness.service.ClearMacroAssignment).not.toHaveBeenCalled();
     await act(async () => result.current.actions.stageRemap(7, "off"));
-    expect(harness.service.ClearMacroAssignment).toHaveBeenCalledOnce();
+    expect(harness.service.ClearButtonMacroAssignment).toHaveBeenCalledWith(7);
     expect(result.current.model.remap?.MacroPending).toBeNull();
+  });
+
+  it.each(["explicit clear", "ordinary action"])("%s preserves the other staged macro", async (operation) => {
+    let state = remap();
+    const harness = serviceFor({
+      StageMacroAssignment: vi.fn().mockImplementation(async (ID, Button, Repeat) => {
+        const draft = { ...(Button === 7 ? macro7 : macro), ID, Button, Repeat };
+        state = { ...state, MacroPending: draft, MacroDrafts: { ...(state.MacroDrafts ?? {}), [Button]: draft }, Revision: state.Revision + 1 };
+        return state;
+      }),
+      ClearButtonMacroAssignment: vi.fn().mockImplementation(async (button: number) => {
+        const drafts = { ...(state.MacroDrafts ?? {}) };
+        delete drafts[button];
+        const remaining = Object.values(drafts);
+        const macroPending = remaining.length > 0 ? remaining[0] : null;
+        state = { ...state, MacroPending: macroPending, MacroDrafts: drafts, Revision: state.Revision + 1 };
+        return state;
+      }),
+      StageRemap: vi.fn().mockImplementation(async (Pending) => (state = { ...state, Pending })),
+      ClearMacroAssignment: vi.fn().mockImplementation(async () => (state = { ...state, MacroPending: null, MacroDrafts: {} })),
+    });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.remap).toBeDefined());
+
+    // Stage a macro on button 6
+    await act(async () => result.current.actions.stageMacroAssignment("click", 6, 2));
+    expect(harness.service.StageMacroAssignment).toHaveBeenCalledWith("click", 6, 2);
+    expect(result.current.model.remap?.MacroPending?.Button).toBe(6);
+
+    // Stage a macro on button 7
+    await act(async () => result.current.actions.stageMacroAssignment("click7", 7, 3));
+    expect(harness.service.StageMacroAssignment).toHaveBeenCalledWith("click7", 7, 3);
+    expect(result.current.model.remap?.MacroPending?.Button).toBe(7);
+    expect(result.current.model.remap?.MacroDrafts?.[6]?.ID).toBe("click");
+    expect(result.current.model.remap?.MacroDrafts?.[7]?.ID).toBe("click7");
+
+    // Clear button 6's macro
+    await act(async () => operation === "explicit clear"
+      ? result.current.actions.clearButtonMacroAssignment!(6)
+      : result.current.actions.stageRemap(6, "off"));
+    expect(harness.service.ClearButtonMacroAssignment).toHaveBeenCalledWith(6);
+
+    // Button 7's macro should still be staged
+    expect(result.current.model.remap?.MacroDrafts?.[6]).toBeUndefined();
+    expect(result.current.model.remap?.MacroDrafts?.[7]?.ID).toBe("click7");
+    expect(result.current.model.remap?.MacroPending?.Button).toBe(7);
+
+    // Clearing button 6 should NOT have called ClearMacroAssignment (whole-map fallback)
+    expect(harness.service.ClearMacroAssignment).not.toHaveBeenCalled();
+  });
+
+  it.each(["explicit clear", "ordinary action"])("%s never falls back to clearing every macro when per-button clear is unavailable", async (operation) => {
+    let state = remap({ MacroPending: macro7, MacroDrafts: { 6: macro, 7: macro7 } });
+    const harness = serviceFor({
+      GetRemapSnapshot: vi.fn().mockResolvedValue(state),
+      ClearButtonMacroAssignment: undefined,
+      StageRemap: vi.fn().mockImplementation(async (Pending) => (state = { ...state, Pending })),
+      ClearMacroAssignment: vi.fn().mockImplementation(async () => (state = { ...state, MacroPending: null, MacroDrafts: {} })),
+    });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.remap).toBeDefined());
+    await act(async () => operation === "explicit clear"
+      ? result.current.actions.clearButtonMacroAssignment!(6)
+      : result.current.actions.stageRemap(6, "off"));
+    expect(harness.service.ClearMacroAssignment).not.toHaveBeenCalled();
+    expect(result.current.model.remap?.MacroDrafts?.[7]).toEqual(macro7);
+    expect(result.current.model.remapError).toBeTruthy();
   });
 
   it("blocks duplicate apply, retains drafts on rejection and recovers on discard", async () => {
@@ -205,7 +274,7 @@ describe("remap lifecycle", () => {
     const harness = serviceFor({
       GetRemapSnapshot: vi.fn().mockResolvedValue(remap({ MacroPending: macro })),
       StageRemap: vi.fn().mockImplementation(async (Pending) => remap({ Pending, MacroPending: macro })),
-      ClearMacroAssignment: vi.fn().mockRejectedValue(new Error("clear failed")),
+      ClearButtonMacroAssignment: vi.fn().mockRejectedValue(new Error("clear failed")),
     });
     const { result } = renderHook(() => useDesktopWorkspace(harness.service));
     await waitFor(() => expect(result.current.model.remap?.MacroPending).toEqual(macro));
