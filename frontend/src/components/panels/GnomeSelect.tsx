@@ -6,9 +6,11 @@ export type GnomeSelectOption = {
   label: string;
   group?: string;
   disabled?: boolean;
+  /** Render this option directly in the category menu, without a submenu. */
+  direct?: boolean;
 };
 
-type Category = { name: string; options: GnomeSelectOption[] };
+type Category = { name: string; options: GnomeSelectOption[]; direct?: GnomeSelectOption };
 
 export type GnomeSelectProps = {
   id?: string;
@@ -37,6 +39,10 @@ export function GnomeSelect({
   const submenuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const categories = options.reduce<Category[]>((result, option) => {
+    if (option.direct) {
+      result.push({ name: option.label, options: [], direct: option });
+      return result;
+    }
     const name = option.group ?? "Basic";
     const category = result.find((candidate) => candidate.name === name);
     if (category) category.options.push(option);
@@ -117,14 +123,21 @@ export function GnomeSelect({
 
   const revealCategory = (index: number) => {
     setActiveCategoryIndex(index);
-    setOpenCategory(categories[index]?.name ?? null);
+    const category = categories[index];
+    setOpenCategory(category?.direct ? null : category?.name ?? null);
     setActiveActionIndex(0);
+  };
+
+  const activateCategory = (index: number) => {
+    const category = categories[index];
+    if (category?.direct) handleSelect(category.direct);
+    else revealCategory(index);
   };
 
   const handleSelect = (option: GnomeSelectOption) => {
     if (option.disabled) return;
-    onChange(option.value);
     closeSelector();
+    onChange(option.value);
   };
 
   const moveCategory = (direction: number) => {
@@ -162,7 +175,7 @@ export function GnomeSelect({
     if (["ArrowRight", "Enter", " "].includes(event.key)) {
       event.preventDefault();
       if (openCategory && action) handleSelect(action);
-      else revealCategory(activeCategoryIndex);
+      else activateCategory(activeCategoryIndex);
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -217,14 +230,15 @@ export function GnomeSelect({
               key={category.name}
               id={`${menuId}-category-${index}`}
               role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={openCategory === category.name}
-              className={`gnome-select-option ${activeCategoryIndex === index ? "active" : ""}`}
-              onClick={() => revealCategory(index)}
+              aria-haspopup={category.direct ? undefined : "menu"}
+              aria-expanded={category.direct ? undefined : openCategory === category.name}
+              aria-disabled={category.direct?.disabled ?? false}
+              className={`gnome-select-option ${activeCategoryIndex === index ? "active" : ""} ${category.direct?.disabled ? "disabled" : ""}`}
+              onClick={() => activateCategory(index)}
               onMouseEnter={() => revealCategory(index)}
             >
               {category.name}
-              <span aria-hidden="true" className="gnome-select-submenu-arrow">▸</span>
+              {!category.direct && <span aria-hidden="true" className="gnome-select-submenu-arrow">▸</span>}
             </div>
           ))}
           {submenuCategory && (

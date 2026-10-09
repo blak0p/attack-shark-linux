@@ -17,6 +17,32 @@ afterEach(() => {
 });
 
 describe("GnomeSelect", () => {
+  it.each(["pointer", "keyboard"])("selects a direct category entry by %s without a submenu", (mode) => {
+    const onChange = vi.fn();
+    render(<GnomeSelect aria-label="Button action" value="left" options={[...options, { value: "macro", label: "Macro", direct: true }]} onChange={onChange} />);
+    const trigger = screen.getByRole("button", { name: "Button action" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const macro = screen.getByRole("menuitem", { name: "Macro" });
+    expect(macro).not.toHaveAttribute("aria-haspopup");
+    fireEvent.mouseEnter(macro);
+    expect(screen.queryByRole("menu", { name: "Macro actions" })).not.toBeInTheDocument();
+    if (mode === "pointer") fireEvent.click(macro);
+    else fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("macro");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not activate a disabled direct entry", () => {
+    const onChange = vi.fn();
+    render(<GnomeSelect aria-label="Button action" value="left" options={[...options, { value: "macro", label: "Macro", direct: true, disabled: true }]} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Button action" }));
+    const macro = screen.getByRole("menuitem", { name: "Macro" });
+    expect(macro).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(macro);
+    expect(onChange).not.toHaveBeenCalled();
+  });
   it.each([200, 900])("keeps a %ipx submenu inside the vertical viewport near Button 7", (height) => {
     vi.stubGlobal("innerHeight", 600);
     vi.stubGlobal("innerWidth", 620);

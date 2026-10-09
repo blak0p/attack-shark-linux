@@ -1,11 +1,22 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 import type { Macro } from "./desktop-contract";
 
+beforeAll(() => {
+  // Chromium exercises native top-layer focus/inertness; jsdom only models open.
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+});
 afterEach(cleanup);
+
+function openMacroAssignment(button: number) {
+  fireEvent.click(screen.getByRole("button", { name: `Button ${button} action` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Macro", exact: true }));
+  return screen.getByRole("dialog", { name: `Button ${button} macro assignment` });
+}
 
 it("shares one guarded saved library between manager and remapping", async () => {
   const macro: Macro = { id: "saved", name: "Saved click", events: [
@@ -28,7 +39,10 @@ it("shares one guarded saved library between manager and remapping", async () =>
   render(<App service={service} />);
   expect(await screen.findByRole("button", { name: "Button 1 action" })).toBeInTheDocument();
   expect(service.ListMacros).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByRole("combobox", { name: "Button 1 saved macro" }), { target: { value: "saved" } });
+  const dialog = openMacroAssignment(1);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "saved" } });
+  expect(service.StageMacroAssignment).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
   expect(service.ApplyRemap).not.toHaveBeenCalled();
 });
@@ -56,9 +70,16 @@ it("renders clean guidance text in macro manager and retains dirty draft when na
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
   fireEvent.click(screen.getByRole("link", { name: "Button remapping" }));
   expect(screen.getByRole("region", { name: "Button remapping" })).toHaveAttribute("data-active", "true");
-  fireEvent.change(screen.getByRole("combobox", { name: "Button 7 saved macro" }), { target: { value: "shortcut" } });
+  const dialog = openMacroAssignment(7);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "shortcut" } });
+  expect(service.StageMacroAssignment).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 1));
-  fireEvent.change(screen.getByLabelText("Button 7 repetitions"), { target: { value: "255" } });
+  const reopened = openMacroAssignment(7);
+  expect(within(reopened).getByRole("combobox", { name: "Saved macro" })).toHaveValue("shortcut");
+  fireEvent.change(within(reopened).getByLabelText("Repeat (1–255)"), { target: { value: "255" } });
+  expect(service.StageMacroAssignment).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(reopened).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 255));
   fireEvent.click(screen.getByRole("button", { name: "Apply remap" }));
   await waitFor(() => expect(service.ApplyRemap).toHaveBeenCalledTimes(1));

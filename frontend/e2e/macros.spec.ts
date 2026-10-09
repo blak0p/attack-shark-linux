@@ -1,9 +1,26 @@
 import { test, expect, type Page } from "@playwright/test";
 
+async function openMacro(page: Page, button: number) {
+  await page.getByRole("button", { name: `Button ${button} action`, exact: true }).click();
+  const macro = page.getByRole("menuitem", { name: "Macro", exact: true });
+  await expect(macro).not.toHaveAttribute("aria-haspopup", "menu");
+  await macro.click();
+  const dialog = page.getByRole("dialog", { name: `Button ${button} macro assignment`, exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 async function assignMacro(page: Page, button: number, name: string, repeat = 1) {
-  await page.getByRole("combobox", { name: `Button ${button} saved macro`, exact: true }).selectOption({ label: name });
-  await expect(page.getByLabel(`Button ${button} repetitions`, { exact: true })).toBeVisible();
-  if (repeat !== 1) await page.getByLabel(`Button ${button} repetitions`, { exact: true }).fill(String(repeat));
+  const calls = await page.evaluate(() => window.__routingTest.calls);
+  const dialog = await openMacro(page, button);
+  await dialog.getByRole("combobox", { name: "Saved macro", exact: true }).selectOption({ label: name });
+  await expect(dialog.getByLabel("Repeat (1–255)", { exact: true })).toBeVisible();
+  await dialog.getByLabel("Repeat (1–255)", { exact: true }).fill(String(repeat));
+  expect(await page.evaluate(() => window.__routingTest.calls)).toEqual(calls);
+  await dialog.getByRole("button", { name: "Confirm", exact: true }).focus();
+  expect(await page.evaluate(() => window.__routingTest.calls)).toEqual(calls);
+  await page.keyboard.press("Enter");
+  await expect(dialog).not.toBeVisible();
 }
 import type { Macro } from "../src/desktop-contract";
 
@@ -31,20 +48,63 @@ for (const width of [1280, 620]) {
     await expect(page.getByRole("heading", { name: "Button remapping", exact: true, level: 1 })).toBeVisible();
     expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
     for (let button = 1; button <= 7; button++) {
-      const selector = page.getByRole("combobox", { name: `Button ${button} saved macro`, exact: true });
+      const selector = page.getByRole("button", { name: `Button ${button} action`, exact: true });
       await selector.scrollIntoViewIfNeeded();
       await expect(selector).toBeVisible();
-      await expect(page.getByLabel(`Button ${button} repetitions`, { exact: true })).toBeVisible();
       const bounds = await selector.boundingBox();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      const draft = await page.getByLabel("Remap assignment summary").textContent();
+      const dialog = await openMacro(page, button);
+      const modalBounds = await dialog.boundingBox();
+      expect(modalBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(modalBounds!.x + modalBounds!.width).toBeLessThanOrEqual(width);
+      expect(modalBounds!.y).toBeGreaterThanOrEqual(0);
+      expect(modalBounds!.y + modalBounds!.height).toBeLessThanOrEqual(1000);
+      await expect(dialog.getByRole("combobox", { name: "Saved macro" })).toBeFocused();
+      await dialog.getByRole("combobox", { name: "Saved macro" }).selectOption({ label: saved.name });
+      await dialog.getByLabel("Repeat (1–255)").fill("255");
+      const savedMacro = dialog.getByRole("combobox", { name: "Saved macro" });
+      const confirm = dialog.getByRole("button", { name: "Confirm" });
+      for (const reverse of [false, true]) {
+        await (reverse ? savedMacro : confirm).focus();
+        const key = reverse ? "Shift+Tab" : "Tab";
+        await page.keyboard.press(key);
+        const boundary = await dialog.evaluate((element) => ({
+          inside: element.contains(document.activeElement),
+          browserChrome: document.activeElement === document.body && !document.hasFocus(),
+          modal: element.matches(":modal"),
+        }));
+        // Native Chromium dialogs may cycle through browser chrome, represented
+        // by an unfocused document/body, but never through background controls.
+        expect(boundary.modal).toBe(true);
+        expect(boundary.inside || boundary.browserChrome).toBe(true);
+        if (boundary.browserChrome) await page.keyboard.press(key);
+        await expect(reverse ? confirm : savedMacro).toBeFocused();
+      }
+      await savedMacro.focus();
+      await selector.evaluate((element) => element.focus());
+      await expect(savedMacro).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(dialog.getByLabel("Repeat (1–255)")).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(confirm).toBeFocused();
+      expect(await page.evaluate(() => window.__routingTest.calls)).toEqual([]);
+      if (button % 2) await page.keyboard.press("Escape");
+      else await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await expect(selector).toBeFocused();
+      expect(await page.getByLabel("Remap assignment summary").textContent()).toBe(draft);
+      expect(await page.evaluate(() => window.__routingTest.calls)).toEqual([]);
     }
     expect(await page.locator("#remapping-card").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await assignMacro(page, 6, saved.name, 2);
     await expect(page.getByLabel("Remap assignment summary")).toContainText("Saved shortcut × 2");
     const staged = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending);
     expect(staged).toMatchObject({ ID: saved.id, Name: saved.name, Events: saved.events, Button: 6, Repeat: 2 });
-    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment", "StageMacroAssignment"]);
+    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment"]);
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
     expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
