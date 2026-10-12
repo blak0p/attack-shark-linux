@@ -16,6 +16,11 @@ type LightingSettings struct {
 	ResponseTimeMs     int
 }
 
+// DocumentedResetLightingSettings preserves the exact captured reset vector.
+func DocumentedResetLightingSettings() LightingSettings {
+	return LightingSettings{LightingSelection: LightingSelection{Mode: LightingStaticDPI, TemplateID: LightingTemplateStaticDPIFactoryReset}, NormalSleepMinutes: 0.5, ResponseTimeMs: 4}
+}
+
 func DefaultLightingSettings() LightingSettings {
 	return LightingSettings{LightingSelection: LightingSelection{Mode: LightingFixed, TemplateID: LightingTemplateFixedGreen}, NormalSleepMinutes: NormalSleepMinimumMinutes, ResponseTimeMs: ResponseTimeFactoryMs}
 }
@@ -30,14 +35,22 @@ func ValidateResponseTime(responseTimeMs int) error {
 // EncodeLightingSettingsReport preserves the selected report 0x05 lighting
 // template while encoding normal sleep in byte 9 and response time in byte 10.
 func EncodeLightingSettingsReport(settings LightingSettings) ([]byte, error) {
-	if err := ValidateNormalSleepMinutes(settings.NormalSleepMinutes); err != nil { return nil, err }
-	if err := ValidateResponseTime(settings.ResponseTimeMs); err != nil { return nil, err }
+	if err := ValidateNormalSleepMinutes(settings.NormalSleepMinutes); err != nil {
+		return nil, err
+	}
+	if err := ValidateResponseTime(settings.ResponseTimeMs); err != nil {
+		return nil, err
+	}
 	report, err := NewLightingOperation(settings.LightingSelection)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	report[9] = byte(settings.NormalSleepMinutes * 2)
 	report[10] = byte(settings.ResponseTimeMs)
 	var checksum byte
-	for _, value := range report[3:11] { checksum += value }
+	for _, value := range report[3:11] {
+		checksum += value
+	}
 	report[12] = checksum
 	return report, nil
 }
