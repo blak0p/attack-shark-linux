@@ -137,6 +137,8 @@ func (s *Service) RetryDebouncePersistence() DebounceSnapshot {
 }
 
 func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	b, ok := s.selectedBinding()
 	if !ok {
 		st := newSettingsState()
@@ -200,6 +202,8 @@ func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 	return s.persistSettingsBound(b, st, normal, false, &captured)
 }
 func (s *Service) persistSettings(normal bool, retry ...bool) NormalSleepSnapshot {
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	b, ok := s.selectedBinding()
 	if !ok {
 		return normalSleepSnapshotLocked(newSettingsState())

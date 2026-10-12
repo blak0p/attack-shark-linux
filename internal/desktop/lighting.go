@@ -56,6 +56,8 @@ func (c *lightingComponent) stage(selection x6.LightingSelection) LightingSnapsh
 
 func (c *lightingComponent) apply() LightingSnapshot {
 	s := c.service
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	binding, ok := s.selectedBinding()
 	if !ok {
 		return failLighting(newLightingState(), SelectionRequired)

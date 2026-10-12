@@ -506,10 +506,14 @@ does not change unrelated report-size contracts or infer a new byte-4 meaning.
 Report `05` is **Static DPI (`0x50`), not Fixed Green (`0x10`)**; byte 9 is
 `01` (0.5-minute sleep), byte 10 is `04` (**4 ms direct encoding**, not 8 ms).
 Its other bytes differ from the ordinary Static DPI template (`02` and red),
-so the capture has an exact separate `static-dpi-factory-reset` template.
+so reset uses the exact separate `static-dpi-factory-reset` template.
 Report `06` represents 1000 Hz; `08` matches the existing remap baseline.
 
 ### Supported implementation and unknowns
+
+The supported reset sends ACK-gated `04/05/06/08`, stopping on failure and
+cleaning local state only after all four succeed. Ordinary stage-4 / 8-ms
+defaults and existing lighting templates are unchanged.
 
 The repeated `06` cause/necessity and `0c` semantics/necessity are unknown.
 Two separately authorized isolated sends of `0c 0a 01 fe 01 fe` each returned

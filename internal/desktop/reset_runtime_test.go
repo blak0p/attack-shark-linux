@@ -80,12 +80,12 @@ func TestResetRuntimeQuiescesLateCallbacksBeforeResetWrites(t *testing.T) {
 	}
 
 	result := service.ResetToFactory(context.Background())
-	if result.Cleanup.State != "success" || command.calls != 3 {
-		t.Fatalf("ResetToFactory() = %#v, writes=%d; want three acknowledged reset lanes", result, command.calls)
+	if result.Cleanup.State != "success" || command.calls != 4 {
+		t.Fatalf("ResetToFactory() = %#v, writes=%d; want four acknowledged reset lanes", result, command.calls)
 	}
 	scheduler.FireAll()
-	if command.calls != 3 {
-		t.Fatalf("late callbacks made %d writes, want only three reset lanes", command.calls)
+	if command.calls != 4 {
+		t.Fatalf("late callbacks made %d writes, want only four reset lanes", command.calls)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestResetRuntimeRestartRequiresFreshConfirmedResetAfterFailure(t *testing.T
 	}
 
 	result = restarted.ResetToFactory(context.Background())
-	if result.Cleanup.State != "success" || restartedCommand.calls != 3 {
+	if result.Cleanup.State != "success" || restartedCommand.calls != 4 {
 		t.Fatalf("fresh ResetToFactory() = %#v, writes=%d", result, restartedCommand.calls)
 	}
 	if entries, err := os.ReadDir(stateDir); err != nil || len(entries) != 0 {
