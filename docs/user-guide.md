@@ -114,7 +114,7 @@ The **Controls** view provides fine-grained control over sensor tracking charact
 
 ### 2. Key Response Time (Debounce)
 
-- **Adjustable Debounce Slider**: Configures the microswitch debouncing window from **2 ms** to **32 ms** in 2 ms steps.
+- **Adjustable Debounce Slider**: Configures the microswitch debouncing window from **2 ms** to **25 ms** in 1 ms steps.
 - **Default**: `8 ms`.
 - **Tradeoffs**:
   - *Lower values (2–4 ms)*: Minimize click registration latency for maximum reaction speed in competitive gaming.

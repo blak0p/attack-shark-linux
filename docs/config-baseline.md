@@ -23,7 +23,7 @@
 | Sleep (normal) | 0.5 min | `0x05` byte[9] = `0x01` (min × 2) |
 | Deep sleep | 10 min | `0x05` bytes 4/5/11 = `03 a8 01` |
 | Lift of distance | 1 mm | `0x04` byte[7] = `0x00` |
-| Key response time | 8 ms | `0x05` byte[10] = `0x04` (ms / 2) |
+| Key response time | 8 ms | Direct host encoding: `0x05` byte[10] = `0x08`; historical capture `0x04` had a legacy ms / 2 inference (see [response-time evidence](protocol-captures.md#response-time)) |
 | Ripple control | OFF | `0x04` byte[4] = `0x00` |
 | Angle snap | OFF | `0x04` byte[3] = byte[6] = `0x00` |
 | Motion Sync | ON | **unmapped byte — capture pending** |

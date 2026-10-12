@@ -580,6 +580,19 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByText("Persistence saved")).toBeInTheDocument();
   });
 
+  it("keeps persisted odd debounce milliseconds unchanged in the controls", async () => {
+    const service = serviceFor(snapshot(), {
+      GetDebounceSnapshot: vi.fn().mockResolvedValue(debounceSnapshot({ Desired: 25, Applied: 25, Persisted: 25 })),
+    });
+    render(<App service={service} />);
+
+    expect(await screen.findByRole("status", { name: "Key response time status" })).toHaveTextContent("Applied 25 ms");
+    const slider = screen.getByRole("slider", { name: "Key response time" });
+    expect(slider).toHaveValue("25");
+    fireEvent.change(slider, { target: { value: "3" } });
+    await waitFor(() => expect(service.StageDebounce).toHaveBeenCalledWith(3));
+  });
+
   it("renders pending firmware as queued feedback during automatic synchronization", async () => {
     render(<App service={serviceFor(snapshot({ Firmware: "pending" }))} />);
 

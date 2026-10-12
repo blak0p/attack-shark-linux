@@ -165,7 +165,14 @@ unknown. No DPI sent by the mouse is inferred or claimed.
 | `x6ghidra/` | Ghidra project: report_builder.txt (FUN_004143a0), init_config.txt (FUN_00415280), reset_handler.txt (FUN_00410460), hid_wrapper.txt (FUN_00413940) |
 | `official-app/` | X6 Windows app being adapted (source of UI texts and layout) |
 
-Still to decode (next phases): report `0x05` (sleep/key response), `0x06`
+Report `0x05` key response time is now statically verified in the official
+host: byte 10 copies milliseconds directly, with slider bounds 2–25 and
+integer steps. The application keeps its 8 ms factory default, 13-byte report
+representation and existing checksum algorithm. See the
+[response-time evidence and legacy capture caveat](protocol-captures.md#response-time);
+host API lengths do not establish on-wire lengths.
+
+Still to decode (next phases): remaining report `0x05` sleep details, `0x06`
 (polling), `0x08` (button remap), `0x09` (macro). The family X3 doc
 (protocol-x3.md) describes them as candidates of the same structure.
 
