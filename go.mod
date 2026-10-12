@@ -3,8 +3,8 @@ module github.com/blak0p/attack-shark-linux
 go 1.27.1
 
 require (
-	github.com/wailsapp/wails/v3 v3.0.0-beta.26
-	golang.org/x/sys v0.48.0
+	github.com/wailsapp/wails/v3 v3.0.0-beta.28
+	golang.org/x/sys v0.49.0
 )
 
 require (

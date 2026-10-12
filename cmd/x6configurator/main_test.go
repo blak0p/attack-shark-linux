@@ -528,8 +528,8 @@ func TestReleasePackagingInjectsOnlyNormalizedPublicBuildContract(t *testing.T) 
 	if err != nil {
 		t.Fatalf("read module definition: %v", err)
 	}
-	if !strings.Contains(string(module), "github.com/wailsapp/wails/v3 v3.0.0-beta.26") {
-		t.Fatal("Go module must align with the beta.26 packaging CLI")
+	if !strings.Contains(string(module), "github.com/wailsapp/wails/v3 v3.0.0-beta.28") {
+		t.Fatal("Go module must align with the beta.28 packaging CLI")
 	}
 }
 
@@ -539,19 +539,19 @@ func TestBuildVersionAlignment(t *testing.T) {
 		path string
 		pins []string
 	}{
-		{"../../go.mod", []string{"go 1.27.1", "github.com/wailsapp/wails/v3 v3.0.0-beta.26", "golang.org/x/sys v0.48.0"}},
-		{"../../frontend/package.json", []string{`"@wailsio/runtime":"3.0.0-beta.26"`}},
-		{"../../frontend/package-lock.json", []string{`"@wailsio/runtime": "3.0.0-beta.26"`, `"version": "3.0.0-beta.26"`}},
+		{"../../go.mod", []string{"go 1.27.1", "github.com/wailsapp/wails/v3 v3.0.0-beta.28", "golang.org/x/sys v0.49.0"}},
+		{"../../frontend/package.json", []string{`"@wailsio/runtime":"3.0.0-beta.28"`}},
+		{"../../frontend/package-lock.json", []string{`"@wailsio/runtime": "3.0.0-beta.28"`, `"version": "3.0.0-beta.28"`}},
 		{"../../.github/workflows/test.yml", []string{"go-version: '1.27.1'"}},
 		{"../../.github/workflows/codeql.yml", []string{"go-version: '1.27.1'"}},
-		{"../../.github/workflows/release.yml", []string{"go-version: '1.27.1'", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26"}},
+		{"../../.github/workflows/release.yml", []string{"go-version: '1.27.1'", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28"}},
 		{"../../packaging/tests/Containerfile", []string{"FROM docker.io/library/golang:1.27.1 AS go-toolchain", "COPY --from=go-toolchain /usr/local/go /usr/local/go"}},
 		{"../../packaging/tests/run-go-suite.sh", []string{"attack-shark-go-tests:1.27.1-ubuntu24.04", "go1.27.1) ;;", "Expected Go 1.27.1", "--network none", "--read-only"}},
-		{"../../packaging/appimage/Containerfile", []string{"FROM docker.io/library/golang:1.27.1 AS go-toolchain", "COPY --from=go-toolchain /usr/local/go /usr/local/go", "PATH=/usr/local/go/bin:", "GOTOOLCHAIN=local", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26"}},
-		{"../../README.md", []string{"Go 1.27.1", "v3.0.0-beta.26"}},
-		{"../../CONTRIBUTING.md", []string{"Go 1.27.1", "v3.0.0-beta.26"}},
-		{"../../docs/linux-usb-prerequisites.md", []string{"Go 1.27.1", "v3.0.0-beta.26"}},
-		{"../../openspec/config.yaml", []string{"Go 1.27.1", "v3.0.0-beta.26", "share beta.26", "strict_tdd: true"}},
+		{"../../packaging/appimage/Containerfile", []string{"FROM docker.io/library/golang:1.27.1 AS go-toolchain", "COPY --from=go-toolchain /usr/local/go /usr/local/go", "PATH=/usr/local/go/bin:", "GOTOOLCHAIN=local", "go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28"}},
+		{"../../README.md", []string{"Go 1.27.1", "v3.0.0-beta.28"}},
+		{"../../CONTRIBUTING.md", []string{"Go 1.27.1", "v3.0.0-beta.28"}},
+		{"../../docs/linux-usb-prerequisites.md", []string{"Go 1.27.1", "v3.0.0-beta.28"}},
+		{"../../openspec/config.yaml", []string{"Go 1.27.1", "v3.0.0-beta.28", "share beta.28", "strict_tdd: true"}},
 	}
 	for _, contract := range contracts {
 		t.Run(contract.path, func(t *testing.T) {
@@ -609,7 +609,7 @@ func TestRootlessUbuntuAppImageContainerRoute(t *testing.T) {
 	if strings.Contains(unsignedCommands, "mv ") || strings.Contains(unsignedCommands, "Attack_Shark_X6_Configurator-x86_64.AppImage") {
 		t.Error("unsigned container recipe must not rename the AppImage already normalized by the package task")
 	}
-	// beta.26 dispatches package through the local root task; that task owns
+	// beta.28 dispatches package through the local root task; that task owns
 	// normalization. The signed direct-generation route still needs its rename.
 	for _, taskName := range []string{"package", "package:container:release"} {
 		_, section, ok := strings.Cut(string(taskfile), "\n  "+taskName+":\n")
@@ -634,7 +634,7 @@ func TestRootlessUbuntuAppImageContainerRoute(t *testing.T) {
 		"libwebkitgtk-6.0-dev",
 		"libwebkitgtk-6.0-4",
 		"libayatana-appindicator3-dev",
-		"go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26",
+		"go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28",
 	} {
 		if !strings.Contains(string(containerfile), want) {
 			t.Errorf("AppImage builder containerfile must contain %q", want)
