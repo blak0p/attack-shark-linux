@@ -4,6 +4,11 @@
 /.codegraph/
 # Local AI runtime state
 .atl/
+/.engram/
+/.pi/gentle-ai/
+# Python bytecode caches (including local agent scripts).
+__pycache__/
+*.py[cod]
 # Generated frontend bundle embedded by the Wails composition root.
 /cmd/x6configurator/frontend/dist/
 # Generated Wails AppImage and AppDir output from the rootless Ubuntu builder.
