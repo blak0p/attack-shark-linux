@@ -3,6 +3,7 @@ package desktop
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,24 +19,29 @@ func TestEmergencyResetPurgesOnlyAfterAllLanesSucceed(t *testing.T) {
 	target := &resetTargetFake{binding: testBinding("reset"), devices: []mouse.Device{{Eligible: true}}}
 	purger := &purgerFake{}
 	result, err := NewEmergencyReset(target, nil, purger).Run(context.Background())
-	if err != nil || !purger.called || result.Cleanup.State != "success" || len(target.operations) != 3 {
+	if err != nil || !purger.called || result.Cleanup.State != "success" || len(target.operations) != 4 {
 		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
 	}
 	wantReports := [][]byte{
-		mustEncodeDPI(t, x6.DocumentedResetDPIConfig()),
-		mustEncodePolling(t, x6.PollingRate1000),
-		mustEncodeRemap(t, x6.DefaultRemapConfig()),
+		capturedResetBytes(t, "04380100003f00010f171f3f6f070000000000000002000002ff000000ff000000ffffff0000ffffff00ffff4000ffffff010e7200000000"),
+		capturedResetBytes(t, "050f015003a800ff00010401ff"),
+		capturedResetBytes(t, "06090101fe00000000"),
+		capturedResetBytes(t, "083b010200000300000400000d00000e00000f00000600000500003c00000100000100000100000100000100000100000100000a00000900000094"),
 	}
 	for index, want := range wantReports {
 		if !bytes.Equal(target.reports[index], want) {
 			t.Fatalf("reset report %d = %x, want %x", index, target.reports[index], want)
 		}
 	}
-	for _, report := range target.reports {
-		if report[0] == 0x05 {
-			t.Fatalf("reset emitted lighting report %x", report)
-		}
+}
+
+func capturedResetBytes(t *testing.T, value string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return b
 }
 
 func TestEmergencyResetStopsOnPhysicalFailureWithoutPurge(t *testing.T) {
@@ -72,7 +78,7 @@ func TestEmergencyResetFailsWhenCleanupFailsAfterEveryLane(t *testing.T) {
 	purger := &purgerFake{err: errors.New("disk full")}
 
 	result, err := NewEmergencyReset(target, nil, purger).Run(context.Background())
-	if err == nil || !purger.called || len(target.operations) != 3 || result.Cleanup.State != "failed" || result.Cleanup.Code != PersistenceFailed {
+	if err == nil || !purger.called || len(target.operations) != 4 || result.Cleanup.State != "failed" || result.Cleanup.Code != PersistenceFailed {
 		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
 	}
 }
@@ -91,7 +97,7 @@ func TestEmergencyResetReportsRetryableCancellation(t *testing.T) {
 }
 
 func TestEmergencyResetReportsRetryableLaneFailures(t *testing.T) {
-	for _, failAt := range []int{1, 2, 3} {
+	for _, failAt := range []int{1, 2, 3, 4} {
 		t.Run("lane failure", func(t *testing.T) {
 			stateDir := filepath.Join(t.TempDir(), "state")
 			if err := os.Mkdir(stateDir, 0o700); err != nil {
@@ -110,6 +116,20 @@ func TestEmergencyResetReportsRetryableLaneFailures(t *testing.T) {
 			}
 			if result.Error.Code != ApplyFailed || !result.RetryAvailable {
 				t.Fatalf("Run() result = %#v, want retryable apply failure", result)
+			}
+			if len(target.operations) != failAt || result.Cleanup.State != "not_attempted" {
+				t.Fatalf("failure lane %d: writes=%d cleanup=%#v", failAt, len(target.operations), result.Cleanup)
+			}
+			for index, lane := range result.Lanes {
+				want := "not_attempted"
+				if index < failAt-1 {
+					want = "success"
+				} else if index == failAt-1 {
+					want = "failed"
+				}
+				if lane.State != want {
+					t.Fatalf("lane %d state=%s want=%s", index, lane.State, want)
+				}
 			}
 			got, readErr := os.ReadFile(seedPath)
 			if readErr != nil || !bytes.Equal(got, seed) {
@@ -143,7 +163,7 @@ func TestEmergencyResetCanRetryAfterReselection(t *testing.T) {
 	}
 	target.binding = testBinding("reselected")
 	result, err := reset.Run(context.Background())
-	if err != nil || !purger.called || len(target.operations) != 3 || result.Cleanup.State != "success" {
+	if err != nil || !purger.called || len(target.operations) != 4 || result.Cleanup.State != "success" {
 		t.Fatalf("Run() after reselection = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
 	}
 }

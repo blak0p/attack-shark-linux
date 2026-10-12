@@ -524,6 +524,26 @@ func (s *Service) reconcileFactoryReset() {
 	s.pollingComponent.reconcileFactoryReset()
 
 	s.remapComponent.reconcileFactoryReset()
+
+	captured := x6.DocumentedResetLightingSettings()
+	settings := s.currentSettingsState()
+	settings.mu.Lock()
+	settings.normalSleep, settings.responseTimeMs = captured.NormalSleepMinutes, captured.ResponseTimeMs
+	settings.persistedNormal, settings.persistedResponse = nil, nil
+	settings.retryNormal, settings.retryResponse = nil, nil
+	settings.normalRevision++
+	settings.responseRevision++
+	settings.normalFirmware, settings.responseFirmware = "success", "success"
+	settings.normalPersistence, settings.responsePersistence = "", ""
+	settings.normalError, settings.responseError = Error{}, Error{}
+	settings.mu.Unlock()
+	lighting := s.currentLightingState()
+	lighting.mu.Lock()
+	selection := captured.LightingSelection
+	lighting.pending, lighting.applied = selection, &selection
+	lighting.revision++
+	lighting.firmware, lighting.err = "success", Error{}
+	lighting.mu.Unlock()
 }
 
 func (s *Service) RetryPersistence() Snapshot            { return s.dpiComponent.retryPersistence() }

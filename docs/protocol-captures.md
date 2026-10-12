@@ -231,7 +231,7 @@ and `FUN00414060` copies that field to report `0x05` byte 10. Evidence IDs:
 and `ev_b9379dd14f1d783f054d957f432bf6dd4e8e62da65968345aa7c4f89edac8605`.
 Extracted `app/res/MS/MS_1/ms_1_page.xml:371–376` sets bounds 2–25;
 every integer is supported. The XML default of 1 remains unresolved; the
-application factory default remains 8 ms.
+ordinary application default remains 8 ms; explicit captured reset uses 4 ms.
 
 The earlier ms / 2 interpretation associated factory 8 ms with captured
 `0x04` in `response_time_factory.pcapng`. That was a legacy inference, not
@@ -242,10 +242,10 @@ the application's 13-byte report and existing checksum algorithm; checksum
 format auditing is deferred.
 
 ```
-05 0f 01 50 03 a8 00 ff 00 01 04 01 ff     # factory reset, 8 ms (0x04)
-05 0f 01 50 03 a8 00 ff 00 01 0e 02 09     # pre-reset state, 28 ms (0x0e)
-05 0f 01 50 03 a8 00 ff 00 01 06 02 01     # 12 ms (0x06)
-05 0f 01 50 03 a8 00 ff 00 01 10 02 0b     # 32 ms (0x10)
+05 0f 01 50 03 a8 00 ff 00 01 04 01 ff     # factory reset, direct 4 ms (0x04)
+05 0f 01 50 03 a8 00 ff 00 01 0e 02 09     # pre-reset, direct 14 ms; legacy label 28 ms
+05 0f 01 50 03 a8 00 ff 00 01 06 02 01     # direct 6 ms; legacy label 12 ms
+05 0f 01 50 03 a8 00 ff 00 01 10 02 0b     # direct 16 ms; legacy label 32 ms
 ```
 
 ### Deep-sleep timer
@@ -479,5 +479,46 @@ Heartbeats arrive roughly once per second while the app is open.
   byte [9] (min × 2), deep-sleep = bytes 4+5+11 (3-byte encoding above),
   response time = byte [10] (direct ms in the verified host; legacy captures
   had an ms / 2 inference, superseded above). Remaining modes (neon, heartbeat,
-  fixed-DPI, breathing-DPI) still need captures. The `0x50` startup mode is
-  unassigned.
+  fixed-DPI, breathing-DPI) still need captures. Source identifies `0x50`
+  as Static DPI; the reset-specific template is documented below.
+
+## Isolated official reset capture
+
+The capture `reset.pcapng` (SHA-256
+`22148b5b3aec23b84b85387bb174adb97ae96bd37693eef5f5a65c0cc5c53149`)
+contains 7178 frames over 11.498766 seconds. The user confirmed that the
+application was already open and only Reset was clicked. Interface 2 has
+SET_REPORT order `0c/04/05/06/06/08`, each with corresponding ACK-compatible
+packets, no GET_REPORT, and no truncated frames. This evidence is recorded
+from task Log L4–L8; the external capture is not copied into this repository.
+
+| Report | Captured raw bytes |
+|---|---|
+| `04` (52 wire bytes) | `04380100003f00010f171f3f6f070000000000000002000002ff000000ff000000ffffff0000ffffff00ffff4000ffffff010e72` |
+| `05` | `050f015003a800ff00010401ff` |
+| `06` (twice) | `06090101fe00000000` |
+| `08` | `083b010200000300000400000d00000e00000f00000600000500003c00000100000100000100000100000100000100000100000a00000900000094` |
+
+Report `04` selects stage 2, with six enabled stages
+800/1200/1600/3200/5600/26000, angle/ripple off, and existing LOD/colors.
+The host encoder remains 56 bytes with existing trailing padding; this capture
+does not change unrelated report-size contracts or infer a new byte-4 meaning.
+Report `05` is **Static DPI (`0x50`), not Fixed Green (`0x10`)**; byte 9 is
+`01` (0.5-minute sleep), byte 10 is `04` (**4 ms direct encoding**, not 8 ms).
+Its other bytes differ from the ordinary Static DPI template (`02` and red),
+so reset uses the exact separate `static-dpi-factory-reset` template.
+Report `06` represents 1000 Hz; `08` matches the existing remap baseline.
+
+### Supported implementation and unknowns
+
+The supported reset sends ACK-gated `04/05/06/08`, stopping on failure and
+cleaning local state only after all four succeed. Ordinary stage-4 / 8-ms
+defaults and existing lighting templates are unchanged.
+
+The repeated `06` cause/necessity and `0c` semantics/necessity are unknown.
+Two separately authorized isolated sends of `0c 0a 01 fe 01 fe` each returned
+six bytes with first interrupt `03 10 50 00 0c`; the user reported no setting
+change. The official reset did change the tested settings. This negative
+experiment does not establish that `0c` is universally unnecessary, nor does
+an ACK establish EEPROM erasure or onboard macro deletion. No new `0c` or
+duplicate polling write is included in the supported implementation.

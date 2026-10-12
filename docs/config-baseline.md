@@ -2,9 +2,9 @@
 
 > LIVE WORKING FILE. The user dictates the config currently loaded in the
 > official app (the same one re-sent via SET_REPORT on startup). It is validated
-> against the encoding already decoded in `docs/protocol-captures.md`. It will
-> be used as the **factory/default template** for the future reset button and
-> for the PC profile file.
+> against the encoding already decoded in `docs/protocol-captures.md`.
+> This historical dictated baseline is not identical to the captured reset
+> baseline below; ordinary profile defaults and explicit reset are separate.
 
 ## Dictated in session (incomplete — in progress)
 
@@ -27,6 +27,26 @@
 | Ripple control | OFF | `0x04` byte[4] = `0x00` |
 | Angle snap | OFF | `0x04` byte[3] = byte[6] = `0x00` |
 | Motion Sync | ON | **unmapped byte — capture pending** |
+
+## Captured reset baseline
+
+Explicit GUI and headless reset use the capture-backed baseline from
+[`reset.pcapng`](protocol-captures.md#isolated-official-reset-capture):
+
+| Setting | Explicit reset | Ordinary application default |
+|---|---|---|
+| Active DPI stage | 2 | 4 |
+| Key response time | 4 ms (direct byte `0x04`) | 8 ms |
+| Lighting | Static DPI (`0x50`), `static-dpi-factory-reset` | Existing templates unchanged |
+| Normal sleep | 0.5 minutes | 0.5 minutes |
+| Polling | 1000 Hz | 1000 Hz |
+| Remapping | Existing default seven-button layout | Same baseline |
+
+The reset lighting template preserves the exact captured report-05 bytes;
+it differs from the ordinary Static DPI template. DPI stage values and colors
+remain unchanged. Reset sends four ACK-gated lanes (`04/05/06/08`), not a new
+`0c` command or duplicate polling write. Complete device memory erasure,
+EEPROM semantics, and onboard macro deletion remain unverified.
 
 ## Polling behavior
 
@@ -82,7 +102,7 @@ The app numbering **does not match 1:1** the wire group index beyond button 3
 ## Emergency recovery
 
 The headless `x6configurator reset` command applies the documented DPI,
-polling, and remap defaults synchronously through the validated hidraw target.
+lighting/sleep/debounce, polling, and remap reset defaults synchronously through the validated hidraw target.
 It preserves all local state on discovery, write, or ACK failure. Only after
 every lane acknowledges does it atomically replace the application state
 directory with a fresh `0700` directory, preventing the next startup from

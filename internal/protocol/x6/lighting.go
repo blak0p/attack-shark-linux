@@ -19,20 +19,21 @@ const (
 type LightingTemplateID string
 
 const (
-	LightingTemplateOff               LightingTemplateID = "off"
-	LightingTemplateFixedGreen        LightingTemplateID = "fixed-green"
-	LightingTemplateBreathingGreen    LightingTemplateID = "breathing-green"
-	LightingTemplateBreathingFE5EF9   LightingTemplateID = "breathing-fe5ef9"
-	LightingTemplateBreathingFF7F00   LightingTemplateID = "breathing-ff7f00"
-	LightingTemplateBreathingFFFF00   LightingTemplateID = "breathing-ffff00"
-	LightingTemplateStaticDPIDefault  LightingTemplateID = "static-dpi-default"
-	LightingTemplateNeonOne           LightingTemplateID = "neon-one"
-	LightingTemplateNeonTwo           LightingTemplateID = "neon-two"
-	LightingTemplateColorBreathingOne LightingTemplateID = "color-breathing-one"
-	LightingTemplateColorBreathingTwo LightingTemplateID = "color-breathing-two"
-	LightingTemplateBreathingDPIOne   LightingTemplateID = "breathing-dpi-one"
-	LightingTemplateBreathingDPITwo   LightingTemplateID = "breathing-dpi-two"
-	LightingTemplateBreathingDPIThree LightingTemplateID = "breathing-dpi-three"
+	LightingTemplateStaticDPIFactoryReset LightingTemplateID = "static-dpi-factory-reset"
+	LightingTemplateOff                   LightingTemplateID = "off"
+	LightingTemplateFixedGreen            LightingTemplateID = "fixed-green"
+	LightingTemplateBreathingGreen        LightingTemplateID = "breathing-green"
+	LightingTemplateBreathingFE5EF9       LightingTemplateID = "breathing-fe5ef9"
+	LightingTemplateBreathingFF7F00       LightingTemplateID = "breathing-ff7f00"
+	LightingTemplateBreathingFFFF00       LightingTemplateID = "breathing-ffff00"
+	LightingTemplateStaticDPIDefault      LightingTemplateID = "static-dpi-default"
+	LightingTemplateNeonOne               LightingTemplateID = "neon-one"
+	LightingTemplateNeonTwo               LightingTemplateID = "neon-two"
+	LightingTemplateColorBreathingOne     LightingTemplateID = "color-breathing-one"
+	LightingTemplateColorBreathingTwo     LightingTemplateID = "color-breathing-two"
+	LightingTemplateBreathingDPIOne       LightingTemplateID = "breathing-dpi-one"
+	LightingTemplateBreathingDPITwo       LightingTemplateID = "breathing-dpi-two"
+	LightingTemplateBreathingDPIThree     LightingTemplateID = "breathing-dpi-three"
 )
 
 type LightingSelection struct {
@@ -46,20 +47,21 @@ type lightingTemplate struct {
 }
 
 var lightingTemplates = map[LightingTemplateID]lightingTemplate{
-	LightingTemplateOff:               {mode: LightingOff, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x00, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xaf}},
-	LightingTemplateFixedGreen:        {mode: LightingFixed, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x10, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xbf}},
-	LightingTemplateBreathingGreen:    {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xcf}},
-	LightingTemplateBreathingFE5EF9:   {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0xf9, 0x5e, 0xfe, 0x01, 0x04, 0x03, 0x25}},
-	LightingTemplateBreathingFF7F00:   {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0x7f, 0xff, 0x01, 0x04, 0x02, 0x4e}},
-	LightingTemplateBreathingFFFF00:   {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0xff, 0xff, 0x01, 0x04, 0x02, 0xce}},
-	LightingTemplateStaticDPIDefault:  {mode: LightingStaticDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x50, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xfe}},
-	LightingTemplateNeonOne:           {mode: LightingNeon, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x30, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xde}},
-	LightingTemplateNeonTwo:           {mode: LightingNeon, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x30, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xdf}},
-	LightingTemplateColorBreathingOne: {mode: LightingColorBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x40, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xef}},
-	LightingTemplateColorBreathingTwo: {mode: LightingColorBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x40, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xee}},
-	LightingTemplateBreathingDPIOne:   {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x0e}},
-	LightingTemplateBreathingDPITwo:   {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x04, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x10}},
-	LightingTemplateBreathingDPIThree: {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x0f}},
+	LightingTemplateStaticDPIFactoryReset: {mode: LightingStaticDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x50, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xff}},
+	LightingTemplateOff:                   {mode: LightingOff, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x00, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xaf}},
+	LightingTemplateFixedGreen:            {mode: LightingFixed, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x10, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xbf}},
+	LightingTemplateBreathingGreen:        {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0xff, 0x00, 0x01, 0x04, 0x01, 0xcf}},
+	LightingTemplateBreathingFE5EF9:       {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0xf9, 0x5e, 0xfe, 0x01, 0x04, 0x03, 0x25}},
+	LightingTemplateBreathingFF7F00:       {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0x7f, 0xff, 0x01, 0x04, 0x02, 0x4e}},
+	LightingTemplateBreathingFFFF00:       {mode: LightingBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x20, 0x03, 0xa8, 0x00, 0xff, 0xff, 0x01, 0x04, 0x02, 0xce}},
+	LightingTemplateStaticDPIDefault:      {mode: LightingStaticDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x50, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xfe}},
+	LightingTemplateNeonOne:               {mode: LightingNeon, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x30, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xde}},
+	LightingTemplateNeonTwo:               {mode: LightingNeon, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x30, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xdf}},
+	LightingTemplateColorBreathingOne:     {mode: LightingColorBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x40, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xef}},
+	LightingTemplateColorBreathingTwo:     {mode: LightingColorBreathing, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x40, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x01, 0xee}},
+	LightingTemplateBreathingDPIOne:       {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x02, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x0e}},
+	LightingTemplateBreathingDPITwo:       {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x04, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x10}},
+	LightingTemplateBreathingDPIThree:     {mode: LightingBreathingDPI, report: [LightingReportLength]byte{0x05, 0x0f, 0x01, 0x60, 0x03, 0xa8, 0x00, 0x00, 0xff, 0x01, 0x04, 0x02, 0x0f}},
 }
 
 // NewLightingOperation validates a closed template selection and returns a copy
