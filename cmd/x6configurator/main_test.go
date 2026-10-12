@@ -190,8 +190,8 @@ func TestComposeEmergencyResetBuildsOneRunnerForTheService(t *testing.T) {
 	if err != nil || result.Cleanup.State != "success" {
 		t.Fatalf("reset result = %#v, %v; want successful cleanup", result, err)
 	}
-	if calls, _ := command.observations(); calls != 3 {
-		t.Fatalf("reset commands = %d; want exactly one runner's three lanes", calls)
+	if calls, _ := command.observations(); calls != 4 {
+		t.Fatalf("reset commands = %d; want exactly one runner's four lanes", calls)
 	}
 }
 

@@ -167,7 +167,8 @@ unknown. No DPI sent by the mouse is inferred or claimed.
 
 Report `0x05` key response time is now statically verified in the official
 host: byte 10 copies milliseconds directly, with slider bounds 2–25 and
-integer steps. The application keeps its 8 ms factory default, 13-byte report
+integer steps. The application keeps its ordinary 8 ms default (explicit
+reset uses captured 4 ms), 13-byte report
 representation and existing checksum algorithm. See the
 [response-time evidence and legacy capture caveat](protocol-captures.md#response-time);
 host API lengths do not establish on-wire lengths.
@@ -191,7 +192,23 @@ Still to decode (next phases): remaining report `0x05` sleep details, `0x06`
 
 `x6configurator reset` runs before Wails and therefore needs no display or
 window. It selects exactly one validated X6 target, cancels pending desktop
-writes, then sends the documented 56-byte `0x04` DPI baseline, polling `0x06`
-at 1000 Hz, and default `0x08` remapping in that order. Each lane requires its
-own ACK; a failure stops later lanes. The state namespace is deleted only after
-all three acknowledgements succeed.
+writes, then sends these four supported lanes in order:
+
+1. `0x04`: existing 56-byte host DPI baseline with active stage 2 and unchanged
+   stage values/colors (the new capture has 52 wire bytes; trailing host padding
+   and transport contracts remain unchanged).
+2. `0x05`: exact captured reset template `050f015003a800ff00010401ff` —
+   Static DPI (`0x50`), normal sleep 0.5 minutes, debounce 4 ms (direct encoding).
+   `static-dpi-factory-reset` is separate from the ordinary Static DPI template.
+3. `0x06`: 1000-Hz polling, once.
+4. `0x08`: existing default remapping baseline.
+
+Each lane requires its own ACK; a failure stops later lanes. Local state cleanup
+runs only after all four acknowledgements succeed. Successful GUI reset then
+refreshes all affected snapshots, including remap overlays; failure does not
+substitute defaults or claim success.
+
+The [isolated official reset capture](protocol-captures.md#isolated-official-reset-capture)
+also contains `0x0c` and repeated `0x06`. Their necessity/semantics are unknown;
+they are not added to this supported reset sequence. ACKs do not prove EEPROM
+erasure or onboard macro deletion. Ordinary defaults remain stage 4 / 8 ms.

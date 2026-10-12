@@ -22,7 +22,11 @@ func DefaultDPIConfig() DPIConfig {
 }
 
 // DocumentedResetDPIConfig returns the documented factory baseline for report 0x04.
-func DocumentedResetDPIConfig() DPIConfig { return DefaultDPIConfig() }
+func DocumentedResetDPIConfig() DPIConfig {
+	config := DefaultDPIConfig()
+	config.ActiveStage = 2
+	return config
+}
 
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
 	if config.StageMask == 0 || config.LiftDistance > 1 || config.ActiveStage < 1 || config.ActiveStage > 8 {
