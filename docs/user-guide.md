@@ -188,8 +188,12 @@ If custom settings cause unintended behavior, you can restore factory defaults d
 
 1. Click **Reset to factory** in the Reset card.
 2. An inline confirmation dialog appears:
-   > *This resets DPI, polling, and button remapping on the selected device.*
-3. Click **Confirm factory reset** to write factory defaults across all lanes and clear stale local profiles, or **Cancel factory reset** to abort.
+   > *This resets DPI, lighting/sleep/key response time, polling, and button remapping on the selected device.*
+3. Click **Confirm factory reset** to write the captured defaults across four supported lanes, or **Cancel factory reset** to abort without sending a reset.
+
+Reset selects **DPI stage 2**, **Static DPI lighting**, **0.5-minute normal sleep**, **4-ms key response time**, **1000-Hz polling**, and the default button layout. DPI values and stage colors retain the documented six-stage baseline. Ordinary application defaults remain stage 4 and 8 ms; reset uses a separate capture-backed baseline.
+
+Only after all four lanes acknowledge are stale local profiles cleared and the displayed DPI, polling, lighting, sleep, debounce, and remapping snapshots refreshed. A failure does not report success or replace the displayed settings with defaults; hardware may be partially changed. This is not a verified complete device-memory/EEPROM erase or onboard macro deletion.
 
 ---
 
@@ -217,11 +221,13 @@ cd ~/.local/share/attack-shark-x6
 1. **No Window**: Executes completely headlessly without loading the Wails application or React frontend.
 2. **Hardware Target Discovery**: Discovers and validates the connected Attack Shark X6 hidraw node using `/dev/hidraw*`.
 3. **Synchronous Factory Write**: Directly writes the documented factory configuration:
-   - DPI: Default 6-stage curve (800, 1200, 1600, 3200, 5600, 26000)
+   - DPI: Default 6-stage curve (800, 1200, 1600, 3200, 5600, 26000), active stage 2
+   - Lighting: Captured Static DPI reset template (distinct from the ordinary Static DPI template)
    - Polling rate: 1,000 Hz
    - Normal sleep: 0.5 minutes (30 seconds)
    - Sensor features: Angle snap OFF, Ripple control OFF, LOD 1 mm
-   - Key response time: 8 ms
+   - Key response time: 4 ms
    - Button mapping: Default 7-button layout (Button 1: Left, Button 2: Right, etc.)
-4. **Atomic Profile Cleanup**: Cleans and replaces the application state directory (`~/.config/attack-shark-linux/`) with clean defaults so corrupt state is not re-applied upon launching the GUI again.
+   The lane order is DPI (`0x04`), lighting/sleep/debounce (`0x05`), polling (`0x06`), then remapping (`0x08`); each requires an ACK and a failure stops later lanes. Complete memory erasure and onboard macro deletion are unverified.
+4. **Atomic Profile Cleanup**: Only after all four ACKs, cleans and replaces the application state directory (`~/.config/attack-shark-linux/`) with clean defaults so corrupt state is not re-applied upon launching the GUI again.
 5. **Unprivileged Operation**: Uses your existing local-seat udev permissions (`TAG+="uaccess"`); **do not run as root**.
