@@ -402,7 +402,7 @@ The configuration struct the app syncs with the dongle (56-byte report):
 | `0x940` | report `[4]` | 0 |
 | `0x944` | report `[3]` and `[6]` | 0 |
 | `0x948` | lift of distance (1 MM=0?/2 MM=1) | 1 |
-| `0x958` | debounce/light off? (ms/2) | 4 |
+| `0x958` | debounce in direct milliseconds (verified slider handler and report `0x05` byte 10 serializer; see [evidence](protocol-captures.md#response-time)) | Unverified |
 | `0x924` | light off timer | 8 |
 | `0x928` | ? | 6 |
 | `0x92c` | sleep timer | 10 |

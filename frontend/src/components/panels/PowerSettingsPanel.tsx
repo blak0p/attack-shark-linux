@@ -33,13 +33,13 @@ export function PowerSettingsPanel({
           type="range"
           aria-label="Key response time"
           min="2"
-          max="32"
-          step="2"
+          max="25"
+          step="1"
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(Number(event.target.value))}
         />
-        <span>32 ms</span>
+        <span>25 ms</span>
       </div>
       <div className="power-settings-state status" role="status" aria-label="Key response time status">
         {firmwareStatus === "pending"

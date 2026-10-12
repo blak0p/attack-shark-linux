@@ -162,7 +162,7 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				t.Fatal("timed out waiting for firmware report")
 			}
-			if normal && report[9] != 24 || !normal && report[10] != 1 {
+			if normal && report[9] != 24 || !normal && report[10] != 2 {
 				t.Fatalf("firmware write = %v; want encoded sleep 12 or response 2", report)
 			}
 			stageStarted := make(chan struct{})
@@ -198,6 +198,28 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDebouncePersistsAndReloadsOddMilliseconds(t *testing.T) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
+	record := x6.DefaultDeviceConfig()
+	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(
+		func(Binding) (x6.DeviceConfig, error) { return record, nil },
+		func(_ Binding, c x6.DeviceConfig) error { record = c; return nil },
+	)
+	inventory := s.RefreshInventory(context.Background())
+	for _, ms := range []int{3, 25} {
+		s.StageDebounce(ms)
+		result := s.ApplyDebounce()
+		if result.Error.Code != "" || record.ResponseTimeMs != ms {
+			t.Fatalf("apply = %#v, persisted response = %d; want %d ms", result, record.ResponseTimeMs, ms)
+		}
+		s.SelectDevice(inventory.Devices[0].ID)
+		if got := s.GetDebounceSnapshot().Desired; got != ms {
+			t.Fatalf("reloaded response = %d; want %d ms", got, ms)
+		}
 	}
 }
 

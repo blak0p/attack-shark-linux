@@ -181,7 +181,7 @@ changes.
 | 5 | 1 | **deep-sleep low**: `(min + 0.5) × 16` mod 256 |
 | 6..8 | 3 | **color BGR** (e.g. `00 ff 00` green) |
 | 9 | 1 | **sleep timer** = minutes × 2 (bar 0.5-60 min, 0.5 steps) |
-| 10 | 1 | **response time** = ms / 2 (factory 8 ms → `0x04`) |
+| 10 | 1 | **response time**: direct milliseconds in the verified official host serializer; legacy capture interpretation was ms / 2 |
 | 11 | 1 | deep-sleep wraps: `0x01 + wraps` (also shifts on color pick) |
 | 12 | 1 | checksum `sum(bytes[3:11]) & 0xff` |
 
@@ -224,9 +224,22 @@ Confirmed with exact values 19, 21.5, 6.5 min.
 
 ### Response time
 
-Byte [10] is the **response time in ms / 2**: the app bar goes from 8 ms
-factory in 2 ms steps, so byte = ms / 2 (8 ms → `0x04`). Confirmed by factory
-reset (`response_time_factory.pcapng`).
+Byte [10] is **direct milliseconds** in the statically verified official X6
+host: `FUN00411a20` stores the slider's `GetValue` unchanged at config `+0x958`,
+and `FUN00414060` copies that field to report `0x05` byte 10. Evidence IDs:
+`ev_95b06076af534ee2e3911887f08467daaed9ab45e90d038e91d93a7667b17be6`
+and `ev_b9379dd14f1d783f054d957f432bf6dd4e8e62da65968345aa7c4f89edac8605`.
+Extracted `app/res/MS/MS_1/ms_1_page.xml:371–376` sets bounds 2–25;
+every integer is supported. The XML default of 1 remains unresolved; the
+application factory default remains 8 ms.
+
+The earlier ms / 2 interpretation associated factory 8 ms with captured
+`0x04` in `response_time_factory.pcapng`. That was a legacy inference, not
+proof of scaling. The historical bytes and capture provenance below remain
+unchanged; they are not reinterpreted as different captures. Static host API
+buffer lengths are not proof of on-wire report length. This correction retains
+the application's 13-byte report and existing checksum algorithm; checksum
+format auditing is deferred.
 
 ```
 05 0f 01 50 03 a8 00 ff 00 01 04 01 ff     # factory reset, 8 ms (0x04)
@@ -464,6 +477,7 @@ Heartbeats arrive roughly once per second while the app is open.
 - Lighting **mode** in `0x05` byte [3] is decoded; color is bytes 6-8 BGR,
   byte [11] is shared between deep-sleep wraps and color pick. Sleep timer =
   byte [9] (min × 2), deep-sleep = bytes 4+5+11 (3-byte encoding above),
-  response time = byte [10] (ms / 2). Remaining modes (neon, heartbeat,
+  response time = byte [10] (direct ms in the verified host; legacy captures
+  had an ms / 2 inference, superseded above). Remaining modes (neon, heartbeat,
   fixed-DPI, breathing-DPI) still need captures. The `0x50` startup mode is
   unassigned.

@@ -5,8 +5,8 @@ import "fmt"
 const (
 	ResponseTimeFactoryMs = 8
 	ResponseTimeMinMs     = 2
-	ResponseTimeMaxMs     = 32
-	ResponseTimeStepMs    = 2
+	ResponseTimeMaxMs     = 25
+	ResponseTimeStepMs    = 1
 )
 
 // LightingSettings is the complete editable subset of report 0x05.
@@ -35,7 +35,7 @@ func EncodeLightingSettingsReport(settings LightingSettings) ([]byte, error) {
 	report, err := NewLightingOperation(settings.LightingSelection)
 	if err != nil { return nil, err }
 	report[9] = byte(settings.NormalSleepMinutes * 2)
-	report[10] = byte(settings.ResponseTimeMs / 2)
+	report[10] = byte(settings.ResponseTimeMs)
 	var checksum byte
 	for _, value := range report[3:11] { checksum += value }
 	report[12] = checksum
