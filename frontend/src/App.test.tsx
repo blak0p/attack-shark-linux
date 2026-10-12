@@ -190,6 +190,37 @@ const remapSnapshot = (overrides: Partial<RemapSnapshot> = {}): RemapSnapshot =>
   ...overrides,
 });
 
+it.each([true, false])("refreshes captured reset settings only after success=%s", async (success) => {
+  let reset = false;
+  const config = { ...configuration(), ActiveStage: 2 };
+  const service = serviceFor(snapshot(), {
+    GetSnapshot: vi.fn().mockResolvedValue(snapshot({ Pending: config, Applied: config })),
+    GetDebounceSnapshot: vi.fn().mockImplementation(async () => debounceSnapshot({ Desired: reset ? 4 : 8, Applied: reset ? 4 : 8 })),
+    GetNormalSleepSnapshot: vi.fn().mockImplementation(async () => normalSleepSnapshot({ Pending: reset ? 0.5 : 10, Applied: reset ? 0.5 : 10 })),
+    GetLightingSnapshot: vi.fn().mockImplementation(async () => lightingSnapshot({ Pending: reset ? { Mode: 0x50, TemplateID: "static-dpi-factory-reset" } : { Mode: 0x10, TemplateID: "fixed-green" } })),
+    ResetToFactory: vi.fn().mockImplementation(async () => {
+      reset = success;
+      return { Lanes: [], Cleanup: { Lane: "cleanup", State: success ? "success" : "failed", Code: success ? "" : "ack_timeout" }, Error: { Code: success ? "" : "ack_timeout" }, RetryAvailable: !success };
+    }),
+  });
+  render(<App service={service} />);
+  await waitFor(() => expect(service.GetNormalSleepSnapshot).toHaveBeenCalledTimes(2));
+  const reads = [service.GetDebounceSnapshot, service.GetLightingSnapshot, service.GetNormalSleepSnapshot, service.GetRemapSnapshot, service.GetPollingSnapshot, service.GetSnapshot];
+  reads.forEach((read) => vi.mocked(read).mockClear());
+  fireEvent.click(screen.getByRole("button", { name: "Reset to factory" }));
+  expect(service.ResetToFactory).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm factory reset" }));
+  await screen.findByText(success ? "Factory reset completed." : "Factory reset failed: ack_timeout.");
+  reads.forEach((read) => expect(read).toHaveBeenCalledTimes(success ? 1 : 0));
+  expect(screen.getByRole("combobox", { name: "Lighting effect" })).toHaveTextContent(success ? "Static DPI" : "Fixed");
+  expect(screen.getByRole("slider", { name: "Key response time" })).toHaveValue(success ? "4" : "8");
+  expect(screen.getByRole("slider", { name: "Normal sleep duration" })).toHaveValue(success ? "0.5" : "10");
+  expect(screen.getByRole("slider", { name: success ? "Stage 2 DPI" : "Stage 4 DPI" })).toBeInTheDocument();
+  expect(service.ResetToFactory).toHaveBeenCalledOnce();
+  [service.StageDPI, service.ApplyDPI, service.StagePollingRate, service.ApplyPollingRate, service.StageDebounce, service.ApplyDebounce, service.StageNormalSleep, service.ApplyNormalSleep, service.StageLighting, service.ApplyLighting, service.StageRemap, service.ApplyRemap].forEach((request) => expect(request).not.toHaveBeenCalled());
+  if (!success) expect(screen.queryByText("Factory reset completed.")).not.toBeInTheDocument();
+});
+
 const selectedDevice = { ID: { VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha" }, Profile: "attack-shark-x6", ProfileID: "attack-shark-x6", Path: "/dev/hidraw0", Eligible: true, InventoryRevision: 0, SessionOnly: false };
 
 const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}): DesktopService => {

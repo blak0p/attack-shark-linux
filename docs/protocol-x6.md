@@ -204,7 +204,9 @@ writes, then sends these four supported lanes in order:
 4. `0x08`: existing default remapping baseline.
 
 Each lane requires its own ACK; a failure stops later lanes. Local state cleanup
-runs only after all four acknowledgements succeed.
+runs only after all four acknowledgements succeed. Successful GUI reset then
+refreshes all affected snapshots, including remap overlays; failure does not
+substitute defaults or claim success.
 
 The [isolated official reset capture](protocol-captures.md#isolated-official-reset-capture)
 also contains `0x0c` and repeated `0x06`. Their necessity/semantics are unknown;
