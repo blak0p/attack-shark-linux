@@ -22,7 +22,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const selected = useRef<Binding | null>(null);
   const [remapBusy, setRemapBusy] = useState(false);
   const [remapError, setRemapError] = useState("");
-  const remapScope = useRef({ service, epoch: 0, active: true, busy: false });
+  const remapScope = useRef({ service, epoch: 0, selectionEpoch: 0, active: true, busy: false, resetting: false });
   const remapValue = useRef(remap);
   remapValue.current = remap;
 
@@ -38,7 +38,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     const epoch = ++scope.epoch;
     // Both APIs return the complete remap state; retain the ordinary initial-load contract.
     const request = assignment ? service.GetMacroAssignmentSnapshot() : service.GetRemapSnapshot();
-    void request.then((next) => {
+    return request.then((next) => {
       if (scope.active && scope.service === service && scope.epoch === epoch) setRemap(next);
     }).catch((error: unknown) => {
       if (scope.active && scope.service === service && scope.epoch === epoch) setRemapError(error instanceof Error ? error.message : "Unable to load remapping.");
@@ -46,7 +46,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   };
 
   useEffect(() => {
-    const scope = { service, epoch: 0, active: true, busy: false };
+    const scope = { service, epoch: 0, selectionEpoch: 0, active: true, busy: false, resetting: false };
     remapScope.current = scope;
     selected.current = null;
     remapValue.current = undefined;
@@ -59,7 +59,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
 
   const runRemap = (kind: "stage" | "apply" | "discard", request: (current: () => boolean) => Promise<RemapSnapshot>) => {
     const scope = remapScope.current;
-    if (!scope.active || scope.service !== service || scope.busy || !selected.current || !remapValue.current) return;
+    if (!scope.active || scope.service !== service || scope.busy || scope.resetting || !selected.current || !remapValue.current) return;
     const epoch = ++scope.epoch;
     const current = () => scope.active && scope.service === service && scope.epoch === epoch;
     scope.busy = true;
@@ -137,7 +137,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     if (receivesEvent(selected.current, event.Binding)) setPolling(event.Snapshot);
   }), [service]);
 	useEffect(() => service.OnRemapConfiguration((event) => {
-    if (selected.current && remapScope.current.active && remapScope.current.service === service && !remapScope.current.busy && receivesEvent(selected.current, event.Binding)) {
+    if (selected.current && remapScope.current.active && remapScope.current.service === service && !remapScope.current.busy && !remapScope.current.resetting && receivesEvent(selected.current, event.Binding)) {
       // Idle events supersede reads; an in-flight mutation owns its completion.
       invalidateRemap();
       remapValue.current = event.Snapshot;
@@ -167,6 +167,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     selectDevice: (serial) => {
       const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
       if (device) {
+        remapScope.current.selectionEpoch++;
+        remapScope.current.resetting = false;
         invalidateRemap();
         const scope = remapScope.current;
         const epoch = scope.epoch;
@@ -248,16 +250,45 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     discardRemap: () => runRemap("discard", () => service.DiscardRemap()),
 		requestReset: () => setResetConfirmation(true),
 		cancelReset: () => setResetConfirmation(false),
-		confirmReset: () => void service.ResetToFactory().then((result) => {
-		  setResetConfirmation(false);
-		  if (result.Cleanup.State !== "success") {
-				setNotice(`Factory reset failed: ${result.Error.Code}.`);
-				return;
-			}
-		  setNotice("Factory reset completed.");
-		  void service.GetSnapshot().then(setSnapshot);
-		  void service.GetPollingSnapshot().then(setPolling);
-		}),
+    confirmReset: () => {
+      const scope = remapScope.current;
+      if (!scope.active || scope.service !== service || scope.resetting) return;
+      const binding = selected.current;
+      const selectionEpoch = scope.selectionEpoch;
+      invalidateRemap();
+      // Reset owns a selection-scoped lifecycle, not the mutable remap read epoch.
+      scope.resetting = true;
+      setRemapBusy(true);
+      const current = () => scope.active && scope.service === service && scope.selectionEpoch === selectionEpoch && selected.current === binding;
+      void service.ResetToFactory().then((result) => {
+        if (!current()) return;
+        setResetConfirmation(false);
+        if (result.Cleanup.State !== "success") {
+          setNotice(`Factory reset failed: ${result.Error.Code}.`);
+          return;
+        }
+        setNotice("Factory reset completed.");
+        const refresh = <T,>(request: Promise<T>, update: (next: T) => void) =>
+          request.then((next) => { if (current()) update(next); }).catch(() => {});
+        // Keep old mutation completions/events out until every authoritative read settles.
+        return Promise.all([
+          refreshRemap(),
+          refresh(service.GetSnapshot(), setSnapshot),
+          refresh(service.GetPollingSnapshot(), setPolling),
+          refresh(service.GetDebounceSnapshot(), setDebounce),
+          refresh(service.GetLightingSnapshot(), setLighting),
+          refresh(service.GetNormalSleepSnapshot(), setNormalSleep),
+        ]);
+      }).catch((error: unknown) => {
+        if (!current()) return;
+        setResetConfirmation(false);
+        setNotice(`Factory reset failed: ${error instanceof Error ? error.message : "request failed"}.`);
+      }).finally(() => {
+        if (!current()) return;
+        scope.resetting = false;
+        setRemapBusy(false);
+      });
+    },
     retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
     retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
   };

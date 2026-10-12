@@ -45,7 +45,7 @@ func NewEmergencyReset(target resetTarget, pending PendingWrites, purger StatePu
 }
 
 func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
-	result := ResetResult{Lanes: []ResetLaneResult{{Lane: "dpi", State: "not_attempted"}, {Lane: "polling", State: "not_attempted"}, {Lane: "remap", State: "not_attempted"}}, Cleanup: ResetLaneResult{Lane: "cleanup", State: "not_attempted"}}
+	result := ResetResult{Lanes: []ResetLaneResult{{Lane: "dpi", State: "not_attempted"}, {Lane: "settings", State: "not_attempted"}, {Lane: "polling", State: "not_attempted"}, {Lane: "remap", State: "not_attempted"}}, Cleanup: ResetLaneResult{Lane: "cleanup", State: "not_attempted"}}
 	if err := ctx.Err(); err != nil {
 		return resetFailure(result, err), err
 	}
@@ -83,6 +83,7 @@ func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
 		value     any
 	}{
 		{x6.NewDPIOperation(), x6.DocumentedResetDPIConfig()},
+		{x6.NewLightingSettingsOperation(), x6.DocumentedResetLightingSettings()},
 		{x6.NewPollingOperation(), x6.PollingRate1000},
 		{x6.NewRemapOperation(), x6.DefaultRemapConfig()},
 	}
