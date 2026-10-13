@@ -134,6 +134,28 @@ func noMacroWait(context.Context, time.Duration) error { return nil }
 var macroACK = []byte{3, 0x10, 0x50, 0, 9}
 var macroClick = macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
 
+func TestCompositePlaybackModes(t *testing.T) {
+	for _, mode := range []uint8{1, 2, 3, 255} {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+		a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
+		s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft}, Repeat: 1, Mode: mode}
+		p, err := b.sendX6MacroSequenceAssignmentBound(context.Background(), binding, a, s, noMacroWait)
+		if mode > 2 {
+			if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
+				t.Fatal(p, err)
+			}
+			continue
+		}
+		if err != nil || len(n.writes) != 4 || p.Upload != mouse.MacroUploadConfirmed {
+			t.Fatal(p, err)
+		}
+		got, err := macros.DecodeX6SequenceUpload(n.writes[1:])
+		if err != nil || got.Sequence.Mode != mode || got.Sequence.Repeat != 1 || n.writes[3][1] != 12 {
+			t.Fatal(got, err)
+		}
+	}
+}
+
 func TestCompositeSequenceOrderAndProgress(t *testing.T) {
 	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
 	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}

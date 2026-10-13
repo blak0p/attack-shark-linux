@@ -83,6 +83,7 @@ func x6Checksum(b []byte) uint16 {
 type X6Sequence struct {
 	Buttons []EventType
 	Repeat  int
+	Mode    uint8 // 0 fixed, 1 continuous, 2 while held; assignment metadata.
 }
 
 // X6SequenceUpload keeps destination independent of ordered actions.
@@ -94,6 +95,9 @@ type X6SequenceUpload struct {
 var x6SequenceButtons = [...]EventType{MouseLeft, MouseRight, "mouse_middle", "mouse_back", "mouse_forward"}
 
 func EncodeX6SequenceBlock(sequence X6Sequence) ([]byte, error) {
+	if sequence.Mode > 2 {
+		return nil, fmt.Errorf("unsupported X6 playback mode %d", sequence.Mode)
+	}
 	if len(sequence.Buttons) < 1 || len(sequence.Buttons) > 2 {
 		return nil, fmt.Errorf("X6 requires one or two complete clicks")
 	}
@@ -101,6 +105,7 @@ func EncodeX6SequenceBlock(sequence X6Sequence) ([]byte, error) {
 		return nil, fmt.Errorf("X6 repeat must be in UI range 1–255")
 	}
 	b := make([]byte, 128)
+	b[0] = sequence.Mode
 	b[4], b[25] = byte(sequence.Repeat), byte(2*len(sequence.Buttons))
 	for i, button := range sequence.Buttons {
 		var code byte
@@ -130,7 +135,7 @@ func DecodeX6SequenceBlock(b []byte) (X6Sequence, error) {
 	if b[25] != 2 && b[25] != 4 {
 		return X6Sequence{}, fmt.Errorf("unsupported X6 event count")
 	}
-	sequence := X6Sequence{Repeat: int(b[4])}
+	sequence := X6Sequence{Repeat: int(b[4]), Mode: b[0]}
 	for i := 0; i < int(b[25])/2; i++ {
 		code := b[27+4*i]
 		if code < 0xf1 || code > 0xf5 {
@@ -219,6 +224,9 @@ func DecodeX6Upload(reports [][]byte) (X6Upload, error) {
 	upload, err := DecodeX6SequenceUpload(reports)
 	if err != nil {
 		return X6Upload{}, err
+	}
+	if upload.Sequence.Mode != 0 {
+		return X6Upload{}, fmt.Errorf("legacy X6 upload requires fixed playback mode")
 	}
 	if len(upload.Sequence.Buttons) != 1 {
 		return X6Upload{}, fmt.Errorf("legacy X6 upload requires one click")

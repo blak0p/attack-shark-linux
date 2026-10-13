@@ -32,7 +32,7 @@ not authorize another layout. No overflow rule for future layouts is inferred.
 
 ## Ordered complete-click sequences (XM-7c)
 
-`X6Sequence{Buttons: []EventType{...}, Repeat: int}` and
+`X6Sequence{Buttons: []EventType{...}, Repeat: int, Mode: uint8}` and
 `EncodeX6SequenceBlock` / `DecodeX6SequenceBlock` admit exactly one or two
 ordered complete clicks with the captured zero-delay layout. Accepted actions
 are `MouseLeft`, `MouseRight`, and `EventType("mouse_middle")`,
@@ -42,7 +42,8 @@ are `MouseLeft`, `MouseRight`, and `EventType("mouse_middle")`,
 
 The separate API leaves positional `X6Click` and `X6Upload` literals unchanged.
 Legacy APIs retain their left/right single-click admission; they reject sequences
-rather than silently reducing them. No desktop, frontend or device behavior changes.
+rather than silently reducing them. Legacy click APIs remain fixed-mode only;
+nonfixed blocks/uploads are rejected rather than silently losing the mode.
 Zero clicks, three or more clicks, non-button actions, partial transitions and
 timing representations are outside this API. Decode checks the exact template,
 including all unused bytes, paired transitions, checksum and report padding.
@@ -53,6 +54,19 @@ middle/back/forward, left, mixed left/right, right/left, forward/back,
 middle/forward and duplicate uploads. These captures have repeat1 only.
 Other one/two-button combinations and repeat2–255 are authorized layout
 extrapolation, not proof of device playback or timing units.
+
+## Autoclicker playback modes
+
+`Mode` defaults to **0 (fixed repeat)**. **1 (continuous)** means press to start,
+press again to stop; **2 (while held)** means playback while the trigger is held.
+These are authorized semantics, not physically verified playback behavior.
+Other mode values are rejected by both encoding and decoding.
+
+Mode occupies logical byte **0**; repeat remains byte **4**, with the existing
+1–255 admission for every mode. Mode participates in the additive big-endian
+checksum at bytes **126–127**. Uploads keep the same **60/60/8** chunk framing,
+including final header `09 0c <destination> 02`. No local timer or device I/O is
+introduced by the codec. Existing capture fixtures remain fixed mode.
 
 ## Evidence versus extrapolation
 

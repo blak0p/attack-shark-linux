@@ -32,7 +32,7 @@ func (f *macroCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []b
 func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macros.X6Sequence) (mouse.MacroProgress, error) {
 	f.composite++
 	f.assignment = a
-	f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat}
+	f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat, Mode: c.Mode}
 	if f.during != nil {
 		f.during()
 	}
@@ -44,7 +44,7 @@ func (f *macroCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Con
 	f.items = append([]mouse.MacroSequenceItem(nil), items...)
 	if len(items) == 1 {
 		f.assignment = protocol.MacroAssignment{Config: cfg, Button: items[0].Button}
-		f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat}
+		f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat, Mode: items[0].Sequence.Mode}
 	}
 	if f.during != nil {
 		f.during()
@@ -70,6 +70,32 @@ func macroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro) {
 	}
 	return s, command, m
 }
+func TestMacroPlaybackModes(t *testing.T) {
+	for _, mode := range []uint8{0, 1, 2} {
+		s, c, m := macroFixture(t)
+		got := s.StageMacroAssignmentWithMode(m.ID, 6, 1, mode)
+		if got.Error.Code != "" || got.MacroPending.Mode != mode || c.composite+c.normal != 0 {
+			t.Fatal(got)
+		}
+		want := cloneMacroDraft(got.MacroPending)
+		got.MacroPending.Mode = 255
+		for _, invalid := range []uint8{3, 255} {
+			bad := s.StageMacroAssignmentWithMode(m.ID, 6, 1, invalid)
+			if bad.Error.Code != InvalidConfiguration || !reflect.DeepEqual(bad.MacroPending, want) || c.composite+c.normal != 0 {
+				t.Fatal(bad)
+			}
+		}
+		applied := s.ApplyRemap(got.Pending)
+		if applied.Error.Code != "" || applied.MacroApplied.Mode != mode || c.sequence.Mode != mode {
+			t.Fatal(applied, c.sequence)
+		}
+		legacy := s.StageMacroAssignment(m.ID, 6, 255)
+		if legacy.Error.Code != "" || legacy.MacroPending.Mode != 0 || legacy.MacroPending.Repeat != 255 {
+			t.Fatal(legacy)
+		}
+	}
+}
+
 func TestMacroStrictPositiveAdmissionStageWithoutIO(t *testing.T) {
 	for _, button := range []uint8{1, 2, 3, 4, 5, 6, 7} {
 		for _, kind := range []macros.EventType{macros.MouseLeft, macros.MouseRight, "mouse_middle", "mouse_back", "mouse_forward"} {
