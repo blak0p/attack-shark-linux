@@ -10,6 +10,10 @@
   color: var(--text);
 }
 .macro-assignment-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.macro-assignment-dialog .gnome-select-popup {
+  max-width: min(360px, calc(100vw - 48px));
+}
+.macro-assignment-dialog .gnome-select-option { white-space: normal; }
 .macro-assignment-dialog form { display: grid; gap: 18px; }
 .macro-assignment-dialog h2 { margin: 0; }
 .macro-assignment-dialog label { display: grid; gap: 6px; color: var(--muted); }

@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "../src/App";
-import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent } from "../src/desktop-contract";
+import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent, MacroPlaybackMode } from "../src/desktop-contract";
 import "../src/styles.css";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
@@ -120,9 +120,11 @@ const service = {
   GetNormalSleepSnapshot: async () => ({ Pending: 0.5, Applied: 0.5, Persisted: 0.5, Revision: 0, Error: { Code: "" } }),
   GetRemapSnapshot: async () => remapSnapshot(),
   GetMacroAssignmentSnapshot: async () => remapSnapshot(),
-  StageMacroAssignment: async (id: string, button: number, repeat: number) => {
+  StageMacroAssignment: async (id: string, button: number, repeat: number): Promise<RemapSnapshot> =>
+    service.StageMacroAssignmentWithMode(id, button, repeat, 0),
+  StageMacroAssignmentWithMode: async (id: string, button: number, repeat: number, mode: MacroPlaybackMode): Promise<RemapSnapshot> => {
     const macro = readMacro(id);
-    if (offline || !Number.isInteger(button) || button < 1 || button > 7 ||
+    if (offline || ![0, 1, 2].includes(mode) || !Number.isInteger(button) || button < 1 || button > 7 ||
         !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || ![2, 4].includes(macro.events.length) ||
         !macro.events.every((event, index, events) =>
           ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
@@ -131,7 +133,7 @@ const service = {
             : event.action === "up"))) throw new Error("Invalid macro assignment");
     record("StageMacroAssignment");
     const current = remapSnapshot();
-    const draft = { ID: id, Name: macro.name, Button: button, Repeat: repeat, Events: structuredClone(macro.events) };
+    const draft = { ID: id, Name: macro.name, Button: button, Repeat: repeat, Mode: mode, Events: structuredClone(macro.events) };
     const drafts = { ...(current.MacroDrafts ?? {}), [button]: draft };
     remaps.set(selected.ID.Serial, { ...current, MacroPending: draft, MacroDrafts: drafts, Revision: current.Revision + 1, Error: { Code: "" } });
     return remapSnapshot();

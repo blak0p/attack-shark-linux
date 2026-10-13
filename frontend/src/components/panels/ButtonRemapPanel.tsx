@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Macro, MacroDraft, MacroProgress, RemapAction as Action } from "../../desktop-contract";
+import type { Macro, MacroDraft, MacroPlaybackMode, MacroProgress, RemapAction as Action } from "../../desktop-contract";
 import { GnomeSelect, type GnomeSelectOption } from "./GnomeSelect";
 
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
@@ -95,28 +95,36 @@ const getAllAppliedDrafts = (remap: Remap): MacroDraft[] => {
 const normalizeDrafts = (draftsMap?: Record<number, MacroDraft>, single?: MacroDraft | null) => {
   if (draftsMap && Object.keys(draftsMap).length > 0) {
     const keys = Object.keys(draftsMap).map(Number).sort((a, b) => a - b);
-    return keys.map((k) => draftsMap[k]);
+    return keys.map((k) => ({ ...draftsMap[k], Mode: draftsMap[k].Mode ?? 0 }));
   }
-  if (single) return [single];
+  if (single) return [{ ...single, Mode: single.Mode ?? 0 }];
   return [];
 };
 
-function MacroAssignmentDialog({ button, initialID, initialRepeat, macros, available, onCancel, onConfirm }: {
+const playbackLabels = [
+  "Repeat a set number of times",
+  "Repeat until pressed again",
+  "Repeat while button is held",
+] as const;
+
+function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, macros, available, onCancel, onConfirm }: {
   button: number;
   initialID: string;
   initialRepeat: number;
+  initialMode: MacroPlaybackMode;
   macros: Macro[];
   available: boolean;
   onCancel(): void;
-  onConfirm(id: string, repeat: number): void;
+  onConfirm(id: string, repeat: number, mode: MacroPlaybackMode): void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleID = useId();
   const [id, setID] = useState(initialID);
   const [repeat, setRepeat] = useState(String(initialRepeat));
-  const count = Number(repeat);
+  const [mode, setMode] = useState(initialMode);
+  const count = mode === 0 ? Number(repeat) : 1;
   const valid = available && macros.some((macro) => macro.id === id) &&
-    repeat.trim() !== "" && Number.isInteger(count) && count >= 1 && count <= 255;
+    (mode !== 0 || repeat.trim() !== "") && Number.isInteger(count) && count >= 1 && count <= 255;
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -135,22 +143,31 @@ function MacroAssignmentDialog({ button, initialID, initialRepeat, macros, avail
         event.stopPropagation();
         if (event.key === "Escape") { event.preventDefault(); onCancel(); }
       }}>
-      <form onSubmit={(event) => { event.preventDefault(); if (valid) onConfirm(id, count); }}>
+      <form onSubmit={(event) => { event.preventDefault(); if (valid) onConfirm(id, count, mode); }}>
         <h2 id={titleID}>Button {button} macro assignment</h2>
         <label>
           <span>Saved macro</span>
-          <select className="select" aria-label="Saved macro" value={id} disabled={!available || !macros.length}
-            onChange={(event) => setID(event.target.value)}>
-            <option value="">{macros.length ? "Choose a saved macro" : "No compatible saved macros"}</option>
-            {id && !macros.some((macro) => macro.id === id) && <option value={id} disabled>Saved version unavailable</option>}
-            {macros.map((macro) => <option key={macro.id} value={macro.id}>{macro.name}</option>)}
-          </select>
+          <GnomeSelect aria-label="Saved macro" value={id} disabled={!available || !macros.length}
+            portalTarget={() => dialogRef.current}
+            placeholder={id && !macros.some((macro) => macro.id === id) ? "Saved version unavailable"
+              : macros.length ? "Choose a saved macro" : "No compatible saved macros"}
+            options={macros.map((macro) => ({ value: macro.id, label: macro.name, direct: true }))}
+            onChange={setID} />
         </label>
         <label>
+          <span>Playback mode</span>
+          <GnomeSelect aria-label="Playback mode" value={String(mode)} disabled={!available}
+            portalTarget={() => dialogRef.current}
+            options={playbackLabels.map((label, value) => ({ value: String(value), label, direct: true }))}
+            onChange={(value) => setMode(Number(value) as MacroPlaybackMode)} />
+        </label>
+        {mode === 1 && <p className="hint">Intended behavior: press again to stop. Physical playback verification pending.</p>}
+        {mode === 2 && <p className="hint">Intended behavior: repeat while the button is held. Physical playback verification pending.</p>}
+        {mode === 0 && <label>
           <span>Repeat (1–255)</span>
           <input className="input" aria-label="Repeat (1–255)" type="number" min={1} max={255} step={1}
             value={repeat} disabled={!available} onChange={(event) => setRepeat(event.target.value)} />
-        </label>
+        </label>}
         <div className="actions">
           <button className="button" type="button" onClick={onCancel}>Cancel</button>
           <button className="button primary" type="submit" disabled={!valid}>Confirm</button>
@@ -181,7 +198,7 @@ export function ButtonRemapPanel({
   ready: boolean;
   macros?: Macro[];
   libraryReady?: boolean;
-  onStageMacro?(id: string, button: number, repeat: number): void;
+  onStageMacro?(id: string, button: number, repeat: number, mode?: MacroPlaybackMode): void;
   onClearMacro?(button: number): void;
   error?: string;
   onStage(button: number, action: Action): void;
@@ -194,7 +211,7 @@ export function ButtonRemapPanel({
   onConsumeIntent?(token: number): void;
 }) {
   const isAvailable = ready && assignmentAvailable;
-  const [macroDialog, setMacroDialog] = useState<{ button: number; id: string; repeat: number; scope: unknown } | null>(null);
+  const [macroDialog, setMacroDialog] = useState<{ button: number; id: string; repeat: number; mode: MacroPlaybackMode; scope: unknown } | null>(null);
 
   useEffect(() => {
     setMacroDialog(null);
@@ -203,7 +220,8 @@ export function ButtonRemapPanel({
   const assignmentLabel = (button: Button) => {
     const draft = getButtonMacroDraft(remap, button.Button);
     if (draft) {
-      return `${draft.Name} × ${draft.Repeat}`;
+      return draft.Mode === 1 || draft.Mode === 2
+        ? `${draft.Name} — ${playbackLabels[draft.Mode]}` : `${draft.Name} × ${draft.Repeat}`;
     }
     return button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
   };
@@ -283,7 +301,7 @@ export function ButtonRemapPanel({
                 onChange={(val) => {
                     if (val === "macro") {
                       if (isAvailable && libraryReady && onStageMacro) {
-                        setMacroDialog({ button: button.Button, id: draft?.ID ?? "", repeat: draft?.Repeat ?? 1, scope: assignmentScope });
+                        setMacroDialog({ button: button.Button, id: draft?.ID ?? "", repeat: draft?.Repeat ?? 1, mode: draft?.Mode ?? 0, scope: assignmentScope });
                       }
                       return;
                     }
@@ -306,12 +324,14 @@ export function ButtonRemapPanel({
           button={macroDialog.button}
           initialID={macroDialog.id}
           initialRepeat={macroDialog.repeat}
+          initialMode={macroDialog.mode}
           macros={compatibleMacros}
           available={isAvailable && libraryReady && !!onStageMacro}
           onCancel={() => setMacroDialog(null)}
-          onConfirm={(id, repeat) => {
+          onConfirm={(id, repeat, mode) => {
             if (!isAvailable || !libraryReady || !compatibleMacros.some((macro) => macro.id === id)) return;
-            onStageMacro?.(id, macroDialog.button, repeat);
+            if (mode === 0) onStageMacro?.(id, macroDialog.button, repeat);
+            else onStageMacro?.(id, macroDialog.button, repeat, mode);
             setMacroDialog(null);
           }}
         />,

@@ -40,7 +40,8 @@ it("shares one guarded saved library between manager and remapping", async () =>
   expect(await screen.findByRole("button", { name: "Button 1 action" })).toBeInTheDocument();
   expect(service.ListMacros).toHaveBeenCalledTimes(1);
   const dialog = openMacroAssignment(1);
-  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "saved" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro", exact: true }));
+  fireEvent.click(within(dialog).getByRole("menuitem", { name: "Saved click", exact: true }));
   expect(service.StageMacroAssignment).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("saved", 1, 1));
@@ -71,12 +72,13 @@ it("renders clean guidance text in macro manager and retains dirty draft when na
   fireEvent.click(screen.getByRole("link", { name: "Button remapping" }));
   expect(screen.getByRole("region", { name: "Button remapping" })).toHaveAttribute("data-active", "true");
   const dialog = openMacroAssignment(7);
-  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "shortcut" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro", exact: true }));
+  fireEvent.click(within(dialog).getByRole("menuitem", { name: "Saved two clicks", exact: true }));
   expect(service.StageMacroAssignment).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(service.StageMacroAssignment).toHaveBeenCalledWith("shortcut", 7, 1));
   const reopened = openMacroAssignment(7);
-  expect(within(reopened).getByRole("combobox", { name: "Saved macro" })).toHaveValue("shortcut");
+  expect(within(reopened).getByRole("button", { name: "Saved macro", exact: true })).toHaveTextContent("Saved two clicks");
   fireEvent.change(within(reopened).getByLabelText("Repeat (1–255)"), { target: { value: "255" } });
   expect(service.StageMacroAssignment).toHaveBeenCalledTimes(1);
   fireEvent.click(within(reopened).getByRole("button", { name: "Confirm" }));

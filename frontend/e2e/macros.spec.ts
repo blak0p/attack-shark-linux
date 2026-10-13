@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 async function openMacro(page: Page, button: number) {
   await page.getByRole("button", { name: `Button ${button} action`, exact: true }).click();
@@ -10,10 +10,19 @@ async function openMacro(page: Page, button: number) {
   return dialog;
 }
 
+async function selectDialogOption(dialog: Locator, field: string, name: string) {
+  await dialog.getByRole("button", { name: field, exact: true }).click();
+  const menu = dialog.getByRole("menu", { name: `${field} categories`, exact: true });
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveCSS("background-color", "rgb(57, 58, 54)");
+  // A body portal is inert behind a native modal; the popup must be in its top layer.
+  expect(await menu.evaluate((element) => !!element.closest("dialog[open]"))).toBe(true);
+  await menu.getByRole("menuitem", { name, exact: true }).click();
+}
 async function assignMacro(page: Page, button: number, name: string, repeat = 1) {
   const calls = await page.evaluate(() => window.__routingTest.calls);
   const dialog = await openMacro(page, button);
-  await dialog.getByRole("combobox", { name: "Saved macro", exact: true }).selectOption({ label: name });
+  await selectDialogOption(dialog, "Saved macro", name);
   await expect(dialog.getByLabel("Repeat (1–255)", { exact: true })).toBeVisible();
   await dialog.getByLabel("Repeat (1–255)", { exact: true }).fill(String(repeat));
   expect(await page.evaluate(() => window.__routingTest.calls)).toEqual(calls);
@@ -61,10 +70,10 @@ for (const width of [1280, 620]) {
       expect(modalBounds!.x + modalBounds!.width).toBeLessThanOrEqual(width);
       expect(modalBounds!.y).toBeGreaterThanOrEqual(0);
       expect(modalBounds!.y + modalBounds!.height).toBeLessThanOrEqual(1000);
-      await expect(dialog.getByRole("combobox", { name: "Saved macro" })).toBeFocused();
-      await dialog.getByRole("combobox", { name: "Saved macro" }).selectOption({ label: saved.name });
+      await expect(dialog.getByRole("button", { name: "Saved macro" })).toBeFocused();
+      await selectDialogOption(dialog, "Saved macro", saved.name);
       await dialog.getByLabel("Repeat (1–255)").fill("255");
-      const savedMacro = dialog.getByRole("combobox", { name: "Saved macro" });
+      const savedMacro = dialog.getByRole("button", { name: "Saved macro" });
       const confirm = dialog.getByRole("button", { name: "Confirm" });
       for (const reverse of [false, true]) {
         await (reverse ? savedMacro : confirm).focus();
@@ -85,6 +94,8 @@ for (const width of [1280, 620]) {
       await savedMacro.focus();
       await selector.evaluate((element) => element.focus());
       await expect(savedMacro).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(dialog.getByRole("button", { name: "Playback mode", exact: true })).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(dialog.getByLabel("Repeat (1–255)")).toBeFocused();
       await page.keyboard.press("Tab");
@@ -203,6 +214,36 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("button", { name: "Apply remap" }).click();
     await expect(page.getByLabel("Button remapping status")).toContainText("transport confirmed");
     expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroApplied?.Name)).toBe("Changed saved name");
+  });
+}
+
+for (const mode of [1, 2] as const) {
+  test(`macro playback mode ${mode} stages locally and restores on reopen`, async ({ page }) => {
+    await page.goto("/e2e.html");
+    await page.getByRole("link", { name: "Macros", exact: true }).click();
+    await page.getByRole("button", { name: "New macro", exact: true }).click();
+    await page.getByLabel("Macro name", { exact: true }).fill("Mode click");
+    await page.getByRole("button", { name: "Left click", exact: true }).click();
+    await page.getByRole("button", { name: "Add click" }).click();
+    await page.getByRole("button", { name: "Save to library" }).click();
+    await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+    await page.getByRole("link", { name: "Button remapping", exact: true }).click();
+    const dialog = await openMacro(page, 6);
+    await expect(dialog.getByRole("button", { name: "Playback mode" })).toContainText("Repeat a set number of times");
+    await selectDialogOption(dialog, "Saved macro", "Mode click");
+    const label = mode === 1 ? "Repeat until pressed again" : "Repeat while button is held";
+    await selectDialogOption(dialog, "Playback mode", label);
+    await expect(dialog.getByLabel("Repeat (1–255)")).not.toBeVisible();
+    expect(await page.evaluate(() => window.__routingTest.calls)).toEqual([]);
+    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByLabel("Remap assignment summary")).toContainText(label);
+    expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending)).toMatchObject({ Mode: mode, Repeat: 1, Button: 6 });
+    expect(await page.evaluate(() => window.__routingTest.calls.map((call) => call.operation))).toEqual(["StageMacroAssignment"]);
+    const reopened = await openMacro(page, 6);
+    await expect(reopened.getByRole("button", { name: "Playback mode" })).toContainText(label);
+    await reopened.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation === "ApplyRemap"))).toEqual([]);
   });
 }
 
