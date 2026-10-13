@@ -36,7 +36,7 @@ const localMacro = (macro: GeneratedMacro): Macro => ({
 });
 
 const localDraft = (draft: GeneratedRemapSnapshot["MacroPending"] | undefined): MacroDraft | null | undefined => draft == null ? draft : ({
-  ID: draft.ID, Name: draft.Name, Button: draft.Button, Repeat: draft.Repeat,
+  ID: draft.ID, Name: draft.Name, Button: draft.Button, Repeat: draft.Repeat, Mode: draft.Mode ?? 0,
   Events: localMacro({ id: draft.ID, name: draft.Name, events: draft.Events }).events,
 });
 const localDraftMap = (drafts: GeneratedRemapSnapshot["MacroDrafts"] | undefined): Record<number, MacroDraft> | undefined => {
@@ -93,6 +93,7 @@ export const desktopService: DesktopService = {
   ApplyNormalSleep: bindings.ApplyNormalSleep,
   RetryNormalSleepPersistence: bindings.RetryNormalSleepPersistence,
   StageMacroAssignment: async (id, button, repeat) => localRemap(await bindings.StageMacroAssignment(id, button, repeat)),
+  StageMacroAssignmentWithMode: async (id, button, repeat, mode) => localRemap(await bindings.StageMacroAssignmentWithMode(id, button, repeat, mode)),
   StageRemap: async (config) => localRemap(await bindings.StageRemap(bindingRemap(config))),
   ClearButtonMacroAssignment: async (button: number) =>
     localRemap(await bindings.ClearButtonMacroAssignment(button)),

@@ -368,6 +368,15 @@ export function StageMacroAssignment(id: string, button: number, repeat: number)
     });
 }
 
+/**
+ * StageMacroAssignmentWithMode stages assignment playback metadata without I/O.
+ */
+export function StageMacroAssignmentWithMode(id: string, button: number, repeat: number, mode: number): $CancellablePromise<$models.RemapSnapshot> {
+    return $Call.ByID(536873238, id, button, repeat, mode).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
 export function StageNormalSleep(minutes: number): $CancellablePromise<$models.NormalSleepSnapshot> {
     return $Call.ByID(1234567502, minutes).then(($result: any) => {
         return $$createType3($result);

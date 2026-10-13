@@ -5,7 +5,12 @@
 The shared saved library remains independent of device assignments. For XM-7d2,
 list saved macros by name in Button remapping, then call
 `StageMacroAssignment(id, button, repeat)`. There is no standalone upload action.
-Logical buttons 1–7 are accepted; fixed repeat is an integer from 1 through 255.
+This legacy staging entry point defaults to fixed mode (0).
+`StageMacroAssignmentWithMode(id, button, repeat, mode)` additionally accepts
+continuous (1: press again to stop) and while-held (2) playback. Mode belongs to
+the assignment, not the saved library. Logical buttons 1–7 are accepted; repeat
+is an integer from 1 through 255 in all modes. Invalid modes are rejected without
+replacing pending assignments, advancing draft revision, or performing I/O.
 Admission requires one or two ordered complete click pairs using left, right,
 middle, back or forward. Each pair must use the same action button, down then up,
 with zero local delay on both events. The destination is independent of those
@@ -15,7 +20,7 @@ without changing saved data or replacing a valid draft.
 `GetRemapSnapshot` and `GetMacroAssignmentSnapshot` return the ordinary remap
 snapshot plus `MacroPending`, `MacroApplied`, and `MacroProgress`. All event
 slices are defensive copies. A draft records saved ID/name, target button,
-repeat, and exact local event snapshot. One draft per selected device replaces
+repeat, mode, and exact local event snapshot. One draft per selected device replaces
 the previous draft when moved; it is not an inventory of independent slots.
 
 - `StageRemap(config)` changes only ordinary pending fields, without hardware I/O.
@@ -48,7 +53,7 @@ is discovered from hardware; `MacroApplied` is only this session's acknowledged
 local attempt.
 
 Library ID/name/events must still match before I/O. Edits or deletion require
-explicit restaging. Transport receives a frozen copy, so an in-flight library
+explicit restaging. Transport receives a frozen copy including playback mode, so an in-flight library
 mutation can never substitute different events or silently discard timing.
 Completion rechecks library contents, binding and draft revision; stale
 completion cannot advance local applied state. A mutation during physical I/O
@@ -65,4 +70,7 @@ Success requires assignment ACK and upload final status, and means transport
 confirmation only—not physical playback, persistence or actual readback.
 Captured destinations 05/06 are evidence-backed; other existing button groups
 remain authorized extrapolation. Independent simultaneous firmware slots,
-physical trigger behavior and repeat acceptance/playback remain unverified.
+physical trigger behavior (including continuous toggle-stop and while-held
+playback) and repeat acceptance/playback remain unverified. Mode is encoded at
+logical byte0 with the existing checksum and upload framing; staging never
+starts playback or writes hardware.

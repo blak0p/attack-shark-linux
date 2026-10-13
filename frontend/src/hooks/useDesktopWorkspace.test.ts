@@ -48,6 +48,7 @@ function serviceFor(overrides: Partial<DesktopService> = {}) {
 		StageLighting: vi.fn().mockResolvedValue(lighting()),
 		ApplyLighting: vi.fn().mockResolvedValue(lighting()),
     StageRemap: vi.fn().mockImplementation(async (Pending) => remap({ Pending })),
+    StageMacroAssignmentWithMode: vi.fn().mockResolvedValue(remap()),
     StageMacroAssignment: vi.fn().mockResolvedValue(remap()),
     ClearButtonMacroAssignment: vi.fn().mockResolvedValue(remap()),
     ClearMacroAssignment: vi.fn().mockResolvedValue(remap()),
@@ -79,6 +80,15 @@ const macro = { ID: "click", Name: "Click", Button: 6, Repeat: 2, Events: [{ typ
 const macro7 = { ID: "click7", Name: "Click7", Button: 7, Repeat: 3, Events: [{ type: "mouse_right" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_right" as const, action: "up" as const, delay_ms: 0 }] };
 
 describe("remap lifecycle", () => {
+  it.each([0, 1, 2] as const)("stages mode %s locally via the additive action", async (mode) => {
+    const harness = serviceFor({ StageMacroAssignmentWithMode: vi.fn().mockResolvedValue(remap({ MacroPending: { ...macro, Mode: mode } })) });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.ready).toBe(true));
+    await act(async () => result.current.actions.stageMacroAssignmentWithMode("click", 6, 1, mode));
+    expect(harness.service.StageMacroAssignmentWithMode).toHaveBeenCalledWith("click", 6, 1, mode);
+    expect(result.current.model.remap?.MacroPending?.Mode).toBe(mode);
+    expect(harness.service.ApplyRemap).not.toHaveBeenCalled();
+  });
   it("requires confirmed reselection after selection rejection and permits staging on recovery", async () => {
     const harness = serviceFor({ SelectDevice: vi.fn().mockRejectedValueOnce(new Error("selection lost")).mockResolvedValueOnce({ Devices: [binding], Selected: binding, Error: { Code: "" } }) });
     const { result } = renderHook(() => useDesktopWorkspace(harness.service));

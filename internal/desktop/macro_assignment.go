@@ -16,6 +16,7 @@ type MacroDraft struct {
 	ID, Name string
 	Button   uint8
 	Repeat   int
+	Mode     uint8
 	Events   []macros.Event
 }
 
@@ -28,10 +29,14 @@ func cloneMacroDraft(d *MacroDraft) *MacroDraft {
 	return &copy
 }
 func admittedSequence(events []macros.Event, repeat int) (macros.X6Sequence, bool) {
+	return admittedSequenceWithMode(events, repeat, 0)
+}
+
+func admittedSequenceWithMode(events []macros.Event, repeat int, mode uint8) (macros.X6Sequence, bool) {
 	if repeat < 1 || repeat > 255 || (len(events) != 2 && len(events) != 4) {
 		return macros.X6Sequence{}, false
 	}
-	sequence := macros.X6Sequence{Repeat: repeat}
+	sequence := macros.X6Sequence{Repeat: repeat, Mode: mode}
 	for i := 0; i < len(events); i += 2 {
 		down, up := events[i], events[i+1]
 		if down.Type != up.Type || down.Action != macros.Down || up.Action != macros.Up || down.DelayMS != 0 || up.DelayMS != 0 {
@@ -49,6 +54,11 @@ func admittedSequence(events []macros.Event, repeat int) (macros.X6Sequence, boo
 // StageMacroAssignment replaces the single selected-device assignment without
 // writing hardware or modifying other pending remap fields.
 func (s *Service) StageMacroAssignment(id string, button uint8, repeat int) RemapSnapshot {
+	return s.StageMacroAssignmentWithMode(id, button, repeat, 0)
+}
+
+// StageMacroAssignmentWithMode stages assignment playback metadata without I/O.
+func (s *Service) StageMacroAssignmentWithMode(id string, button uint8, repeat int, mode uint8) RemapSnapshot {
 	binding, ok := s.selectedBinding()
 	if !ok {
 		return failRemap(s.remapComponent.legacy, SelectionRequired)
@@ -56,7 +66,7 @@ func (s *Service) StageMacroAssignment(id string, button uint8, repeat int) Rema
 	state := s.remapComponent.stateForBinding(binding)
 	m, err := s.ReadMacro(id)
 	_, destinationErr := protocol.MacroDestinationForButton(button)
-	_, valid := admittedSequence(m.Events, repeat)
+	_, valid := admittedSequenceWithMode(m.Events, repeat, mode)
 	if err != nil || destinationErr != nil || !valid {
 		return failRemap(state, InvalidConfiguration)
 	}
@@ -69,7 +79,7 @@ func (s *Service) StageMacroAssignment(id string, button uint8, repeat int) Rema
 	if state.macroPendingMap == nil {
 		state.macroPendingMap = make(map[uint8]*MacroDraft)
 	}
-	draft := &MacroDraft{ID: m.ID, Name: m.Name, Button: button, Repeat: repeat, Events: append([]macros.Event(nil), m.Events...)}
+	draft := &MacroDraft{ID: m.ID, Name: m.Name, Button: button, Repeat: repeat, Mode: mode, Events: append([]macros.Event(nil), m.Events...)}
 	state.macroPendingMap[button] = draft
 	state.macroPending = draft
 	state.revision++
@@ -171,7 +181,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 			failRemap(state, InvalidConfiguration)
 			return
 		}
-		if _, valid := admittedSequence(draft.Events, draft.Repeat); !valid {
+		if _, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode); !valid {
 			failRemap(state, InvalidConfiguration)
 			return
 		}
@@ -185,7 +195,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 	}
 	items := make([]mouse.MacroSequenceItem, len(drafts))
 	for i, draft := range drafts {
-		sequence, _ := admittedSequence(draft.Events, draft.Repeat)
+		sequence, _ := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
 		items[i] = mouse.MacroSequenceItem{
 			Button:   draft.Button,
 			Sequence: sequence,

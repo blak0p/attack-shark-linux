@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
   ListMacros: vi.fn(), CreateMacro: vi.fn(), ReadMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
-  StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearButtonMacroAssignment: vi.fn(),
+  StageMacroAssignmentWithMode: vi.fn(), StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearButtonMacroAssignment: vi.fn(),
   ClearMacroAssignment: vi.fn(), DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
   GetApplicationVersion: vi.fn(),
   CheckForUpdate: vi.fn(),
@@ -45,6 +45,15 @@ vi.mock("@wailsio/runtime", async (importOriginal) => ({
 import { desktopService } from "./wails-service";
 
 describe("desktopService", () => {
+  it.each([0, 1, 2] as const)("forwards numeric mode %s and normalizes legacy mode", async (mode) => {
+    const draft = { ID: "click", Name: "Click", Button: 6, Repeat: 1, Mode: mode, Events: [] };
+    bindings.StageMacroAssignmentWithMode.mockResolvedValueOnce({ MacroPending: draft, MacroDrafts: { 6: draft } });
+    const result = await desktopService.StageMacroAssignmentWithMode("click", 6, 1, mode);
+    expect(bindings.StageMacroAssignmentWithMode).toHaveBeenCalledWith("click", 6, 1, mode);
+    expect(result.MacroDrafts?.[6]?.Mode).toBe(mode);
+    bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce({ MacroPending: { ...draft, Mode: undefined } });
+    expect((await desktopService.GetMacroAssignmentSnapshot()).MacroPending?.Mode).toBe(0);
+  });
   it("forwards assignment drafts and preserves nullable overlay results and errors", async () => {
     const config = { Buttons: [] };
     const snapshot = { Pending: config, Applied: config, MacroPending: null, MacroApplied: null,
@@ -72,7 +81,7 @@ describe("desktopService", () => {
   });
   it("preserves frozen assignment events and partial transport evidence on apply", async () => {
     const config = { Buttons: [] };
-    const draft = { ID: "stable", Name: "Saved click", Button: 7, Repeat: 1,
+    const draft = { ID: "stable", Name: "Saved click", Button: 7, Repeat: 1, Mode: 0,
       Events: [{ type: "mouse_right", action: "down", delay_ms: 0 },
         { type: "mouse_right", action: "up", delay_ms: 0 }] };
     const snapshot = { Pending: config, Applied: config, MacroPending: draft, MacroApplied: null,
@@ -88,8 +97,8 @@ describe("desktopService", () => {
   it("converts every pending and applied map value without dropping events or other buttons", async () => {
     const events = [{ type: "mouse_right", action: "down", delay_ms: 0 },
       { type: "mouse_right", action: "up", delay_ms: 0 }];
-    const six = { ID: "six", Name: "Six", Button: 6, Repeat: 2, Events: events };
-    const seven = { ID: "seven", Name: "Seven", Button: 7, Repeat: 255, Events: events };
+    const six = { ID: "six", Name: "Six", Button: 6, Repeat: 2, Mode: 0, Events: events };
+    const seven = { ID: "seven", Name: "Seven", Button: 7, Repeat: 255, Mode: 0, Events: events };
     const snapshot = { MacroPending: seven, MacroApplied: six,
       MacroDrafts: { 6: six, 7: seven }, MacroAppliedDrafts: { 6: six } };
     bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce(snapshot);
@@ -136,7 +145,7 @@ describe("desktopService", () => {
       expect(await desktopService.ReadMacro("stable")).toEqual(macro);
       expect(bindings.CreateMacro).toHaveBeenLastCalledWith("Clicks", events);
       expect(bindings.UpdateMacro).toHaveBeenLastCalledWith("stable", "Clicks", events);
-      const draft = { ID: "stable", Name: "Clicks", Button: 7, Repeat: 1, Events: events };
+      const draft = { ID: "stable", Name: "Clicks", Button: 7, Repeat: 1, Mode: 0, Events: events };
       const snapshot = { Pending: { Buttons: [] }, Applied: { Buttons: [] },
         MacroPending: draft, MacroApplied: draft };
       bindings.GetMacroAssignmentSnapshot.mockResolvedValueOnce(snapshot);

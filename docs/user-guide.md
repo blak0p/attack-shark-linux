@@ -154,6 +154,20 @@ Each button can be assigned to actions grouped into four distinct categories:
 
 Browser Favorites is unavailable because its captured ID is uncertain. The Browser Forward and Backward actions are distinct from the Basic thumb-button Forward and Backward actions.
 
+### Macro playback modes
+
+Choose **Macro** in a button's action menu, select a compatible saved mouse-click macro, then choose its playback mode:
+
+| Mode | Intended behavior |
+|---|---|
+| **Repeat a set number of times** (default) | Run the sequence 1–255 times. |
+| **Repeat until pressed again** | Start on press; press again to stop. |
+| **Repeat while button is held** | Repeat while the assigned button is held; release to stop. |
+
+The two continuous modes hide the fixed repeat count and stage a repeat value of 1. Mode belongs to the button assignment, not the saved macro library; reopening the dialog restores the staged mode. **Confirm** only stages locally; **Apply remap** sends the assignment.
+
+Physical playback remains unverified, including continuous stop-on-second-press and release-to-stop behavior. Transport confirmation is not proof of playback or device persistence. Keyboard events, delays, and expanded click counts are not added by these modes.
+
 ### 3. Draft Confirmation Workflow
 
 Unlike performance sliders that auto-apply after a delay, button remapping uses an explicit confirmation model:

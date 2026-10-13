@@ -41,13 +41,63 @@ function openMacro(button: number) {
   fireEvent.click(screen.getByRole("menuitem", { name: "Macro", exact: true }));
   return screen.getByRole("dialog", { name: `Button ${button} macro assignment` });
 }
-function chooseMacro(button: number, id: string) {
+function selectSavedMacro(dialog: HTMLElement, name: string) {
+  fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro", exact: true }));
+  fireEvent.click(within(dialog).getByRole("menuitem", { name, exact: true }));
+}
+function chooseMacro(button: number, name: string) {
   const dialog = openMacro(button);
-  fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: id } });
+  selectSavedMacro(dialog, name);
   fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
 }
 
 describe("ButtonRemapPanel", () => {
+  it("keeps opaque custom selector menus inside the modal top layer", () => {
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} />);
+    const dialog = openMacro(6);
+    const selector = within(dialog).getByRole("button", { name: "Playback mode", exact: true });
+    fireEvent.click(selector);
+    const popup = within(dialog).getByRole("menu", { name: "Playback mode categories" });
+    expect(popup).toHaveClass("gnome-select-popup");
+    expect(within(popup).getAllByRole("menuitem")).toHaveLength(3);
+    fireEvent.keyDown(selector, { key: "Escape" });
+    expect(within(dialog).queryByRole("menu")).not.toBeInTheDocument();
+    expect(selector).toHaveFocus();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro", exact: true }));
+    expect(within(dialog).getByRole("menu", { name: "Saved macro categories" })).toHaveClass("gnome-select-popup");
+  });
+  it("names playback modes by how they repeat and stop", () => {
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} />);
+    const dialog = openMacro(6);
+    expect(within(dialog).getByLabelText("Playback mode")).toHaveTextContent("Repeat a set number of times");
+    fireEvent.click(within(dialog).getByLabelText("Playback mode"));
+    expect(within(dialog).getByRole("menuitem", { name: "Repeat until pressed again", exact: true })).toBeInTheDocument();
+    expect(within(dialog).getByRole("menuitem", { name: "Repeat while button is held", exact: true })).toBeInTheDocument();
+  });
+  it.each([[1, "Repeat until pressed again"], [2, "Repeat while button is held"]])("restores mode %s and stages repeat one without a fixed count", (mode, label) => {
+    const onStageMacro = vi.fn();
+    const draft = { ID: "click", Name: "Saved click", Button: 6, Repeat: 255, Mode: mode, Events: [...clickMacro.events] };
+    render(<ButtonRemapPanel remap={{ ...remap, MacroDrafts: { 6: draft } } as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
+    expect(screen.getByRole("button", { name: "Button 6 action" })).toHaveTextContent(label);
+    const dialog = openMacro(6);
+    expect(within(dialog).getByLabelText("Playback mode")).toHaveTextContent(label);
+    expect(within(dialog).queryByLabelText("Repeat (1–255)")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    expect(onStageMacro).toHaveBeenCalledExactlyOnceWith("click", 6, 1, mode);
+  });
+  it("defaults legacy drafts to fixed count and can select continuous", () => {
+    const onStageMacro = vi.fn();
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
+    const dialog = openMacro(6);
+    expect(within(dialog).getByLabelText("Playback mode")).toHaveTextContent("Repeat a set number of times");
+    selectSavedMacro(dialog, "Saved click");
+    fireEvent.click(within(dialog).getByLabelText("Playback mode"));
+    fireEvent.click(within(dialog).getByRole("menuitem", { name: "Repeat until pressed again", exact: true }));
+    expect(within(dialog).getByText(/press again to stop/i)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    expect(onStageMacro).toHaveBeenCalledWith("click", 6, 1, 1);
+  });
   it("opens a direct Macro dialog and stages only on Confirm", () => {
     const onStageMacro = vi.fn(); const onApply = vi.fn();
     render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
@@ -55,7 +105,7 @@ describe("ButtonRemapPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Button 6 action" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Macro", exact: true }));
     const dialog = screen.getByRole("dialog", { name: "Button 6 macro assignment" });
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "click" } });
+    selectSavedMacro(dialog, "Saved click");
     fireEvent.change(within(dialog).getByLabelText("Repeat (1–255)"), { target: { value: "255" } });
     expect(onStageMacro).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
@@ -72,7 +122,7 @@ describe("ButtonRemapPanel", () => {
       expect(within(dialog).getByLabelText("Repeat (1–255)")).toHaveValue(1);
       fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     }
-    chooseMacro(1, "click");
+    chooseMacro(1, "Saved click");
     expect(onStageMacro).toHaveBeenCalledExactlyOnceWith("click", 1, 1);
     expect(onApply).not.toHaveBeenCalled();
   });
@@ -124,7 +174,7 @@ describe("ButtonRemapPanel", () => {
     const props = { remap: remap as never, ready: true, macros: [clickMacro] as never, onStage: vi.fn(), onStageMacro, assignmentScope: scope };
     const { rerender } = render(<ButtonRemapPanel {...props} />);
     const dialog = openMacro(6);
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "Saved macro" }), { target: { value: "click" } });
+    selectSavedMacro(dialog, "Saved click");
     rerender(<ButtonRemapPanel {...props} ready={false} />);
     expect(within(dialog).getByRole("button", { name: "Confirm" })).toBeDisabled();
     expect(within(dialog).getByLabelText("Repeat (1–255)")).toBeDisabled();
@@ -139,7 +189,7 @@ describe("ButtonRemapPanel", () => {
     const onStageMacro = vi.fn();
     render(<ButtonRemapPanel remap={remap} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
 
-    chooseMacro(6, "click");
+    chooseMacro(6, "Saved click");
 
     expect(onStageMacro).toHaveBeenCalledWith("click", 6, 1);
   });
@@ -150,7 +200,7 @@ describe("ButtonRemapPanel", () => {
     const macros = [{ id: "single", name: "Single Click", events }, { id: "mixed", name: "Double Click", events: [...events, ...clickMacro.events] }];
     render(<ButtonRemapPanel remap={remap} ready macros={macros as never} onStage={vi.fn()} onStageMacro={onStageMacro} />);
 
-    chooseMacro(4, "mixed");
+    chooseMacro(4, "Double Click");
 
     expect(onStageMacro).toHaveBeenCalledWith("mixed", 4, 1);
   });
@@ -158,8 +208,7 @@ describe("ButtonRemapPanel", () => {
   it("shows no compatible macros without permitting confirmation", () => {
     render(<ButtonRemapPanel remap={remap} ready macros={[]} onStage={vi.fn()} onStageMacro={vi.fn()} />);
     const dialog = openMacro(6);
-    const selector = within(dialog).getByRole("combobox", { name: "Saved macro" });
-    expect(within(selector).getAllByRole("option")).toHaveLength(1);
+    const selector = within(dialog).getByRole("button", { name: "Saved macro", exact: true });
     expect(selector).toHaveTextContent("No compatible saved macros");
     expect(selector).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Confirm" })).toBeDisabled();
@@ -211,11 +260,11 @@ describe("ButtonRemapPanel", () => {
     expect(screen.getByRole("button", { name: "Button 6 action" })).toHaveTextContent("Macro One × 2");
     expect(screen.getByRole("button", { name: "Button 7 action" })).toHaveTextContent("Macro Two × 5");
     const dialog = openMacro(6);
-    expect(within(dialog).getByRole("combobox", { name: "Saved macro" })).toHaveValue("click1");
+    expect(within(dialog).getByRole("button", { name: "Saved macro", exact: true })).toHaveTextContent("Macro One");
     expect(within(dialog).getByLabelText("Repeat (1–255)")).toHaveValue(2);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     const otherDialog = openMacro(7);
-    expect(within(otherDialog).getByRole("combobox", { name: "Saved macro" })).toHaveValue("click2");
+    expect(within(otherDialog).getByRole("button", { name: "Saved macro", exact: true })).toHaveTextContent("Macro Two");
     expect(within(otherDialog).getByLabelText("Repeat (1–255)")).toHaveValue(5);
     fireEvent.click(within(otherDialog).getByRole("button", { name: "Cancel" }));
 

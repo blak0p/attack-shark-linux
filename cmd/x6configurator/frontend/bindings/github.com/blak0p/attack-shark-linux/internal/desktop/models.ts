@@ -282,6 +282,7 @@ export class MacroDraft {
     "Name": string;
     "Button": number;
     "Repeat": number;
+    "Mode": number;
     "Events": macros$0.Event[];
 
     /** Creates a new MacroDraft instance. */
@@ -298,6 +299,9 @@ export class MacroDraft {
         if (!("Repeat" in $$source)) {
             this["Repeat"] = 0;
         }
+        if (!("Mode" in $$source)) {
+            this["Mode"] = 0;
+        }
         if (!("Events" in $$source)) {
             this["Events"] = [];
         }
@@ -309,10 +313,10 @@ export class MacroDraft {
      * Creates a new MacroDraft instance from a string or object.
      */
     static createFrom($$source: any = {}): MacroDraft {
-        const $$createField3_0 = $$createType10;
+        const $$createField4_0 = $$createType10;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Events" in $$parsedSource) {
-            $$parsedSource["Events"] = $$createField3_0($$parsedSource["Events"]);
+            $$parsedSource["Events"] = $$createField4_0($$parsedSource["Events"]);
         }
         return new MacroDraft($$parsedSource as Partial<MacroDraft>);
     }

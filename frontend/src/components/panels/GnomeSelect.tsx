@@ -20,6 +20,8 @@ export type GnomeSelectProps = {
   options: GnomeSelectOption[];
   disabled?: boolean;
   className?: string;
+  /** Keep menus in a modal's top layer instead of the inert document body. */
+  portalTarget?: () => Element | null;
   onChange: (value: string) => void;
 };
 
@@ -31,6 +33,7 @@ export function GnomeSelect({
   options,
   disabled = false,
   className = "",
+  portalTarget,
   onChange,
 }: GnomeSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -260,7 +263,7 @@ export function GnomeSelect({
             </div>
           )}
         </div>,
-        document.body,
+        portalTarget?.() ?? document.body,
       )}
     </div>
   );

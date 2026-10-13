@@ -11,6 +11,51 @@ import (
 	"testing"
 )
 
+func TestX6PlaybackModes(t *testing.T) {
+	for _, mode := range []uint8{0, 1, 2, 3, 255} {
+		s := X6Sequence{Buttons: []EventType{MouseLeft}, Repeat: 1, Mode: mode}
+		b, err := EncodeX6SequenceBlock(s)
+		if mode > 2 {
+			if err == nil {
+				t.Fatal("invalid mode admitted")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b[0] != mode || b[4] != 1 || binary.BigEndian.Uint16(b[126:]) != x6Checksum(b) {
+			t.Fatal("mode/checksum")
+		}
+		got, err := DecodeX6SequenceBlock(b)
+		if err != nil || got.Mode != mode {
+			t.Fatal(got, err)
+		}
+		legacy, legacyErr := DecodeX6Block(b)
+		if mode == 0 {
+			if legacyErr != nil || legacy.Button != MouseLeft || legacy.Repeat != 1 {
+				t.Fatal("legacy fixed block compatibility", legacy, legacyErr)
+			}
+		} else if legacyErr == nil {
+			t.Fatal("legacy block decoder silently discarded mode")
+		}
+		b[0] = 3
+		binary.BigEndian.PutUint16(b[126:], x6Checksum(b))
+		if _, err := DecodeX6SequenceBlock(b); err == nil {
+			t.Fatal("decoder admitted invalid mode")
+		}
+		reports, err := EncodeX6SequenceUpload(X6SequenceUpload{Destination: 5, Sequence: s})
+		if err != nil || len(reports) != 3 || reports[2][0] != 9 || reports[2][1] != 12 {
+			t.Fatal(reports, err)
+		}
+		if mode != 0 {
+			if _, err := DecodeX6Upload(reports); err == nil {
+				t.Fatal("legacy decoder silently discarded mode")
+			}
+		}
+	}
+}
+
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("../../captures/0x09-macro", name))
@@ -86,6 +131,9 @@ func TestX6SequenceCaptures(t *testing.T) {
 				}
 				bad := append([]byte{}, block...)
 				bad[offset] ^= 1
+				if offset == 0 {
+					bad[offset] = 3
+				} // Modes 1/2 are now canonical.
 				repairChecksum(bad)
 				if _, err := DecodeX6SequenceBlock(bad); err == nil {
 					t.Fatalf("accepted mutation at %d", offset)
@@ -93,7 +141,7 @@ func TestX6SequenceCaptures(t *testing.T) {
 			}
 		}
 	}
-	for _, s := range []X6Sequence{{nil, 1}, {[]EventType{MouseLeft, MouseLeft, MouseLeft}, 1}, {[]EventType{"keyboard"}, 1}, {[]EventType{"press"}, 1}, {[]EventType{"delay"}, 1}, {[]EventType{MouseLeft}, 0}, {[]EventType{MouseLeft}, 256}} {
+	for _, s := range []X6Sequence{{Buttons: nil, Repeat: 1}, {Buttons: []EventType{MouseLeft, MouseLeft, MouseLeft}, Repeat: 1}, {Buttons: []EventType{"keyboard"}, Repeat: 1}, {Buttons: []EventType{"press"}, Repeat: 1}, {Buttons: []EventType{"delay"}, Repeat: 1}, {Buttons: []EventType{MouseLeft}, Repeat: 0}, {Buttons: []EventType{MouseLeft}, Repeat: 256}} {
 		if _, err := EncodeX6SequenceBlock(s); err == nil {
 			t.Fatalf("accepted unsupported %+v", s)
 		}
@@ -103,7 +151,7 @@ func TestX6SequenceCaptures(t *testing.T) {
 func TestX6SequenceRepeatAndDestination(t *testing.T) {
 	for _, button := range x6SequenceButtons {
 		for repeat := 1; repeat <= 255; repeat++ {
-			want := X6Sequence{[]EventType{button, MouseRight}, repeat}
+			want := X6Sequence{Buttons: []EventType{button, MouseRight}, Repeat: repeat}
 			b, err := EncodeX6SequenceBlock(want)
 			if err != nil {
 				t.Fatal(err)
@@ -115,7 +163,7 @@ func TestX6SequenceRepeatAndDestination(t *testing.T) {
 		}
 	}
 	for _, destination := range []byte{0, 4, 9, 255} {
-		if _, err := EncodeX6SequenceUpload(X6SequenceUpload{destination, X6Sequence{[]EventType{MouseLeft}, 1}}); err == nil {
+		if _, err := EncodeX6SequenceUpload(X6SequenceUpload{destination, X6Sequence{Buttons: []EventType{MouseLeft}, Repeat: 1}}); err == nil {
 			t.Fatal("invalid destination")
 		}
 	}

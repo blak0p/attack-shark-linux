@@ -225,7 +225,11 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         return updated;
       });
 		})),
-    stageMacroAssignment: (id, button, repeat) => runRemap("stage", () => service.StageMacroAssignment(id, button, repeat)),
+    // The optional fourth argument keeps existing App wiring and fixed-mode callers compatible.
+    stageMacroAssignment: (id, button, repeat, mode) => runRemap("stage", () => mode === undefined
+      ? service.StageMacroAssignment(id, button, repeat)
+      : service.StageMacroAssignmentWithMode(id, button, repeat, mode)),
+    stageMacroAssignmentWithMode: (id, button, repeat, mode) => runRemap("stage", () => service.StageMacroAssignmentWithMode(id, button, repeat, mode)),
     clearButtonMacroAssignment: (button: number) => runRemap("stage", () => {
       if (!service.ClearButtonMacroAssignment) throw new Error("Per-button macro clearing is unavailable");
       return service.ClearButtonMacroAssignment(button);
