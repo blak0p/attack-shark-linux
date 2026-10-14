@@ -8,6 +8,48 @@ The five `.bin` fixtures are **128-byte logical blocks**, not wire reports.
 Originals remain external at `/home/alejandro/x6-capturas/` and were read only.
 The XM-7a copies and their independent manifest are described below.
 
+## Keyboard capture evidence
+
+`keyboard-captures.json` records original names, copy hashes/sizes and one-based
+upload frames for four byte-preserved keyboard-scenario captures:
+
+- `keyboard-e0-a-variable-flags.pcapng`: one complete upload; 11 wire pairs
+  `1fe0 1104 9104 bbe0 31e0 89e0 0903 09e0 1104 8904 81e0`.
+  IDs `e0` and `04` are compatible with left Ctrl and A in static official-app
+  evidence. Delay semantics and the `0903` extension remain unverified.
+- `a-key-scenario-10-two-identical-uploads.pcapng`: two identical complete
+  uploads; pairs `0104 8104`, compatible with A press/release.
+- `a-key-scenario-100-no-report09.pcapng`: valid capture, but no report09 in
+  `usb.data_fragment`; retained as a negative control, not timing evidence.
+
+- `shift-a-default-100.pcapng`: one complete upload at frames
+  `11957 / 12951 / 14207`, checksum `02f1`; pairs
+  `0be1 0b04 8b04 81e1`, compatible with left Shift down, A down,
+  A up, left Shift up. User selected Default Delay 100 before recording.
+  Static official-app tracing confirms the default edit is parsed with `_wtoi`
+  at `0x40b3b0` and stored raw; the recorder at `0x40be50` uses that value
+  in mode 1. Report writer `0x414700` scales the delay by ten with rounding
+  and ORs the event flag: 100 gives `0x0a | 0x01 = 0x0b` for down,
+  `0x0a | 0x81 = 0x8b` for up. These bytes corroborate the selected 100
+  setting. Final `81e1` is compatible with zero delay but does not uniquely
+  prove zero. The exact UI mode setter and saved-object-to-slot copy remain
+  statically unresolved; arbitrary delay values, long-delay extensions and
+  measured physical timing are not validated by this single setting.
+  User subsequently triggered the assigned mouse macro and reported uppercase
+  output `A`. This is user-reported functional playback, not measured timing;
+  subsequent modifier-release cleanup was not reported.
+
+All complete uploads reconstruct 128-byte blocks with valid big-endian additive
+checksums (A: `008d`; Ctrl/A-compatible sequence: `08c2`). Report08 is identical
+across the four sources. Filename numbers are user scenario labels, not measured
+delays; these files do not establish equivalence between 10 and 100 ms uploads.
+Shift ID `e1` occurs in the Shift/A capture only; no `e5` occurs in these selected uploads. No playback was
+observed by the analyst; the Shift/A functional result above is user testimony.
+
+User testimony: default delay starts at 10; minimum/default cannot be changed
+after recording; Record Delay records intervals between presses. These UI
+observations are separate from verified wire behavior.
+
 ## Captured contract
 
 Each selected upload has three 64-byte reports with headers `09 40 05 00`,
