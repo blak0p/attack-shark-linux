@@ -170,6 +170,47 @@ func (b *HidrawBackend) sendX6MultiMacroSequenceAssignmentBound(ctx context.Cont
 	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, allChunks, wait)
 }
 
+// SendX6MultiMacroLocalAssignmentBound admits exact balanced local events and
+// retains the existing single report08/ordered report09/final ACK transaction.
+// Confirmation describes transport only, never physical playback.
+func (b *HidrawBackend) SendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
+	return b.sendX6MultiMacroLocalAssignmentBound(ctx, binding, config, items, waitMacroChunk)
+}
+
+func (b *HidrawBackend) sendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroLocalItem, wait macroWait) (mouse.MacroProgress, error) {
+	empty := mouse.MacroProgress{}
+	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
+	if len(items) == 0 {
+		return empty, errors.New("no macro local items")
+	}
+	buttons := make([]uint8, len(items))
+	seen := make(map[uint8]bool, len(items))
+	var chunks [][]byte
+	for i, item := range items {
+		item.Events = append([]macros.Event(nil), item.Events...)
+		if seen[item.Button] {
+			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
+		}
+		seen[item.Button] = true
+		buttons[i] = item.Button
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return empty, err
+		}
+		reports, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		if err != nil {
+			return empty, err
+		}
+		chunks = append(chunks, reports...)
+	}
+	report, err := x6.EncodeMultiMacroAssignmentReport(config, buttons)
+	if err != nil {
+		return empty, err
+	}
+	// All payloads/config/destinations are admitted before acquiring command ownership.
+	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
+}
+
 func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, binding mouse.Binding, report []byte, chunks [][]byte, wait macroWait) (progress mouse.MacroProgress, err error) {
 	if err = ctx.Err(); err != nil {
 		return progress, err

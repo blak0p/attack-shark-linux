@@ -17,7 +17,7 @@ it.each(["mouse_middle", "mouse_back", "mouse_forward"] as const)("roundtrips st
   expect(importMacroFile(text)).toEqual({ name: "Extended", events });
   expect(importMacroFile(exportMacroFile({ id: "local", name: "Extended", events }))).toEqual({ name: "Extended", events });
 });
-it.each(["mouse_arbitrary", "mouse_backward", "", "keyboard"])("rejects arbitrary type %s on import and export", (type) => {
+it.each(["mouse_arbitrary", "mouse_backward", ""])("rejects arbitrary type %s on import and export", (type) => {
   const events = [{ type, action: "down" as const, delay_ms: 0 }];
   expect(() => importMacroFile(JSON.stringify({ version: 1, name: "Invalid", events }))).toThrow(/unsupported type/);
   expect(() => exportMacroFile({ id: "local", name: "Invalid", events } as unknown as Parameters<typeof exportMacroFile>[0])).toThrow(/unsupported type/);
@@ -35,6 +35,36 @@ it.each([
     { type: "mouse_left", action: "down", delay_ms: 0, extra: true },
   ].map((event) => JSON.stringify({ version: 1, name: "A", events: [event] })),
 ])("rejects invalid input: %s", (text) => expect(() => importMacroFile(text)).toThrow(/macro|JSON|version|event|name/i));
+it("roundtrips opaque keyboard identities, mixed order and source delays without mutation", () => {
+  const source = { id: "local", name: "Keyboard", events: [
+    { type: "keyboard", action: "down", delay_ms: 0, key_code: " KeyA " },
+    { type: "keyboard", action: "up", delay_ms: 2345, key_code: "UnknownPhysicalKey" },
+    ...macro.events,
+  ] } as unknown as Parameters<typeof exportMacroFile>[0];
+  const before = structuredClone(source);
+  const text = exportMacroFile(source);
+  expect(importMacroFile(text)).toEqual({ name: source.name, events: source.events });
+  expect(source).toEqual(before);
+  const copy = importMacroFile(text);
+  copy.events[0].delay_ms = 17;
+  expect(source).toEqual(before);
+});
+it.each([undefined, "", " \t", null, 4])("rejects blank/nonstring keyboard identity %s on import and export", (key_code) => {
+  const events = [{ type: "keyboard", action: "down", delay_ms: 0, ...(key_code === undefined ? {} : { key_code }) }];
+  expect(() => importMacroFile(JSON.stringify({ version: 1, name: "K", events }))).toThrow(/key_code/);
+  expect(() => exportMacroFile({ id: "local", name: "K", events } as unknown as Parameters<typeof exportMacroFile>[0])).toThrow(/key_code/);
+});
+it.each(["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"])("rejects every nonempty identity on %s but accepts empty optional identity", (type) => {
+  for (const key_code of ["KeyA", " \t"]) {
+    const events = [{ type, action: "down", delay_ms: 0, key_code }];
+    expect(() => importMacroFile(JSON.stringify({ version: 1, name: "M", events }))).toThrow(/key_code/);
+    expect(() => exportMacroFile({ id: "local", name: "M", events } as unknown as Parameters<typeof exportMacroFile>[0])).toThrow(/key_code/);
+  }
+  expect(importMacroFile(JSON.stringify({ version: 1, name: "M", events: [{ type, action: "down", delay_ms: 0, key_code: "" }] })).events[0]).toEqual({ type, action: "down", delay_ms: 0, key_code: "" });
+});
+it("still rejects unknown keyboard fields", () => {
+  expect(() => importMacroFile(JSON.stringify({ version: 1, name: "K", events: [{ type: "keyboard", action: "down", delay_ms: 0, key_code: "KeyA", extra: true }] }))).toThrow(/fields/);
+});
 it("rejects oversized input before parsing (a local file safety budget, not firmware)", () => {
   expect(() => importMacroFile(" ".repeat(MAX_MACRO_FILE_BYTES + 1))).toThrow(/too large/i);
 });

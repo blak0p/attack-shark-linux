@@ -22,6 +22,8 @@ export class Event {
     "type": EventType;
     "action": Action;
     "delay_ms": number;
+    /** Opaque physical key identity, not firmware support. */
+    declare "key_code"?: string;
 
     /** Creates a new Event instance. */
     constructor($$source: Partial<Event> = {}) {
@@ -56,6 +58,7 @@ export enum EventType {
      */
     $zero = "",
 
+    Keyboard = "keyboard",
     MouseLeft = "mouse_left",
     MouseRight = "mouse_right",
     MouseMiddle = "mouse_middle",

@@ -1,6 +1,7 @@
 package macros
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,6 +18,147 @@ func openTest(t *testing.T) (*Library, string) {
 		t.Fatal(err)
 	}
 	return lib, path
+}
+
+func keyboardEvents(t *testing.T, text string) []Event {
+	t.Helper()
+	var events []Event
+	if err := json.Unmarshal([]byte(text), &events); err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+func TestKeyboardLocalCRUD(t *testing.T) {
+	lib, path := openTest(t)
+	text := `[{"type":"keyboard","action":"down","delay_ms":17,"key_code":" KeyUnverified-Ω "},{"type":"mouse_left","action":"up","delay_ms":0},{"type":"keyboard","action":"up","delay_ms":9223372036854775807,"key_code":" KeyUnverified-Ω "}]`
+	events := keyboardEvents(t, text)
+	before := append([]Event{}, events...)
+	created, err := lib.Create("mixed", events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(events, before) {
+		t.Fatal("create mutated input")
+	}
+	encoded, err := json.Marshal(created.Events)
+	if err != nil || string(encoded) != text {
+		t.Fatalf("lossy round trip: %s %v", encoded, err)
+	}
+	events[0] = Event{}
+	created.Events[0] = Event{}
+	got, err := lib.Read(created.ID)
+	if err != nil || !reflect.DeepEqual(got.Events, before) {
+		t.Fatalf("create alias: %#v %v", got, err)
+	}
+	updated, err := lib.Update(created.ID, "updated", before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, keyboardEvents(t, text)) {
+		t.Fatal("update mutated input")
+	}
+	updated.Events[0] = Event{}
+	listed := lib.List()
+	listed[0].Events[0] = Event{}
+	got.Events[0] = Event{}
+	before[0] = Event{}
+	reloaded, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = reloaded.Read(created.ID)
+	if err != nil || got.Name != "updated" || !reflect.DeepEqual(got.Events, keyboardEvents(t, text)) {
+		t.Fatalf("reload: %#v %v", got, err)
+	}
+	if err := reloaded.Delete(created.ID); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err = Open(path)
+	if err != nil || len(reloaded.List()) != 0 {
+		t.Fatalf("delete reload: %v", err)
+	}
+}
+
+func TestKeyboardLocalValidation(t *testing.T) {
+	for _, text := range []string{
+		`[{"type":"keyboard","action":"down","delay_ms":0}]`,
+		`[{"type":"keyboard","action":"down","delay_ms":0,"key_code":" \t"}]`,
+		`[{"type":"keyboard","action":"click","delay_ms":0,"key_code":"KeyA"}]`,
+		`[{"type":"keyboard","action":"up","delay_ms":-1,"key_code":"KeyA"}]`,
+		`[{"type":"mouse_left","action":"down","delay_ms":0,"key_code":"KeyA"}]`,
+		`[{"type":"mouse_right","action":"up","delay_ms":0,"key_code":" "}]`,
+	} {
+		t.Run(text, func(t *testing.T) {
+			lib, path := openTest(t)
+			original, err := lib.Create("original", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			events := keyboardEvents(t, text)
+			before := append([]Event{}, events...)
+			if _, err := lib.Create("bad", events); err == nil {
+				t.Fatal("invalid create accepted")
+			}
+			if _, err := lib.Update(original.ID, "bad", events); err == nil {
+				t.Fatal("invalid update accepted")
+			}
+			if !reflect.DeepEqual(events, before) {
+				t.Fatal("validation mutated input")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(contents) || !reflect.DeepEqual(lib.List(), []Macro{original}) {
+				t.Fatal("validation mutated library")
+			}
+			invalid := `{"version":1,"macros":[{"id":"x","name":"invalid","events":` + text + `}]}`
+			if err := os.WriteFile(path, []byte(invalid), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Open(path); err == nil {
+				t.Fatal("invalid stored event accepted")
+			}
+			after, err = os.ReadFile(path)
+			if err != nil || string(after) != invalid {
+				t.Fatal("open changed invalid file")
+			}
+		})
+	}
+}
+
+func TestKeyboardLocalLegacyAndAdmission(t *testing.T) {
+	_, path := openTest(t)
+	const old = `{"version":1,"macros":[{"id":"old","name":"mouse","events":[{"type":"mouse_left","action":"down","delay_ms":0},{"type":"mouse_left","action":"up","delay_ms":17}]}]}`
+	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := lib.Read("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Update(m.ID, m.Name, m.Events); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil || string(contents) != old {
+		t.Fatalf("mouse JSON changed: %s %v", contents, err)
+	}
+	for _, buttons := range [][]EventType{{"keyboard"}, {MouseLeft, "keyboard"}} {
+		sequence := X6Sequence{Buttons: buttons, Repeat: 1}
+		if block, err := EncodeX6SequenceBlock(sequence); err == nil || block != nil {
+			t.Fatal("keyboard block admitted")
+		}
+		if reports, err := EncodeX6SequenceUpload(X6SequenceUpload{Destination: 1, Sequence: sequence}); err == nil || reports != nil {
+			t.Fatal("keyboard upload admitted")
+		}
+	}
 }
 
 func TestCRUDReloadAndCopies(t *testing.T) {

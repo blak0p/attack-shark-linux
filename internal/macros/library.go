@@ -1,5 +1,5 @@
 // Package macros stores an app-wide local macro library, independent of devices.
-// Events express local mouse semantics; delay_ms is a nonnegative local duration,
+// Events express local mouse or opaque keyboard semantics; delay_ms is a nonnegative local duration,
 // not a claim about firmware units, minimums, encoding, or playback support.
 // A future device encoder must validate its own supported boundary. Share one
 // Library instance across the app; separate instances/processes are not coordinated.
@@ -23,6 +23,7 @@ import (
 type EventType string
 
 const (
+	Keyboard     EventType = "keyboard"
 	MouseLeft    EventType = "mouse_left"
 	MouseRight   EventType = "mouse_right"
 	MouseMiddle  EventType = "mouse_middle"
@@ -42,6 +43,9 @@ type Event struct {
 	Type    EventType `json:"type"`
 	Action  Action    `json:"action"`
 	DelayMS int64     `json:"delay_ms"`
+	// KeyCode is an opaque physical key identity (such as KeyboardEvent.code),
+	// not a firmware code or a claim of device support. Preserve it verbatim.
+	KeyCode string `json:"key_code,omitempty"`
 }
 
 type Macro struct {
@@ -118,6 +122,13 @@ func validate(name string, events []Event) error {
 	for i, event := range events {
 		switch event.Type {
 		case MouseLeft, MouseRight, MouseMiddle, MouseBack, MouseForward:
+			if event.KeyCode != "" {
+				return fmt.Errorf("event %d: mouse event has key_code", i)
+			}
+		case Keyboard:
+			if strings.TrimSpace(event.KeyCode) == "" {
+				return fmt.Errorf("event %d: keyboard key_code is blank", i)
+			}
 		default:
 			return fmt.Errorf("event %d: unknown type %q", i, event.Type)
 		}

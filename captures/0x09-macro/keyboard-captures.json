@@ -1,0 +1,72 @@
+{
+  "source_root": "<external-capture-directory>",
+  "scope": "usb.data_fragment; offline upload evidence only, no playback proof",
+  "sources": [
+    {
+      "original": "macro_control_a.pcapng",
+      "file": "keyboard-e0-a-variable-flags.pcapng",
+      "bytes": 569372,
+      "sha256": "8fb14dce17a08c5ed560c2b3ce98a035d039c9d63413d60b152039608c07ca81",
+      "report08_frame": 7103,
+      "report09_frame_groups": [
+        [
+          7737,
+          8529,
+          8567
+        ]
+      ],
+      "verdict": "Valid upload; keyboard/timing interpretation partial"
+    },
+    {
+      "original": "macro_a_10.pcapng",
+      "file": "a-key-scenario-10-two-identical-uploads.pcapng",
+      "bytes": 637536,
+      "sha256": "313c29fb29ad950590e46bb91daee96865bb13b5c510cd6b1a92d6a44c15f52a",
+      "report08_frame": 8421,
+      "report09_frame_groups": [
+        [
+          8473,
+          8505,
+          8569
+        ],
+        [
+          8729,
+          8735,
+          8739
+        ]
+      ],
+      "verdict": "Two byte-identical A-compatible uploads; 10 is user scenario"
+    },
+    {
+      "original": "macro_a_100.pcapng",
+      "file": "a-key-scenario-100-no-report09.pcapng",
+      "bytes": 829792,
+      "sha256": "b55d06804000a86dd5f94e666464c96d69915aec03aded4d95ad77fd60c97f60",
+      "report08_frame": 11369,
+      "report09_frame_groups": [],
+      "verdict": "Negative control: no report09 in usb.data_fragment; 100 is user scenario"
+    },
+    {
+      "original": "macro_shift_a_100.pcapng",
+      "file": "shift-a-default-100.pcapng",
+      "bytes": 1091224,
+      "sha256": "43e9d6c63f199395c2d05baee7a5fca64af21b047e24a4b59304410d1de0f9dc",
+      "report08_frame": 10769,
+      "report09_frame_groups": [
+        [
+          11957,
+          12951,
+          14207
+        ]
+      ],
+      "record_pairs": [
+        "0be1",
+        "0b04",
+        "8b04",
+        "81e1"
+      ],
+      "checksum_be_hex": "02f1",
+      "verdict": "Valid Shift/A-compatible upload; user states Default Delay100 selected before recording; actual timing/playback unverified"
+    }
+  ]
+}

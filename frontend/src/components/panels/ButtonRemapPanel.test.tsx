@@ -52,6 +52,48 @@ function chooseMacro(button: number, name: string) {
 }
 
 describe("ButtonRemapPanel", () => {
+  it("offers saved F/D/S ten-event macro and stages only on Confirm, never Apply", () => {
+    const events = ["KeyF", "KeyD", "KeyS", "KeyF", "KeyD"].flatMap(key_code => [
+      { type: "keyboard", key_code, action: "down", delay_ms: 10 },
+      { type: "keyboard", key_code, action: "up", delay_ms: 10 },
+    ]);
+    const macro = { id: "fds", name: "F/D/S ten", events };
+    const onStageMacro = vi.fn(), onApply = vi.fn();
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[macro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
+    const dialog = openMacro(7);
+    selectSavedMacro(dialog, macro.name);
+    expect(onStageMacro).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    expect(onStageMacro).toHaveBeenCalledExactlyOnceWith("fds", 7, 1);
+    expect(onApply).not.toHaveBeenCalled();
+    expect(macro.events).toEqual(events);
+  });
+  it.each([
+    [["Enter", "down"], ["NumpadEnter", "down"], ["Enter", "up"], ["NumpadEnter", "up"]],
+    [["Enter", "down"], ["NumpadEnter", "up"]],
+    [["Enter", "down"], ["Enter", "down"], ["Enter", "up"]],
+    [["constructor", "down"], ["constructor", "up"]],
+  ])("does not offer ambiguous or inherited identities: %j", (...codes) => {
+    const events = codes.map(([key_code, action]) => ({ type: "keyboard", key_code, action, delay_ms: 10 }));
+    const macro = { id: "invalid", name: "Invalid retained", events };
+    const before = structuredClone(macro);
+    const onStageMacro = vi.fn(), onApply = vi.fn();
+    render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro, macro] as never} onStage={vi.fn()} onStageMacro={onStageMacro} onApply={onApply} />);
+    const dialog = openMacro(7);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro" }));
+    expect(within(dialog).queryByRole("menuitem", { name: macro.name })).not.toBeInTheDocument();
+    expect(onStageMacro).not.toHaveBeenCalled(); expect(onApply).not.toHaveBeenCalled();
+    expect(macro).toEqual(before);
+  });
+  it("stages supported timed keyboard while retaining unsupported saved locals", () => {
+    const onStageMacro=vi.fn();
+    const events=[{type:"keyboard",key_code:"ShiftLeft",action:"down",delay_ms:100},{type:"keyboard",key_code:"KeyA",action:"down",delay_ms:100},{type:"keyboard",key_code:"KeyA",action:"up",delay_ms:100},{type:"keyboard",key_code:"ShiftLeft",action:"up",delay_ms:100}];
+    const macros=[{id:"chord",name:"Captured chord",events},{id:"unknown",name:"Unsupported key",events:events.map(e=>({...e,key_code:"F13"}))}];
+    render(<ButtonRemapPanel remap={remap as never} ready macros={macros as never} onStage={vi.fn()} onStageMacro={onStageMacro}/>);
+    chooseMacro(6,"Captured chord");
+    expect(onStageMacro).toHaveBeenCalledExactlyOnceWith("chord",6,1);
+    expect(macros).toHaveLength(2);
+  });
   it("keeps opaque custom selector menus inside the modal top layer", () => {
     render(<ButtonRemapPanel remap={remap as never} ready macros={[clickMacro] as never} onStage={vi.fn()} onStageMacro={vi.fn()} />);
     const dialog = openMacro(6);
@@ -130,10 +172,12 @@ describe("ButtonRemapPanel", () => {
     const onClearMacro = vi.fn(); const onStageMacro = vi.fn();
     const draft = { ID: "click", Name: "Saved click", Button: 6, Repeat: 2, Events: [...clickMacro.events] };
     render(<ButtonRemapPanel remap={{ ...remap, MacroDrafts: { 6: draft, 7: { ...draft, Button: 7, Repeat: 5 } } } as never}
-      ready macros={[clickMacro, { ...clickMacro, id: "timed", name: "Timed", events: clickMacro.events.map((event) => ({ ...event, delay_ms: 10 })) }] as never}
+      ready macros={[clickMacro, { ...clickMacro, id: "overflow", name: "Overflow", events: clickMacro.events.map((event) => ({ ...event, delay_ms: 51200 })) }] as never}
       onStage={vi.fn()} onStageMacro={onStageMacro} onClearMacro={onClearMacro} />);
     const dialog = openMacro(6);
-    expect(within(dialog).queryByRole("option", { name: "Timed" })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Saved macro", exact: true }));
+    expect(within(dialog).queryByRole("menuitem", { name: "Overflow", exact: true })).not.toBeInTheDocument();
+    fireEvent.keyDown(within(dialog).getByRole("button", { name: "Saved macro", exact: true }), { key: "Escape" });
     fireEvent.change(within(dialog).getByLabelText("Repeat (1–255)"), { target: { value: "7" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onClearMacro).not.toHaveBeenCalled();

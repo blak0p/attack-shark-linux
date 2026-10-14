@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
@@ -29,6 +31,256 @@ func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Cont
 func (c *compositeCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
 	c.calls++
 	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
+}
+
+type localCommandFake struct {
+	commandFake
+	localCalls int
+	config     x6.RemapConfig
+	items      []MacroLocalItem
+	progress   MacroProgress
+	err        error
+	during     func()
+}
+
+func (c *localCommandFake) SendX6MultiMacroLocalAssignmentBound(_ context.Context, _ Binding, config x6.RemapConfig, items []MacroLocalItem) (MacroProgress, error) {
+	c.localCalls++
+	if c.during != nil {
+		c.during()
+	}
+	c.config = config
+	c.items = items
+	return c.progress, c.err
+}
+func localServiceFixture(t *testing.T, command TargetedCommand) (*TargetedService, Binding) {
+	t.Helper()
+	registry, _ := NewProfileRegistry(targetedProfile{})
+	svc := NewTargetedService(registry, inventoryFake{candidates: []transport.Candidate{{Path: "hidraw-1", Serial: "A", VendorID: 0x1d57, ProductID: 0xfa60}}}, command)
+	if _, err := svc.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	binding, _ := svc.Selection()
+	return svc, binding
+}
+
+type officialLocalPacketCommand struct {
+	localCommandFake
+	reports [][]byte
+}
+
+func (c *officialLocalPacketCommand) SendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroLocalItem) (MacroProgress, error) {
+	buttons := make([]uint8, len(items))
+	var chunks [][]byte
+	for i, item := range items {
+		buttons[i] = item.Button
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return MacroProgress{}, err
+		}
+		reports, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		if err != nil {
+			return MacroProgress{}, err
+		}
+		chunks = append(chunks, reports...)
+	}
+	report, err := x6.EncodeMultiMacroAssignmentReport(config, buttons)
+	if err != nil {
+		return MacroProgress{}, err
+	}
+	c.reports = append([][]byte{report}, chunks...)
+	return c.localCommandFake.SendX6MultiMacroLocalAssignmentBound(ctx, binding, config, items)
+}
+func TestX6OfficialTargetedFDSPayload(t *testing.T) {
+	command := &officialLocalPacketCommand{localCommandFake: localCommandFake{progress: MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}}}
+	svc, binding := localServiceFixture(t, command)
+	var events []macros.Event
+	for i, key := range []string{"KeyF", "KeyD", "KeyS", "KeyF", "KeyD"} {
+		events = append(events, macros.Event{Type: macros.Keyboard, KeyCode: key, Action: macros.Down, DelayMS: int64(100 * (i + 1))}, macros.Event{Type: macros.Keyboard, KeyCode: key, Action: macros.Up, DelayMS: int64(20 + 10*i)})
+	}
+	events[9].DelayMS = 600
+	before := append([]macros.Event(nil), events...)
+	config := x6.DefaultRemapConfig()
+	config.Buttons[3].Action = x6.RemapFire
+	progress, err := svc.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, config, []MacroLocalItem{{Button: 7, Events: events, Repeat: 3, Mode: 2}})
+	if err != nil || progress != command.progress || command.localCalls != 1 || len(command.reports) != 4 || !reflect.DeepEqual(command.config, config) || !reflect.DeepEqual(events, before) {
+		t.Fatal(progress, err, command)
+	}
+	expected := []byte{0x0b, 9, 0x83, 9, 0x15, 7, 0x83, 7, 0x1f, 0x16, 0x85, 0x16, 0x29, 9, 0x85, 9, 0x33, 7, 0x81, 7}
+	if !bytes.Equal(command.reports[1][30:50], expected) || command.reports[1][4] != 2 || command.reports[1][8] != 3 || command.reports[1][29] != 10 {
+		t.Fatalf("F/D/S order/timing: %x", command.reports)
+	}
+	for i, header := range [][]byte{{9, 0x40, 6, 0}, {9, 0x40, 6, 1}, {9, 0x0c, 6, 2}} {
+		if !bytes.Equal(command.reports[i+1][:4], header) {
+			t.Fatal("destination/chunks")
+		}
+	}
+	if !bytes.Equal(command.reports[3][10:12], []byte{3, 0xa7}) {
+		t.Fatal("terminal/checksum")
+	}
+}
+
+func TestX6OfficialTargetedAliasRejectionBeforeMutation(t *testing.T) {
+	for _, codes := range [][]string{{"Enter", "NumpadEnter"}, {"Enter", "Enter", "NumpadEnter", "NumpadEnter"}} {
+		command := &officialLocalPacketCommand{}
+		svc, binding := localServiceFixture(t, command)
+		events := []macros.Event{{Type: macros.Keyboard, KeyCode: codes[0], Action: macros.Down}, {Type: macros.Keyboard, KeyCode: codes[1], Action: macros.Up}}
+		if len(codes) == 4 {
+			events = []macros.Event{{Type: macros.Keyboard, KeyCode: "Enter", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "NumpadEnter", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "Enter", Action: macros.Up}, {Type: macros.Keyboard, KeyCode: "NumpadEnter", Action: macros.Up}}
+		}
+		beforeEvents := append([]macros.Event(nil), events...)
+		before, _ := svc.State(binding.ID)
+		p, err := svc.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), []MacroLocalItem{{Button: 7, Events: events, Repeat: 1}})
+		after, _ := svc.State(binding.ID)
+		if err == nil || p != (MacroProgress{}) || command.localCalls != 0 || len(command.reports) != 0 || !reflect.DeepEqual(before, after) || !reflect.DeepEqual(events, beforeEvents) {
+			t.Fatal(p, err, before, after)
+		}
+	}
+}
+
+func localServiceItems() []MacroLocalItem {
+	return []MacroLocalItem{{Button: 6, Events: []macros.Event{{Type: macros.MouseLeft, Action: macros.Down}, {Type: macros.MouseLeft, Action: macros.Up}}, Repeat: 255}, {Button: 7, Events: []macros.Event{{Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up}}, Repeat: 1, Mode: 2}}
+}
+func TestTargetedLocalPrevalidationAndCapability(t *testing.T) {
+	for _, mutation := range []string{"empty", "config", "destination", "duplicate", "unsupported", "unbalanced", "overflow", "repeat", "mode", "mouse identity", "stale", "cancel"} {
+		t.Run(mutation, func(t *testing.T) {
+			command := &localCommandFake{}
+			svc, binding := localServiceFixture(t, command)
+			config := x6.DefaultRemapConfig()
+			items := localServiceItems()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			switch mutation {
+			case "empty":
+				items = nil
+			case "config":
+				config.Buttons = nil
+			case "destination":
+				items[1].Button = 8
+			case "duplicate":
+				items[1].Button = 6
+			case "unsupported":
+				items[1].Events[0].KeyCode = "F13"
+			case "unbalanced":
+				items[1].Events = items[1].Events[:1]
+			case "overflow":
+				items[1].Events[1].DelayMS = 51200
+			case "repeat":
+				items[1].Repeat = 0
+			case "mode":
+				items[1].Mode = 3
+			case "mouse identity":
+				items[0].Events[0].KeyCode = "KeyA"
+			case "stale":
+				binding.Path = "other"
+			case "cancel":
+				cancel()
+			}
+			before, _ := svc.State(binding.ID)
+			p, err := svc.ApplyMultiMacroLocalAssignmentBound(ctx, binding, config, items)
+			after, _ := svc.State(binding.ID)
+			if err == nil || p != (MacroProgress{}) || command.localCalls+command.calls != 0 || !reflect.DeepEqual(before, after) {
+				t.Fatal(p, err, before, after)
+			}
+		})
+	}
+	legacy := &compositeCommandFake{}
+	svc, binding := localServiceFixture(t, legacy)
+	if svc.MacroLocalAssignmentsAvailable() || !svc.MacroSequenceAssignmentsAvailable() {
+		t.Fatal("wrong capabilities")
+	}
+	p, err := svc.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), localServiceItems())
+	if err == nil || p != (MacroProgress{}) || legacy.calls != 0 {
+		t.Fatal(p, err)
+	}
+}
+func TestTargetedLocalFrozenCopiesAndPartialEvidence(t *testing.T) {
+	command := &localCommandFake{progress: MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadPossiblyPartial}, err: errors.New("short write")}
+	svc, binding := localServiceFixture(t, command)
+	items := localServiceItems()
+	config := x6.DefaultRemapConfig()
+	config.Buttons[3].Action = x6.RemapFire
+	command.during = func() {
+		items[1].Events[0].KeyCode = "KeyB"
+		items[1].Repeat = 255
+		config.Buttons[3].Action = x6.RemapOff
+	}
+	p, err := svc.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, config, items)
+	if err != command.err || p != command.progress || command.localCalls != 1 || command.items[1].Events[0].KeyCode != "KeyA" || command.items[1].Repeat != 1 || command.config.Buttons[3].Action != x6.RemapFire {
+		t.Fatal(p, err, command)
+	}
+	if command.items[0].Button != 6 || command.items[1].Button != 7 {
+		t.Fatal("ordered items lost")
+	}
+}
+
+// Err is the earliest cancellation checkpoint after all inputs are frozen.
+type queueCheckpointContext struct {
+	context.Context
+	entered, release chan struct{}
+	once             sync.Once
+}
+
+func (c *queueCheckpointContext) Err() error {
+	c.once.Do(func() { close(c.entered); <-c.release })
+	return c.Context.Err()
+}
+func TestTargetedLocalFreezeBeforeQueueAndCancellation(t *testing.T) {
+	for _, mutation := range []string{"copy", "cancel", "selection"} {
+		t.Run(mutation, func(t *testing.T) {
+			command := &localCommandFake{progress: MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}}
+			svc, binding := localServiceFixture(t, command)
+			_, state, _, _ := svc.selectedState()
+			state.applyMu.Lock()
+			base, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ctx := &queueCheckpointContext{Context: base, entered: make(chan struct{}), release: make(chan struct{})}
+			items := localServiceItems()
+			config := x6.DefaultRemapConfig()
+			type result struct {
+				p   MacroProgress
+				err error
+			}
+			done := make(chan result, 1)
+			go func() {
+				p, err := svc.ApplyMultiMacroLocalAssignmentBound(ctx, binding, config, items)
+				done <- result{p, err}
+			}()
+			select {
+			case <-ctx.entered:
+			case <-time.After(time.Second):
+				state.applyMu.Unlock()
+				t.Fatal("no prequeue cancellation checkpoint")
+			}
+			items[1].Events[0].KeyCode = "KeyB"
+			config.Buttons[0].Action = x6.RemapOff
+			if mutation == "cancel" {
+				cancel()
+			}
+			if mutation == "selection" {
+				svc.mu.Lock()
+				svc.selection = nil
+				svc.mu.Unlock()
+			}
+			close(ctx.release)
+			state.applyMu.Unlock()
+			got := <-done
+			if mutation == "copy" {
+				if got.err != nil || command.localCalls != 1 || command.items[1].Events[0].KeyCode != "KeyA" || command.config.Buttons[0].Action != x6.RemapLeft {
+					t.Fatal(got, command)
+				}
+			} else {
+				if got.err == nil || command.localCalls != 0 || got.p != (MacroProgress{}) {
+					t.Fatal(got)
+				}
+				if mutation == "cancel" && !errors.Is(got.err, context.Canceled) {
+					t.Fatal(got.err)
+				}
+				if mutation == "selection" && !errors.Is(got.err, ErrStaleBinding) {
+					t.Fatal(got.err)
+				}
+			}
+		})
+	}
 }
 
 func TestTargetedMultiMacroSequenceSeam(t *testing.T) {

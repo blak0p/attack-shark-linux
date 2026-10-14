@@ -102,8 +102,71 @@ type TargetedMacroSequenceCommand interface {
 	SendX6MultiMacroSequenceAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroSequenceItem) (MacroProgress, error)
 }
 
+// MacroLocalItem retains exact local source events; no unchecked raw blocks are accepted.
+type MacroLocalItem struct {
+	Button uint8
+	Events []macros.Event
+	Repeat int
+	Mode   uint8
+}
+
+// TargetedMacroLocalCommand is additive. Legacy commands need not implement it.
+type TargetedMacroLocalCommand interface {
+	SendX6MultiMacroLocalAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroLocalItem) (MacroProgress, error)
+}
+
+// MacroLocalAssignmentsAvailable reports capability without acquiring ownership
+// or invoking transport. Apply still repeats admission and binding checks.
+func (s *TargetedService) MacroLocalAssignmentsAvailable() bool {
+	_, ok := s.command.(TargetedMacroLocalCommand)
+	return ok
+}
+
+func (s *TargetedService) MacroSequenceAssignmentsAvailable() bool {
+	_, ok := s.command.(TargetedMacroSequenceCommand)
+	return ok
+}
+
+func (s *TargetedService) ApplyMultiMacroLocalAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroLocalItem) (MacroProgress, error) {
+	empty := MacroProgress{}
+	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
+	frozen := make([]MacroLocalItem, len(items))
+	buttons := make([]uint8, len(items))
+	seen := make(map[uint8]bool)
+	if len(items) == 0 {
+		return empty, errors.New("no macro local items")
+	}
+	for i, item := range items {
+		item.Events = append([]macros.Event(nil), item.Events...)
+		frozen[i] = item
+		if seen[item.Button] {
+			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
+		}
+		seen[item.Button] = true
+		buttons[i] = item.Button
+		destination, err := x6.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return empty, err
+		}
+		if _, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode); err != nil {
+			return empty, err
+		}
+	}
+	if _, err := x6.EncodeMultiMacroAssignmentReport(config, buttons); err != nil {
+		return empty, err
+	}
+	command, ok := s.command.(TargetedMacroLocalCommand)
+	if !ok {
+		return empty, errors.New("bound macro local command unavailable")
+	}
+	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
+		return command.SendX6MultiMacroLocalAssignmentBound(ctx, binding, config, frozen)
+	})
+}
+
 func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
 	empty := MacroProgress{}
+	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
 	if len(items) == 0 {
 		return empty, errors.New("no macro sequence items")
 	}
@@ -143,6 +206,8 @@ func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Con
 }
 
 func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (MacroProgress, error) {
+	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
+	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
 	empty := MacroProgress{}
 	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
 		return empty, err
@@ -158,14 +223,13 @@ func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context,
 	if !ok {
 		return empty, errors.New("bound macro sequence command unavailable")
 	}
-	// Freeze the caller-owned slice before waiting for serialization.
-	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
 	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
 		return command.SendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence)
 	})
 }
 
 func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macros.X6Click) (MacroProgress, error) {
+	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
 	empty := MacroProgress{}
 	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
 		return empty, err
@@ -188,6 +252,11 @@ func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding
 
 func (s *TargetedService) applyMacroBound(ctx context.Context, binding Binding, send func() (MacroProgress, error)) (MacroProgress, error) {
 	empty := MacroProgress{}
+	// An already canceled operation need not wait behind an unrelated write.
+	// Callers freeze and admit their payloads before reaching this checkpoint.
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
 	selected, state, _, err := s.selectedState()
 	if err != nil || selected != binding {
 		return empty, ErrStaleBinding
