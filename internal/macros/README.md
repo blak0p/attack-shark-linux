@@ -25,8 +25,43 @@ still reject. The timeline labels keyboard identity and down/up separately; only
 one or two recognized complete zero-delay mouse clicks without nonempty key
 fields display assignment eligibility. This display does not admit an upload.
 
-Recording policies (minimum/default 10 and between-press timing), recording UI,
-and upload integration remain separate work. Existing complete-click sequence
+## Editor-scoped recording
+
+Choose a delay policy, then **Start recording** in the macro editor. Only the
+focused capture area receives keyboard and five mouse-button down/up events.
+**Stop recording**, Tab navigation, or focus loss appends the take to the draft;
+**Save to library** persists it. The buffered event count and stopped append
+message distinguish recording from saving. Nothing is played or sent to a device.
+
+| Take policy | Local event delays |
+|---|---|
+| Minimum | 0 ms on every event; not a firmware minimum claim |
+| Default | 10 ms on every event |
+| Recorded | Rounded monotonic milliseconds between down events, on the previous down; every up remains 0 |
+
+For down A at 0, up A at 30, down B at 120, up B at 180, the delays are
+`[120, 0, 0, 0]`. Neither releases nor stopping sample an interval. The final
+press stays 0 until another press arrives. Codec terminal 10 is a separate rule.
+Policy selection is frozen during a take and never rewrites earlier events.
+There is no post-recording policy editor or schema metadata migration.
+
+Keyboard identity is the opaque browser `event.code`, not text or a layout guess.
+Modifiers are distinct identities; repeated downs and unmatched ups are ignored.
+Tab is reserved for normal navigation, not captured. No global event listeners
+or editable-field capture exist. Recorder buttons are outside the capture area.
+Stopping automatically appends releases for still-held identities in press order,
+using 0 (minimum/recorded) or 10 (default), never release-time measurements.
+These local balancing events are not evidence of physical input or playback.
+
+Recording locks library mutations, import, selection, save and deletion. Loading,
+reading, saving and delete confirmation prevent a take from starting. A synchronous
+session token protects against same-tick races and stale service delivery. Unmount
+finishes into the same still-live draft when available; service replacement
+invalidates the token and cannot deliver into a different library. The take buffer
+is cleared on each stop/cleanup. Existing saved/imported events are deep-copied
+and appended to, not normalized. The complete-click composer remains unchanged.
+
+Upload integration remains separate work. Existing complete-click sequence
 admission still rejects keyboard events.
 
 Both `internal/macros/models.ts` binding mirrors were narrowly updated together
@@ -127,9 +162,8 @@ existing additive checksum at bytes 126–127. Unused bytes remain zero.
 
 This is traced **host arithmetic**, not proof of firmware acceptance or physical
 timing. In particular, 51199 is arithmetically encodable, not playback-verified.
-OR encoding loses information; no inverse timing decoder is provided. Domain,
-editor, recording policies, upload admission and transport integration remain
-separate work. The legacy template limitations below still apply to legacy APIs.
+OR encoding loses information; no inverse timing decoder is provided. Local
+editor recording does not widen upload admission or transport integration. The legacy template limitations below still apply to legacy APIs.
 
 ## Local identities to offline candidates
 

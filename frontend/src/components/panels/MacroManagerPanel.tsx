@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { captureInput, startTake, stopTake, type DelayPolicy, type Take } from "../../macros/recorder";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
 import { useMacroLibrary } from "../../hooks/useMacroLibrary";
 import { exportMacroFile, MAX_MACRO_FILE_BYTES } from "../../macros/macro-file";
@@ -55,7 +56,39 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rows = timeline(draft?.events ?? []);
   const compatible = rows.length >= 1 && rows.length <= 2 && rows.every((row) => row.count === 2);
-  const editorDisabled = unavailable;
+  const editorDisabled = unavailable || library.recordingActive;
+  const navigationDisabled = busy || loading || confirmation || library.recordingActive;
+  const [policy, setPolicy] = useState<DelayPolicy>("fixed");
+  const [takeStatus, setTakeStatus] = useState("");
+  const [eventCount, setEventCount] = useState(0);
+  const captureRef = useRef<HTMLDivElement>(null);
+  const session = useRef<{ take: Take; token: symbol; finish: Library["finishRecording"] } | undefined>(undefined);
+  const stop = () => {
+    const current = session.current;
+    if (!current) return;
+    session.current = undefined;
+    const events = stopTake(current.take);
+    const appended = current.finish(current.token, events);
+    setTakeStatus(appended ? `Appended ${events.length} recorded events to the draft. Save to keep them.` : "Recording ended; the draft changed, so no events were delivered.");
+    setEventCount(0);
+  };
+  useEffect(() => () => {
+    const current = session.current;
+    session.current = undefined;
+    if (current) current.finish(current.token, stopTake(current.take));
+  }, [service, draft?.id]);
+  useEffect(() => {
+    if (session.current && (!library.recordingActive || unavailable)) stop();
+  }, [library.recordingActive, unavailable]);
+  const capture = (input: Omit<Macro["events"][number], "delay_ms">) => {
+    const current = session.current;
+    if (!current || unavailable || !library.recordingActive) return false;
+    const next = captureInput(current.take, input, input.action === "down" ? performance.now() : 0);
+    if (next === current.take) return false;
+    current.take = next;
+    setEventCount(next.events.length);
+    return true;
+  };
 
   const upload = (file?: File) => {
     if (!file || editorDisabled) return;
@@ -88,7 +121,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
       <article className="card macro-library" aria-label="Macro library">
         <div className="card-head">
           <h2>Macro library</h2>
-          <button type="button" className="button primary" disabled={busy || loading} onClick={() => library.newMacro()}>New macro</button>
+          <button type="button" className="button primary" disabled={navigationDisabled} onClick={() => library.newMacro()}>New macro</button>
         </div>
         <p className="hint">Shared across devices. Available offline.</p>
         {loading && <p role="status">Loading library…</p>}
@@ -99,7 +132,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
               type="button"
               key={macro.id}
               className="macro-card"
-              disabled={busy || loading}
+              disabled={navigationDisabled}
               aria-pressed={draft?.id === macro.id}
               aria-label={`${macro.name} · ${macro.events.length} events`}
               onClick={() => library.select(macro.id)}
@@ -109,7 +142,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
             </button>
           ))}
         </div>
-        {error && !loading && <button type="button" className="button" disabled={busy} onClick={library.reload}>Retry library</button>}
+        {error && !loading && <button type="button" className="button" disabled={editorDisabled} onClick={library.reload}>Retry library</button>}
       </article>
 
       <article className="card macro-detail" aria-label="Macro details">
@@ -167,6 +200,47 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
                 onChange={(event) => library.rename(event.target.value)}
               />
             </label>
+            <section className="macro-recorder" aria-label="Local recording">
+              <h3>Record local inputs</h3>
+              <label>Recording delay
+                <select value={policy} disabled={editorDisabled} onChange={event => setPolicy(event.target.value as DelayPolicy)}>
+                  <option value="minimum">Minimum · 0 local ms</option>
+                  <option value="fixed">Default · 10 ms</option>
+                  <option value="recorded">Recorded · between presses</option>
+                </select>
+              </label>
+              <p className="hint">Choose a policy before each take. Earlier events never change. Recorded intervals belong to the previous press; releases have zero delay.</p>
+              <button type="button" className="button" disabled={editorDisabled} onClick={() => {
+                const token = library.beginRecording();
+                if (!token) return;
+                session.current = { take: startTake(policy), token, finish: library.finishRecording };
+                setTakeStatus(""); setEventCount(0);
+                captureRef.current?.focus();
+              }}>Start recording</button>
+              <button type="button" className="button" disabled={!library.recordingActive} onClick={stop}>Stop recording</button>
+              <p id="macro-capture-help" className="hint">Only this focused area records physical key identities and five mouse buttons. Tab leaves and stops; controls and text fields are not recorded. Stop or focus loss appends held-input releases without measuring release time. No device playback.</p>
+              <div ref={captureRef} className="macro-capture" role="region" aria-label="Local input capture" aria-describedby="macro-capture-help" tabIndex={0}
+                onBlur={stop}
+                onKeyDown={event => {
+                  if (event.target !== event.currentTarget || event.code === "Tab" || !event.code.trim() || event.repeat) return;
+                  if (capture({ type: "keyboard", key_code: event.code, action: "down" })) event.preventDefault();
+                }}
+                onKeyUp={event => {
+                  if (event.target !== event.currentTarget || event.code === "Tab" || !event.code.trim()) return;
+                  if (capture({ type: "keyboard", key_code: event.code, action: "up" })) event.preventDefault();
+                }}
+                onMouseDown={event => {
+                  const button = mouseButtons.find(button => button.button === event.button);
+                  if (event.target === event.currentTarget && button && capture({ type: button.type, action: "down" })) event.preventDefault();
+                }}
+                onMouseUp={event => {
+                  const button = mouseButtons.find(button => button.button === event.button);
+                  if (event.target === event.currentTarget && button && capture({ type: button.type, action: "up" })) event.preventDefault();
+                }}
+                onContextMenu={event => { if (session.current && event.target === event.currentTarget) event.preventDefault(); }}
+              >{library.recordingActive ? `Recording · ${eventCount} events buffered` : "Capture stopped"}</div>
+              {takeStatus && <p role="status">{takeStatus}</p>}
+            </section>
             <section className="macro-composer" aria-label="Complete click composer">
               <h3>Add a complete click</h3>
               <div className="macro-click-types" role="group" aria-label="Click type">

@@ -47,6 +47,13 @@
 .macro-options input { max-width: 100%; }
 .macro-file-import { margin-bottom: 8px; }
 .macro-guidance { margin: 0 0 16px; }
+.macro-recorder { margin: 24px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.macro-recorder label { display: grid; gap: 8px; }
+.macro-recorder select { max-width: 100%; padding: 10px; background: var(--rail); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-md); font: inherit; }
+.macro-recorder .button { margin: 8px 8px 0 0; }
+.macro-capture { padding: 28px 16px; border: 2px dashed var(--line); border-radius: var(--radius-md); background: var(--rail); overflow-wrap: anywhere; }
+.macro-capture:focus { outline: 2px solid var(--focus-ring); outline-offset: 3px; border-color: var(--accent); }
+.macro-recorder select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .macro-composer { margin: 24px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--rail); }
 .macro-composer h3 { margin-top: 0; }
 .macro-click-types { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }

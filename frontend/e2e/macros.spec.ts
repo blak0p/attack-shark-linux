@@ -1,5 +1,57 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 
+test("local input recording preserves policies through save and export without device calls", async ({ page }) => {
+  await page.goto("/e2e.html");
+  await page.getByRole("link", { name: "Macros", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New macro", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "New macro", exact: true }).click();
+  await page.getByLabel("Macro name", { exact: true }).fill("Local recording");
+  const surface = page.getByRole("region", { name: "Local input capture", exact: true });
+  const policy = page.getByRole("combobox", { name: /^Recording delay/ });
+  await policy.selectOption("minimum");
+  await page.getByRole("button", { name: "Start recording", exact: true }).click();
+  await expect(surface).toBeFocused();
+  await expect(policy).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save to library", exact: true })).toBeDisabled();
+  await page.keyboard.down("ControlLeft");
+  await page.keyboard.press("KeyA");
+  await page.keyboard.up("ControlLeft");
+  await page.keyboard.press("Tab");
+  await expect(surface).toHaveText("Capture stopped");
+  await policy.selectOption("fixed");
+  await page.getByRole("button", { name: "Start recording", exact: true }).click();
+  await surface.click({ button: "right" });
+  await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+  await policy.selectOption("recorded");
+  await page.getByRole("button", { name: "Start recording", exact: true }).click();
+  await page.keyboard.press("KeyB");
+  await page.keyboard.press("KeyC");
+  await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+  await page.getByRole("button", { name: "Save to library", exact: true }).click();
+  await expect(page.getByText("Saved to library. No device changes made.")).toBeVisible();
+  const saved = await page.evaluate(() => window.__macroTest.library().find(macro => macro.name === "Local recording")!);
+  expect(saved.events.slice(0, 6)).toEqual([
+    { type: "keyboard", key_code: "ControlLeft", action: "down", delay_ms: 0 },
+    { type: "keyboard", key_code: "KeyA", action: "down", delay_ms: 0 },
+    { type: "keyboard", key_code: "KeyA", action: "up", delay_ms: 0 },
+    { type: "keyboard", key_code: "ControlLeft", action: "up", delay_ms: 0 },
+    { type: "mouse_right", action: "down", delay_ms: 10 },
+    { type: "mouse_right", action: "up", delay_ms: 10 },
+  ]);
+  expect(saved.events.slice(6).map(event => [event.key_code, event.action])).toEqual([["KeyB", "down"], ["KeyB", "up"], ["KeyC", "down"], ["KeyC", "up"]]);
+  expect(saved.events[6].delay_ms).toBeGreaterThanOrEqual(0);
+  expect(saved.events.slice(7).map(event => event.delay_ms)).toEqual([0, 0, 0]);
+  await page.getByText("Macro options", { exact: true }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export saved macro", exact: true }).click();
+  const stream = await (await downloadPromise).createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(JSON.parse(Buffer.concat(chunks).toString())).toEqual({ version: 1, name: saved.name, events: saved.events });
+  expect(await page.evaluate(() => window.__macroTest.calls)).toEqual(["CreateMacro"]);
+  expect(await page.evaluate(() => window.__routingTest.calls)).toEqual([]);
+});
+
 async function openMacro(page: Page, button: number) {
   await page.getByRole("button", { name: `Button ${button} action`, exact: true }).click();
   const macro = page.getByRole("menuitem", { name: "Macro", exact: true });
