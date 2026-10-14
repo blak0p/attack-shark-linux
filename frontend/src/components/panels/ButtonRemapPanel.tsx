@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Macro, MacroDraft, MacroPlaybackMode, MacroProgress, RemapAction as Action } from "../../desktop-contract";
+import { deviceAdmission } from "../../macros/device-admission";
 import { GnomeSelect, type GnomeSelectOption } from "./GnomeSelect";
 
 type Button = { Button: number; Action: Action | null; PreservedDefault: string };
@@ -17,12 +18,7 @@ type Remap = {
   MacroProgress?: MacroProgress;
 };
 
-const compatible = (macro: Macro) => [2, 4].includes(macro.events.length) &&
-  macro.events.every((event, index, events) =>
-    ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
-    event.delay_ms === 0 && (index % 2 === 0
-      ? event.action === "down" && event.type === events[index + 1].type
-      : event.action === "up"));
+const compatible = (macro: Macro) => deviceAdmission(macro.events).eligible;
 
 const labelFor = (action: Action) =>
   ({
@@ -123,8 +119,9 @@ function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, 
   const [repeat, setRepeat] = useState(String(initialRepeat));
   const [mode, setMode] = useState(initialMode);
   const count = mode === 0 ? Number(repeat) : 1;
-  const valid = available && macros.some((macro) => macro.id === id) &&
-    (mode !== 0 || repeat.trim() !== "") && Number.isInteger(count) && count >= 1 && count <= 255;
+  const selected = macros.find((macro) => macro.id === id);
+  const valid = available && !!selected && (mode !== 0 || repeat.trim() !== "") &&
+    deviceAdmission(selected.events, count, mode).eligible;
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -273,6 +270,7 @@ export function ButtonRemapPanel({
       <p className="hint">Review the complete assignment below, then apply or discard it.</p>
 
       {!libraryReady && <p className="hint">Saved library unavailable or loading. Open Macros to retry.</p>}
+      {libraryReady && macros.some(macro => !compatible(macro)) && <p className="hint">Unsupported saved macros remain in your local library. Open Macros for the assignment reason; no events are discarded.</p>}
       {error && <p role="alert">{error}</p>}
 
       {remap.Pending.Buttons.map((button) => {

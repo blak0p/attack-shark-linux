@@ -7,12 +7,122 @@ import type { Macro, MacroLibraryService } from "../../desktop-contract";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+function selectPolicy(policy: "minimum" | "fixed" | "recorded") {
+  const label = { minimum: "Minimum · 0 local ms", fixed: "Default · 10 ms", recorded: "Recorded · between presses" }[policy];
+  fireEvent.click(screen.getByRole("button", { name: "Recording delay", exact: true }));
+  fireEvent.click(screen.getByRole("menuitem", { name: label, exact: true }));
+}
+
+it("uses a styled recording policy menu and preserves take policy selection", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await screen.findByDisplayValue("Clicks");
+  const trigger = screen.getByRole("button", { name: "Recording delay", exact: true });
+  expect(trigger).toHaveTextContent("Default · 10 ms");
+  fireEvent.click(trigger);
+  const menu = screen.getByRole("menu", { name: "Recording delay categories" });
+  expect(menu).toHaveClass("gnome-select-popup");
+  expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Minimum · 0 local ms" }));
+  expect(trigger).toHaveTextContent("Minimum · 0 local ms");
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  expect(trigger).toBeDisabled();
+  const surface = screen.getByRole("region", { name: "Local input capture" });
+  fireEvent.keyDown(surface, { code: "KeyF" });
+  fireEvent.keyUp(surface, { code: "KeyF" });
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [...macro().events,
+    { type: "keyboard", key_code: "KeyF", action: "down", delay_ms: 0 },
+    { type: "keyboard", key_code: "KeyF", action: "up", delay_ms: 0 }]));
+});
+
+it("shows one keypress without changing raw actions or saved delays", async () => {
+  const events: Macro["events"] = [
+    { type: "keyboard", key_code: "KeyF", action: "down", delay_ms: 10 },
+    { type: "keyboard", key_code: "KeyF", action: "up", delay_ms: 20 },
+  ];
+  const stored: Macro = { id: "one", name: "Keys", events };
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([stored]), ReadMacro: vi.fn().mockResolvedValue(stored) });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Keys · 2 events" }));
+  const list = await screen.findByRole("list", { name: "Ordered timeline" });
+  expect(list.querySelectorAll("strong")).toHaveLength(1);
+  expect(Array.from(list.querySelectorAll("strong"), row => row.textContent)).toEqual(["Key F"]);
+  expect(list).not.toHaveTextContent(/\b(down|up)\b/);
+  expect(list).toHaveTextContent("↓ 10 ms / ↑ 20 ms");
+  expect(screen.getByText("1 press")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Keys", events));
+});
+
+it("counts five presses during recording and after append without discarding ten raw events", async () => {
+  const service = serviceFor();
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  const surface = screen.getByRole("region", { name: "Local input capture" });
+  expect(surface).toHaveTextContent("Recording · 0 presses");
+  for (const [index, code] of ["KeyE", "KeyS", "KeyT", "KeyO", "KeyE"].entries()) {
+    fireEvent.keyDown(surface, { code });
+    expect(surface).toHaveTextContent(`Recording · ${index + 1} ${index === 0 ? "press" : "presses"}`);
+    fireEvent.keyUp(surface, { code });
+    expect(surface).toHaveTextContent(`Recording · ${index + 1} ${index === 0 ? "press" : "presses"}`);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  expect(screen.getByRole("status")).toHaveTextContent("5 presses");
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [...macro().events,
+    ...["KeyE", "KeyS", "KeyT", "KeyO", "KeyE"].flatMap(key_code => [
+      { type: "keyboard", key_code, action: "down", delay_ms: 10 },
+      { type: "keyboard", key_code, action: "up", delay_ms: 10 },
+    ])]));
+});
+
+it("uses uniform down/up slots for chords without reordering, merging or inventing delays", async () => {
+  const events: Macro["events"] = [
+    { type: "keyboard", key_code: "KeyA", action: "down", delay_ms: 4 },
+    { type: "keyboard", key_code: "KeyD", action: "down", delay_ms: 10 },
+    { type: "keyboard", key_code: "KeyA", action: "up", delay_ms: 7 },
+    { type: "keyboard", key_code: "KeyD", action: "up", delay_ms: 8 },
+  ];
+  const stored = { id: "one", name: "Chord", events };
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([stored]), ReadMacro: vi.fn().mockResolvedValue(stored) });
+  render(<MacroManagerPanel service={service} />);
+  const card = await screen.findByRole("button", { name: "Chord · 4 events" });
+  await act(async () => { fireEvent.click(card); });
+  const list = screen.getByRole("list", { name: "Ordered timeline" });
+  expect(Array.from(list.querySelectorAll("strong"), row => row.textContent)).toEqual(["Key A", "Key D", "Key A", "Key D"]);
+  expect(Array.from(list.querySelectorAll("small"), row => row.textContent)).toEqual([
+    "↓ 4 ms / ↑ —", "↓ 10 ms / ↑ —", "↓ — / ↑ 7 ms", "↓ — / ↑ 8 ms",
+  ]);
+  expect(screen.getByText("2 presses", { exact: true })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Chord", events));
+});
+
+it("keeps recording visually concise with optional technical details", async () => {
+  render(<MacroManagerPanel service={serviceFor()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  const options = (await screen.findByText("Recording options")).closest("details");
+  expect(options).not.toHaveAttribute("open");
+  expect(screen.getByRole("checkbox", { name: /Record Tab/, hidden: true }).closest("details")).toBe(options);
+  expect(screen.queryByText(/46 source events/)).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Local input capture" })).toHaveAccessibleDescription("Press keys or click here.");
+  expect(screen.getByRole("button", { name: "Start recording" })).toHaveTextContent("Record");
+  expect(screen.getByRole("button", { name: "Stop recording" })).toHaveTextContent("Stop");
+});
+
 it("captures only the focused surface, locks controls and appends without rewriting prior events", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
   await screen.findByDisplayValue("Clicks");
-  fireEvent.change(screen.getByLabelText("Recording delay"), { target: { value: "recorded" } });
+  selectPolicy("recorded");
   fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
   const surface = screen.getByRole("region", { name: "Local input capture" });
   expect(surface).toHaveFocus();
@@ -29,8 +139,8 @@ it("captures only the focused surface, locks controls and appends without rewrit
   fireEvent.keyUp(surface, { code: "UnknownPhysical" });
   fireEvent.keyDown(screen.getByLabelText("Macro name"), { code: "KeyZ" });
   fireEvent.blur(surface);
-  expect(screen.getByRole("status")).toHaveTextContent("Appended 4 recorded events");
-  fireEvent.change(screen.getByLabelText("Recording delay"), { target: { value: "fixed" } });
+  expect(screen.getByRole("status")).toHaveTextContent("2 presses");
+  selectPolicy("fixed");
   fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
   await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [
     ...macro().events,
@@ -44,10 +154,13 @@ it("captures only the focused surface, locks controls and appends without rewrit
 it.each(buttonsForRecording())("captures mouse button %s with fixed delays and ignores stop clicks", async (button, type) => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
-  await screen.findByDisplayValue("Clicks");
+  const card = await screen.findByRole("button", { name: "Clicks · 2 events" });
+  await act(async () => { fireEvent.click(card); });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
   const surface = screen.getByRole("region", { name: "Local input capture" });
+  expect(surface).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Stop recording" })).toBeEnabled();
   fireEvent.mouseDown(surface, { button });
   fireEvent.mouseUp(surface, { button });
   fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
@@ -64,13 +177,13 @@ it("leaves navigation and outside input defaults intact and resets each subseque
   await screen.findByDisplayValue("Clicks");
   const surface = screen.getByRole("region", { name: "Local input capture" });
   expect(fireEvent.keyDown(surface, { code: "KeyA" })).toBe(true);
-  fireEvent.change(screen.getByLabelText("Recording delay"), { target: { value: "minimum" } });
+  selectPolicy("minimum");
   fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
   expect(fireEvent.keyDown(document.body, { code: "KeyZ" })).toBe(true);
   expect(fireEvent.keyDown(surface, { code: "Tab" })).toBe(true);
   expect(fireEvent.keyDown(surface, { code: "KeyA" })).toBe(false);
   fireEvent.blur(surface);
-  fireEvent.change(screen.getByLabelText("Recording delay"), { target: { value: "fixed" } });
+  selectPolicy("fixed");
   fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
   fireEvent.keyDown(surface, { code: "KeyA" });
   fireEvent.keyUp(surface, { code: "KeyA" });
@@ -115,6 +228,118 @@ it("flushes held inputs on editor unmount into a surviving draft and cannot leak
   expect(replacement.CreateMacro).not.toHaveBeenCalled();
 });
 
+it("records opted-in Tab and Escape, finishes held modifiers once, and restores keyboard focus", async () => {
+  const service = serviceFor();
+  let queued!: FrameRequestCallback;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { queued = callback; return 42; });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
+  const toggle = screen.getByRole("checkbox", { name: /Record Tab/ });
+  const surface = screen.getByRole("region", { name: "Local input capture" });
+  fireEvent.click(toggle);
+  expect(fireEvent.keyDown(surface, { code: "Tab" })).toBe(true); // inactive, no interception
+  selectPolicy("recorded");
+  fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  expect(toggle).toBeDisabled();
+  let time = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => time);
+  fireEvent.keyDown(surface, { code: "ShiftLeft" });
+  time = 50;
+  fireEvent.keyDown(surface, { code: "Escape" });
+  fireEvent.keyUp(surface, { code: "Escape" });
+  expect(fireEvent.keyDown(screen.getByRole("button", { name: "Stop recording" }), { code: "KeyZ" })).toBe(true);
+  time = 120;
+  expect(fireEvent.keyDown(surface, { code: "Tab" })).toBe(false);
+  expect(fireEvent.keyUp(surface, { code: "Tab" })).toBe(false);
+  expect(surface).toHaveTextContent("⌨ / 🖱");
+  fireEvent.blur(surface); // duplicate stop must not append anything again
+  act(() => queued(0));
+  expect(screen.getByRole("button", { name: "Start recording" })).toHaveFocus();
+  expect(screen.getByRole("status")).toHaveTextContent("3 presses");
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Clicks", [...macro().events,
+    { type: "keyboard", key_code: "ShiftLeft", action: "down", delay_ms: 50 },
+    { type: "keyboard", key_code: "Escape", action: "down", delay_ms: 70 },
+    { type: "keyboard", key_code: "Escape", action: "up", delay_ms: 0 },
+    { type: "keyboard", key_code: "Tab", action: "down", delay_ms: 0 },
+    { type: "keyboard", key_code: "Tab", action: "up", delay_ms: 0 },
+    { type: "keyboard", key_code: "ShiftLeft", action: "up", delay_ms: 0 },
+  ]));
+});
+
+it.each(["new", "selection", "replacement", "unmount", "new take", "outside focus"] as const)("does not run stale Tab focus restoration after %s", async boundary => {
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([macro(), macro("two", "Other")]) });
+  let queued!: FrameRequestCallback;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { queued = callback; return 42; });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+  const view = render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("checkbox", { name: /Record Tab/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  const surface = screen.getByRole("region", { name: "Local input capture" });
+  fireEvent.keyDown(surface, { code: "Tab" }); fireEvent.keyUp(surface, { code: "Tab" });
+  if (boundary === "new") fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+  if (boundary === "selection") fireEvent.click(screen.getByRole("button", { name: "Other · 2 events" }));
+  if (boundary === "replacement") view.rerender(<MacroManagerPanel service={serviceFor()} />);
+  if (boundary === "unmount") view.unmount();
+  if (boundary === "new take") fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  if (boundary === "outside focus") screen.getByRole("button", { name: "New macro" }).focus();
+  const focused = document.activeElement;
+  act(() => queued(0)); // deliberately invoke even a cancelled callback
+  expect(document.activeElement).toBe(focused);
+  expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
+it("records, saves and reselects F/D/S ten events using physical code rather than typed key", async () => {
+  const saved: Macro[] = [];
+  const service = serviceFor({
+    ListMacros: vi.fn().mockResolvedValue([]),
+    CreateMacro: vi.fn().mockImplementation(async (name, events) => { const value = { id: "fds", name, events: structuredClone(events) }; saved.push(value); return value; }),
+    ReadMacro: vi.fn().mockImplementation(async () => structuredClone(saved[0])),
+  });
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByText("No macros in your library yet.");
+  fireEvent.click(screen.getByRole("button", { name: "New macro" }));
+  fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "F/D/S ten" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+  const surface = screen.getByRole("region", { name: "Local input capture" });
+  for (const code of ["KeyF", "KeyD", "KeyS", "KeyF", "KeyD"]) {
+    fireEvent.keyDown(surface, { code, key: "z" }); fireEvent.keyUp(surface, { code, key: "z" });
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+  const expected = ["KeyF", "KeyD", "KeyS", "KeyF", "KeyD"].flatMap(key_code => [
+    { type: "keyboard", key_code, action: "down", delay_ms: 10 },
+    { type: "keyboard", key_code, action: "up", delay_ms: 10 },
+  ]);
+  expect(screen.getByText(/Ready to assign/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  const card = await screen.findByRole("button", { name: "F/D/S ten · 10 events" });
+  expect(service.CreateMacro).toHaveBeenCalledExactlyOnceWith("F/D/S ten", expected);
+  fireEvent.click(card);
+  await waitFor(() => expect(service.ReadMacro).toHaveBeenCalledWith("fds"));
+  const rows = screen.getByRole("list", { name: "Ordered timeline" });
+  expect(Array.from(rows.querySelectorAll("strong"), row => row.textContent)).toEqual(["Key F", "Key D", "Key S", "Key F", "Key D"]);
+  expect(rows).not.toHaveTextContent(/\b(down|up)\b/);
+  expect(saved[0].events).toEqual(expected);
+});
+
+it("keeps oversize drafts savable locally with visible source/pair/extension safeguards", async () => {
+  const events: Macro["events"] = Array.from({ length: 24 }, () => [
+    { type: "keyboard" as const, key_code: "KeyF", action: "down" as const, delay_ms: 10 },
+    { type: "keyboard" as const, key_code: "KeyF", action: "up" as const, delay_ms: 10 },
+  ]).flat();
+  const stored = { id: "one", name: "Oversize", events };
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([stored]), ReadMacro: vi.fn().mockResolvedValue(stored) });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Oversize · 48 events" }));
+  expect(await screen.findByText(/Local only/)).toHaveAttribute("title", expect.stringMatching(/46/));
+  expect(screen.queryByText(/Events remain saved locally/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Oversize", events));
+});
+
 const openOptions = () => {
   const summary = screen.getByText("Macro options");
   if (!(summary.parentElement as HTMLDetailsElement).open) fireEvent.click(summary);
@@ -155,23 +380,33 @@ const serviceFor = (overrides: Partial<MacroLibraryService> = {}): MacroLibraryS
   ...overrides,
 });
 
+it("labels supported captured keyboard eligible without promising playback", async () => {
+ const stored:Macro={id:"one",name:"Captured",events:[{type:"keyboard",key_code:"KeyA",action:"down",delay_ms:100},{type:"keyboard",key_code:"KeyA",action:"up",delay_ms:100}]};
+ const service=serviceFor({ListMacros:vi.fn().mockResolvedValue([stored]),ReadMacro:vi.fn().mockResolvedValue(stored)});
+ render(<MacroManagerPanel service={service}/>);
+ fireEvent.click(await screen.findByRole("button",{name:"Captured · 2 events"}));
+ expect(await screen.findByText(/Ready to assign/)).toHaveAttribute("title", "Playback remains unverified.");
+ expect(service.UpdateMacro).not.toHaveBeenCalled();
+});
+
 it.each([
-  [{ type: "keyboard", action: "down", delay_ms: 0, key_code: "KeyA" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }],
-  [{ type: "mouse_left", action: "down", delay_ms: 0 }, { type: "mouse_left", action: "up", delay_ms: 0 }, { type: "keyboard", action: "down", delay_ms: 0, key_code: "KeyA" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }],
+  // T4 expands balanced supported keys; retain unsupported-key rejection coverage.
+  [{ type: "keyboard", action: "down", delay_ms: 0, key_code: "F13" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "F13" }],
+  [{ type: "mouse_left", action: "down", delay_ms: 0 }, { type: "mouse_left", action: "up", delay_ms: 0 }, { type: "keyboard", action: "down", delay_ms: 0, key_code: "F13" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "F13" }],
   [{ type: "mouse_unknown", action: "down", delay_ms: 0 }, { type: "mouse_unknown", action: "up", delay_ms: 0 }],
   [{ type: "mouse_left", action: "down", delay_ms: 0, key_code: " " }, { type: "mouse_left", action: "up", delay_ms: 0 }],
   [{ type: "mouse_left", action: "down", delay_ms: 0 }, { type: "mouse_left", action: "up", delay_ms: 0, key_code: "KeyA" }],
-].map((events) => ({ events })))("never labels keyboard/mixed/unknown/stale sequences eligible: %j", async ({ events: raw }) => {
+].map((events) => ({ events })))("never labels unsupported keyboard/mixed/unknown/stale sequences eligible: %j", async ({ events: raw }) => {
   const stored = { id: "one", name: "Unsafe", events: raw } as Macro;
   const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([stored]), ReadMacro: vi.fn().mockResolvedValue(stored) });
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: `Unsafe · ${raw.length} events` }));
   const list = await screen.findByRole("list", { name: "Ordered timeline" });
-  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(screen.getByText(/Local only/)).toBeInTheDocument();
   expect(screen.queryByText(/Eligible for assignment/)).not.toBeInTheDocument();
   if (raw.some((event) => event.type === "keyboard")) {
-    expect(list).toHaveTextContent("KeyA · down");
-    expect(list).toHaveTextContent("KeyA · up");
+    expect(list).toHaveTextContent("Key F13");
+    expect(Array.from(list.querySelectorAll("strong")).filter(row => row.textContent === "Key F13")).toHaveLength(1);
   }
 });
 it("imports, labels and exports the saved opaque keyboard copy without hardware calls", async () => {
@@ -187,8 +422,8 @@ it("imports, labels and exports the saved opaque keyboard copy without hardware 
   upload(JSON.stringify({ version: 1, name: "Keyboard", events }));
   await screen.findByDisplayValue("Keyboard");
   expect(service.CreateMacro).toHaveBeenLastCalledWith("Keyboard", events);
-  expect(screen.getByRole("list", { name: "Ordered timeline" })).toHaveTextContent("UnknownPhysicalKey · down");
-  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(screen.getByRole("list", { name: "Ordered timeline" })).toHaveTextContent("Key UnknownPhysicalKey");
+  expect(screen.getByText(/Local only/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Export saved macro" }));
   const text = await new Promise<string>((resolve) => {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob);
@@ -200,7 +435,9 @@ it("renders clean guidance text for button assignment and no cross-view assign b
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
   await screen.findByDisplayValue("Clicks");
-  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.queryByText("To assign this macro to a mouse button, open Button remapping.")).not.toBeInTheDocument();
+  expect(screen.queryByText("Shared across devices. Available offline.")).not.toBeInTheDocument();
+  expect(screen.queryByText("Local library · no device changes")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Assign to button" })).not.toBeInTheDocument();
 });
 
@@ -244,7 +481,7 @@ it("authors repeated complete five-button clicks atomically via composer without
   );
 });
 
-it("groups adjacent zero-delay pairs in timeline and displays raw events with preserved delays", async () => {
+it("groups adjacent mouse pairs regardless of delay without rewriting raw events", async () => {
   const events: Macro["events"] = [
     { type: "mouse_middle", action: "down", delay_ms: 0 },
     { type: "mouse_middle", action: "up", delay_ms: 0 },
@@ -256,28 +493,31 @@ it("groups adjacent zero-delay pairs in timeline and displays raw events with pr
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Mixed · 4 events" }));
   const list = await screen.findByRole("list", { name: "Ordered timeline" });
-  expect(list.children).toHaveLength(3);
+  expect(list.children).toHaveLength(2);
   expect(list).toHaveTextContent("Middle click");
-  expect(list).toHaveTextContent("Complete click · zero local delay");
-  expect(list).toHaveTextContent("Back · up");
-  expect(list).toHaveTextContent("Raw event 4 · 7 ms");
-  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(list).toHaveTextContent("↓ 0 ms / ↑ 0 ms");
+  expect(list).toHaveTextContent("Back click");
+  expect(list).toHaveTextContent("↓ 0 ms / ↑ 7 ms");
+  fireEvent.click(screen.getByRole("button", { name: "Save to library" }));
+  await waitFor(() => expect(service.UpdateMacro).toHaveBeenCalledWith("one", "Mixed", events));
+  expect(screen.getByText(/Ready to assign/)).toBeInTheDocument();
 });
 
-it("renders compatibility indicator for 1 or 2 complete clicks and local-only for others", async () => {
+it("renders expanded compatibility for complete clicks while incomplete locals remain closed", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Clicks · 2 events" }));
   await screen.findByDisplayValue("Clicks");
-  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(screen.getByText(/Local only/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "New macro" }));
-  expect(screen.getByText("No actions yet. Add a click above. Empty macros can be saved.")).toBeInTheDocument();
+  expect(screen.getByRole("list", { name: "Ordered timeline" }).children).toHaveLength(0);
+  expect(screen.getByText("0 presses", { exact: true })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
-  expect(screen.getByText(/Eligible for assignment after saving/)).toBeInTheDocument();
+  expect(screen.getByText(/Ready to assign/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
-  expect(screen.getByText(/Eligible for assignment after saving/)).toBeInTheDocument();
+  expect(screen.getByText(/Ready to assign/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
-  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(screen.getByText(/Ready to assign/)).toBeInTheDocument();
 });
 
 it("does not render fake recording zone, advanced raw events editor, or bottom disclaimers", async () => {
@@ -424,7 +664,7 @@ it.each(["new", "select"] as const)("recovers from a stalled read via %s without
   expect(save).toBeDisabled();
   fireEvent.click(start);
   fireEvent.click(save);
-  expect(screen.getByRole("region", { name: "Local input capture" })).toHaveTextContent("Capture stopped");
+  expect(screen.getByRole("region", { name: "Local input capture" })).toHaveTextContent("⌨ / 🖱");
   expect(service.UpdateMacro).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "New macro" })).toBeEnabled();
   expect(cards[1]).toBeEnabled();

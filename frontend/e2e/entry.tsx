@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "../src/App";
 import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent, MacroPlaybackMode } from "../src/desktop-contract";
 import "../src/styles.css";
+import { deviceAdmission } from "../src/macros/device-admission";
+import { x6KeyCode } from "../src/macros/x6keys";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
 const ids = ["alpha", "beta"].map((Serial, index) => ({
@@ -55,6 +57,8 @@ if (offline) currentDPI = { ...currentDPI, Error: { Code: "device_disconnected" 
 const inventory = () => ({ Devices: offline ? [] : ids, Selected: offline ? null : selected, Error: { Code: "" } });
 const macros = new Map<string, Macro>();
 const macroCalls: string[] = [];
+// Admission metadata only, not a mock firmware/serializer or playback proof.
+const admittedUploads: Array<{ button: number; source: MacroEvent[]; rawCodes: number[] }> = [];
 let macroID = 0;
 const readMacro = (id: string) => {
   const macro = macros.get(id);
@@ -124,13 +128,9 @@ const service = {
     service.StageMacroAssignmentWithMode(id, button, repeat, 0),
   StageMacroAssignmentWithMode: async (id: string, button: number, repeat: number, mode: MacroPlaybackMode): Promise<RemapSnapshot> => {
     const macro = readMacro(id);
-    if (offline || ![0, 1, 2].includes(mode) || !Number.isInteger(button) || button < 1 || button > 7 ||
-        !Number.isInteger(repeat) || repeat < 1 || repeat > 255 || ![2, 4].includes(macro.events.length) ||
-        !macro.events.every((event, index, events) =>
-          ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].includes(event.type) &&
-          event.delay_ms === 0 && (index % 2 === 0
-            ? event.action === "down" && event.type === events[index + 1].type
-            : event.action === "up"))) throw new Error("Invalid macro assignment");
+    if (offline || !Number.isInteger(button) || button < 1 || button > 7 ||
+        !deviceAdmission(macro.events, repeat, mode).eligible) throw new Error("Invalid macro assignment");
+    validateRemap(remapSnapshot().Pending);
     record("StageMacroAssignment");
     const current = remapSnapshot();
     const draft = { ID: id, Name: macro.name, Button: button, Repeat: repeat, Mode: mode, Events: structuredClone(macro.events) };
@@ -168,21 +168,28 @@ const service = {
   },
   ApplyRemap: async (config: RemapConfig) => {
     validateRemap(config);
-    calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
     const current = remapSnapshot();
     const draft = current.MacroPending;
     const drafts = current.MacroDrafts ?? (draft ? { [draft.Button]: draft } : {});
     const allDrafts = Object.values(drafts);
-    const libraryCurrent = allDrafts.every((d) =>
-      JSON.stringify(macros.get(d.ID)) === JSON.stringify({ id: d.ID, name: d.Name, events: d.Events })
-    );
-    if (!libraryCurrent) {
-      remaps.set(selected.ID.Serial, { ...current, Pending: structuredClone(config), Revision: current.Revision + 1, Firmware: "failed", Persistence: "", Error: { Code: "invalid_configuration" } });
+    const seen = new Set<number>();
+    const admitted = !offline && allDrafts.every((d) => {
+      if (!Number.isInteger(d.Button) || d.Button < 1 || d.Button > 7 || seen.has(d.Button)) return false;
+      seen.add(d.Button);
+      return deviceAdmission(d.Events, d.Repeat, d.Mode ?? 0).eligible &&
+        JSON.stringify(macros.get(d.ID)) === JSON.stringify({ id: d.ID, name: d.Name, events: d.Events });
+    });
+    if (!admitted) {
+      // Invalid attempts leave draft/revision/progress untouched and never count I/O.
+      remaps.set(selected.ID.Serial, { ...current, Firmware: "failed", Error: { Code: "invalid_configuration" } });
       return remapSnapshot();
     }
+    calls.push({ operation: "ApplyRemap", destination: { ...selected.ID }, config: structuredClone(config) });
     const failed = failNext;
     failNext = false;
     const hasMacros = allDrafts.length > 0;
+    for (const d of allDrafts) admittedUploads.push({ button: d.Button, source: structuredClone(d.Events), rawCodes: d.Events.map(event =>
+      event.type === "keyboard" ? x6KeyCode(event.key_code!)! : 0xf1 + ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].indexOf(event.type)) });
     remaps.set(selected.ID.Serial, {
       ...current, Pending: structuredClone(config), Revision: current.Revision + 1,
       Applied: failed ? current.Applied : structuredClone(config),
@@ -204,7 +211,7 @@ const guarded = new Proxy(service, {
     return Reflect.get(target, key);
   },
 }) as unknown as DesktopService;
-Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)) }, __routingTest: {
+Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
   dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });

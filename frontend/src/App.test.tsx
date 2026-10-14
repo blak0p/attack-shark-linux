@@ -65,7 +65,7 @@ it("renders clean guidance text in macro manager and retains dirty draft when na
   fireEvent.click(screen.getByRole("link", { name: "Macros" }));
   fireEvent.click(await screen.findByRole("button", { name: "Saved two clicks · 4 events" }));
   await screen.findByDisplayValue("Saved two clicks");
-  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.queryByText("To assign this macro to a mouse button, open Button remapping.")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Assign to button" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Dirty name" } });
   fireEvent.click(screen.getByRole("button", { name: "Add click" }));
@@ -99,7 +99,7 @@ it.each(["device_disconnected", "permission_denied"])("keeps saved and unsaved d
   fireEvent.click(await screen.findByRole("button", { name: "Saved two clicks · 4 events" }));
   await screen.findByDisplayValue("Saved two clicks");
   fireEvent.change(screen.getByLabelText("Macro name"), { target: { value: "Offline dirty" } });
-  expect(screen.getByText("To assign this macro to a mouse button, open Button remapping.")).toBeInTheDocument();
+  expect(screen.queryByText("To assign this macro to a mouse button, open Button remapping.")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Macro name")).toHaveValue("Offline dirty");
   fireEvent.click(screen.getByRole("link", { name: "Button remapping", exact: true }));
   expect(screen.getByRole("button", { name: "Apply remap" })).toBeDisabled();

@@ -1,14 +1,28 @@
-# Safe local macro admission and X6 upload backend
+# Local macros and safe X6 software admission
 
-The backend admits supported balanced keyboard/timed takes before any device I/O, preserving legacy complete-click behavior. Transport acknowledgement is not measured physical playback. The frontend assignment and presentation layer follows in the next stacked PR; the editor below describes the existing local recorder.
+Saved keyboard and timed mouse takes can be staged and explicitly applied when
+they fit the audited official ordinary-key conversion and safe host bounds below. Local storage remains broader than
+assignment admission. Transport confirmation is **not measured physical playback**.
+
+## Quick path
+
+1. Record or import a take, then save it to the local library (no device I/O).
+2. Check the timeline's eligibility/reason. Unsupported events remain saved.
+3. Open Button remapping, choose a saved macro, repeat/mode and destination.
+   Confirm stages a frozen local draft; library edits require explicit restaging.
+4. Review all pending remaps, then explicitly Apply. No automatic upload/retry
+   occurs. Partial hardware writes cannot be rolled back or claimed successful.
+
+Physical Linux playback, timing and device persistence require a separate explicit
+device test; fake transport ACKs and browser mocks do not establish acceptance.
 
 ## Local keyboard storage
 
 `Event{Type: Keyboard, Action: Down | Up, DelayMS: int64, KeyCode: string}`
 stores an opaque physical key identity, suitable for browser `KeyboardEvent.code`.
 Keyboard events require a nonblank trimmed identity but preserve the accepted
-string verbatim, including whitespace and unknown/unverified identities. There
-is no key allowlist, firmware mapping, or device-support admission. Mouse events
+string verbatim, including whitespace and unknown/unverified identities. Local storage has
+no key allowlist and does not establish firmware support. Mouse events
 reject every nonempty `KeyCode`, including whitespace-only strings.
 
 Actions remain down/up and local delays remain nonnegative. Validation does not
@@ -20,17 +34,31 @@ binaries that reject unknown fields or event types.
 
 Frontend contracts, Wails conversion, and version-1 single-macro import/export
 preserve the same opaque identity and per-event delay contract. Unknown fields
-still reject. The timeline labels keyboard identity and down/up separately; only
-one or two recognized complete zero-delay mouse clicks without nonempty key
-fields display assignment eligibility. This display does not admit an upload.
+still reject. The timeline shows simple keyboard names (for example, **Key F**)
+without down/up suffixes. Stored actions, identities, order and delays remain
+unchanged. Adjacent down/up events for the same physical key appear as one
+keypress with both original delays in `↓ press ms / ↑ release ms` format.
+Unpaired rows use the same slots with `—` for the missing counterpart. Chords
+and unmatched events stay in source order; grouping never rewrites the saved
+or exported event array. The sequence counter counts down events, not rows.
+Timeline and Button remapping share a pure admission helper mirroring Go mapping,
+balance and forward-encoding bounds; the backend independently repeats admission.
 
 ## Editor-scoped recording
 
-Choose a delay policy, then **Start recording** in the macro editor. Only the
+Choose a delay policy using the opaque styled **Recording delay** menu, then
+**Record** in the macro editor (accessible name: **Start recording**).
+The compact toolbar shows readiness/recording state; **Recording options** is
+collapsed by default and contains the Tab toggle. Explanatory prose is kept in
+this documentation rather than the editor. The idle capture surface uses input
+icons with a screen-reader description; operation errors remain visible. This uses the same application menu
+style as button assignments instead of a native popup. Only the
 focused capture area receives keyboard and five mouse-button down/up events.
-**Stop recording**, Tab navigation, or focus loss appends the take to the draft;
-**Save to library** persists it. The buffered event count and stopped append
-message distinguish recording from saving. Nothing is played or sent to a device.
+**Stop** (accessible name: **Stop recording**), Tab navigation, or focus loss appends the take to the draft;
+**Save to library** persists it. The live counter and appended notice count
+presses (down events), never counting releases a second time. Raw down/up events
+and their delays are still preserved when saved or exported. Nothing is played
+or sent to a device.
 
 | Take policy | Local event delays |
 |---|---|
@@ -46,8 +74,16 @@ There is no post-recording policy editor or schema metadata migration.
 
 Keyboard identity is the opaque browser `event.code`, not text or a layout guess.
 Modifiers are distinct identities; repeated downs and unmatched ups are ignored.
-Tab is reserved for normal navigation, not captured. No global event listeners
-or editable-field capture exist. Recorder buttons are outside the capture area.
+Tab normally navigates out and stops the take without being recorded. Before a
+take, open **Recording options** and opt in with **Record Tab** to capture its
+exact down/up events. Releasing Tab finishes that take and returns focus to
+**Start recording**; the next Tab navigates normally. This explicit one-Tab-take
+policy provides a keyboard exit without reserving Escape (which is recordable).
+The toggle is frozen during recording. A queued focus return is cancelled on
+new take, selection, new draft, service replacement or unmount, and never overrides
+a user's intervening focus move. Duplicate blur/stop cannot append twice.
+No global event listeners or editable-field capture exist. Recorder buttons are
+outside the capture area.
 Stopping automatically appends releases for still-held identities in press order,
 using 0 (minimum/recorded) or 10 (default), never release-time measurements.
 These local balancing events are not evidence of physical input or playback.
