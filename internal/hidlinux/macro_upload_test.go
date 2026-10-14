@@ -45,6 +45,296 @@ func (n *macroNode) Read(p []byte) (int, error) {
 	return n.commandHidrawNode.Read(p)
 }
 
+func TestCompositeLocalCapturedPackets(t *testing.T) {
+	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+	events := []macros.Event{{Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Up, DelayMS: 100}}
+	items := []mouse.MacroLocalItem{{Button: 6, Events: events, Repeat: 1}}
+	p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), items, noMacroWait)
+	if err != nil || p.Upload != mouse.MacroUploadConfirmed || len(n.writes) != 4 {
+		t.Fatal(p, err, n.writes)
+	}
+	// Expected captured block assembled independently, not through codec helpers.
+	block := make([]byte, 128)
+	block[4] = 1
+	block[25] = 4
+	copy(block[26:], []byte{0x0b, 0xe1, 0x0b, 4, 0x8b, 4, 0x81, 0xe1})
+	block[126] = 2
+	block[127] = 0xf1
+	for i, size := range []int{60, 60, 8} {
+		want := make([]byte, 64)
+		want[0] = 9
+		want[1] = 0x40
+		if i == 2 {
+			want[1] = 12
+		}
+		want[2] = 5
+		want[3] = byte(i)
+		start := i * 60
+		copy(want[4:], block[start:start+size])
+		if !reflect.DeepEqual(n.writes[i+1], want) {
+			t.Fatalf("packet %d: %x want %x", i, n.writes[i+1], want)
+		}
+	}
+}
+
+func TestX6OfficialHIDFDSTenEventReports(t *testing.T) {
+	b, binding, node, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+	var events []macros.Event
+	for i, key := range []string{"KeyF", "KeyD", "KeyS", "KeyF", "KeyD"} {
+		events = append(events, macros.Event{Type: macros.Keyboard, KeyCode: key, Action: macros.Down, DelayMS: int64(100 * (i + 1))}, macros.Event{Type: macros.Keyboard, KeyCode: key, Action: macros.Up, DelayMS: int64(20 + 10*i)})
+	}
+	events[9].DelayMS = 600
+	before := append([]macros.Event(nil), events...)
+	config := x6.DefaultRemapConfig()
+	config.Buttons[3].Action = x6.RemapFire
+	p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, config, []mouse.MacroLocalItem{{Button: 7, Events: events, Repeat: 3, Mode: 2}}, noMacroWait)
+	if err != nil || p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadConfirmed}) || len(node.writes) != 4 || !reflect.DeepEqual(events, before) {
+		t.Fatal(p, err, node.writes)
+	}
+	association, err := x6.EncodeMultiMacroAssignmentReport(config, []uint8{7})
+	if err != nil || !reflect.DeepEqual(node.writes[0], association) {
+		t.Fatal("ordinary remap overlay lost", err)
+	}
+	// Literal expected official IDs/order/timing and checksum; not mapper-derived.
+	block := make([]byte, 128)
+	block[0], block[4], block[25] = 2, 3, 10
+	copy(block[26:], []byte{0x0b, 9, 0x83, 9, 0x15, 7, 0x83, 7, 0x1f, 0x16, 0x85, 0x16, 0x29, 9, 0x85, 9, 0x33, 7, 0x81, 7})
+	block[126], block[127] = 3, 0xa7
+	for i, size := range []int{60, 60, 8} {
+		want := make([]byte, 64)
+		want[0], want[1], want[2], want[3] = 9, 0x40, 6, byte(i)
+		if i == 2 {
+			want[1] = 0x0c
+		}
+		copy(want[4:], block[i*60:i*60+size])
+		if !reflect.DeepEqual(node.writes[i+1], want) {
+			t.Fatalf("HID report %d: %x want %x", i, node.writes[i+1], want)
+		}
+	}
+}
+
+func TestX6OfficialHIDAliasesBeforeOpen(t *testing.T) {
+	key := func(code string, action macros.Action) macros.Event {
+		return macros.Event{Type: macros.Keyboard, KeyCode: code, Action: action, DelayMS: 10}
+	}
+	for _, events := range [][]macros.Event{
+		{key("Enter", macros.Down), key("NumpadEnter", macros.Up)},
+		{key("Enter", macros.Down), key("NumpadEnter", macros.Down), key("Enter", macros.Up), key("NumpadEnter", macros.Up)},
+		{key("Enter", macros.Down), key("Enter", macros.Down), key("Enter", macros.Up)},
+		{key("__proto__", macros.Down), key("__proto__", macros.Up)},
+	} {
+		b, binding, node, _ := macroFixture(t, nil)
+		before := append([]macros.Event(nil), events...)
+		p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), []mouse.MacroLocalItem{{Button: 7, Events: events, Repeat: 1}}, noMacroWait)
+		if err == nil || p != (mouse.MacroProgress{}) || len(node.writes) != 0 || b.opener.(*countingHidrawOpener).count != 0 || !reflect.DeepEqual(events, before) {
+			t.Fatal(p, err, node.writes)
+		}
+	}
+	// Sequential use of the inferential aliases remains encodable at raw 0x28.
+	b, binding, node, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+	events := []macros.Event{key("Enter", macros.Down), key("Enter", macros.Up), key("NumpadEnter", macros.Down), key("NumpadEnter", macros.Up)}
+	p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), []mouse.MacroLocalItem{{Button: 7, Events: events, Repeat: 1}}, noMacroWait)
+	if err != nil || p.Upload != mouse.MacroUploadConfirmed || !reflect.DeepEqual(node.writes[1][30:38], []byte{1, 0x28, 0x81, 0x28, 1, 0x28, 0x81, 0x28}) {
+		t.Fatal(p, err, node.writes)
+	}
+}
+
+func localUploadItems() []mouse.MacroLocalItem {
+	return []mouse.MacroLocalItem{
+		{Button: 6, Events: []macros.Event{{Type: macros.MouseLeft, Action: macros.Down}, {Type: macros.MouseLeft, Action: macros.Up}}, Repeat: 1},
+		{Button: 7, Events: []macros.Event{{Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up, DelayMS: 100}}, Repeat: 2, Mode: 1},
+	}
+}
+func TestCompositeLocalAllItemsBeforeIO(t *testing.T) {
+	for _, mutation := range []string{"empty", "config", "duplicate", "destination", "unsupported", "unbalanced", "overflow", "oversize", "repeat", "mode", "stale mouse identity"} {
+		t.Run(mutation, func(t *testing.T) {
+			b, binding, n, _ := macroFixture(t, nil)
+			items := localUploadItems()
+			config := x6.DefaultRemapConfig()
+			switch mutation {
+			case "empty":
+				items = nil
+			case "config":
+				config.Buttons[0].Action = "invalid"
+			case "duplicate":
+				items[1].Button = 6
+			case "destination":
+				items[1].Button = 8
+			case "unsupported":
+				items[1].Events[0].KeyCode = "F13"
+			case "unbalanced":
+				items[1].Events = items[1].Events[:1]
+			case "overflow":
+				items[1].Events[1].DelayMS = 51200
+			case "oversize":
+				items[1].Events = nil
+				for i := 0; i < 24; i++ {
+					items[1].Events = append(items[1].Events, macros.Event{Type: macros.Keyboard, KeyCode: "KeyF", Action: macros.Down}, macros.Event{Type: macros.Keyboard, KeyCode: "KeyF", Action: macros.Up})
+				}
+			case "repeat":
+				items[1].Repeat = 256
+			case "mode":
+				items[1].Mode = 3
+			case "stale mouse identity":
+				items[0].Events[0].KeyCode = "KeyA"
+			}
+			p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, config, items, noMacroWait)
+			if err == nil || p != (mouse.MacroProgress{}) || len(n.writes) != 0 || b.opener.(*countingHidrawOpener).count != 0 {
+				t.Fatal(p, err, n.writes)
+			}
+		})
+	}
+}
+func TestCompositeLocalMixedOrderAndPartialProgress(t *testing.T) {
+	for at := 0; at <= 7; at++ {
+		t.Run(fmt.Sprint(at), func(t *testing.T) {
+			b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+			n.failAt = at
+			n.short = true
+			config := x6.DefaultRemapConfig()
+			config.Buttons[3].Action = x6.RemapFire
+			waits := 0
+			p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, config, localUploadItems(), func(ctx context.Context, d time.Duration) error {
+				waits++
+				if d != x6MacroSpacing || len(n.writes) != waits+1 {
+					t.Fatal("pacing/order")
+				}
+				return nil
+			})
+			if at > 0 {
+				if err == nil || len(n.writes) != at || !strings.Contains(err.Error(), "partial mutation") {
+					t.Fatal(p, err)
+				}
+				if at == 1 {
+					if p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentUnknown}) {
+						t.Fatal(p)
+					}
+				} else if p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadPossiblyPartial}) {
+					t.Fatal(p)
+				}
+				return
+			}
+			if err != nil || len(n.writes) != 7 || waits != 5 || p.Upload != mouse.MacroUploadConfirmed {
+				t.Fatal(p, err)
+			}
+			wantAssociation := []byte{8, 0x3b, 1, 2, 0, 0, 3, 0, 0, 4, 0, 0, 0x0d, 0, 0, 0x12, 0, 5, 0x12, 0, 6, 8, 0, 0, 5, 0, 0, 0x3c, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0x0a, 0, 0, 9, 0, 0, 0, 0xa8}
+			if !reflect.DeepEqual(n.writes[0], wantAssociation) {
+				t.Fatalf("association: %x want %x", n.writes[0], wantAssociation)
+			}
+			// First item is the unchanged legacy click; second retains timed order/mode/repeat.
+			if !reflect.DeepEqual(n.writes[1][30:34], []byte{1, 0xf1, 0x81, 0xf1}) || !reflect.DeepEqual(n.writes[4][:4], []byte{9, 0x40, 6, 0}) || n.writes[4][4] != 1 || n.writes[4][8] != 2 || !reflect.DeepEqual(n.writes[4][30:34], []byte{0x0b, 4, 0x81, 4}) {
+				t.Fatalf("mixed payload mismatch: %x", n.writes)
+			}
+		})
+	}
+}
+func TestCompositeLocalACKAndCancellationGuards(t *testing.T) {
+	for _, ack := range [][]byte{{3, 0x10, 0x50, 0, 9}, {3, 0x10, 0x50, 1, 8}, {3, 0x10, 0x1e, 0, 0xaa}} {
+		b, binding, n, _ := macroFixture(t, [][]byte{ack})
+		p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), localUploadItems(), noMacroWait)
+		if err == nil || len(n.writes) != 1 || p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentUnknown}) {
+			t.Fatal(p, err)
+		}
+	}
+	for _, stale := range []bool{false, true} {
+		for phase := 0; phase <= 7; phase++ {
+			t.Run(fmt.Sprintf("%t/%d", stale, phase), func(t *testing.T) {
+				b, binding, n, root := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				mutate := func() {
+					if stale {
+						writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "B\n")
+					} else {
+						cancel()
+					}
+				}
+				if phase == 0 {
+					mutate()
+				}
+				n.onWrite = func(i int) {
+					if i == phase {
+						mutate()
+					}
+				}
+				p, err := b.sendX6MultiMacroLocalAssignmentBound(ctx, binding, x6.DefaultRemapConfig(), localUploadItems(), func(ctx context.Context, _ time.Duration) error { return ctx.Err() })
+				if err == nil || len(n.writes) != phase || p.Upload == mouse.MacroUploadConfirmed {
+					t.Fatal(p, err, len(n.writes))
+				}
+				if phase == 0 && p != (mouse.MacroProgress{}) {
+					t.Fatal(p)
+				}
+				if phase > 0 && !strings.Contains(err.Error(), "partial mutation") {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+	for _, ack := range [][]byte{{3, 0x10, 0x50, 1, 9}, {3, 0x10, 0x1e, 0, 0xaa}} {
+		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, ack})
+		p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), localUploadItems(), noMacroWait)
+		if err == nil || len(n.writes) != 7 || p.Upload != mouse.MacroUploadPossiblyPartial {
+			t.Fatal(p, err)
+		}
+	}
+}
+func TestCompositeLocalQueuedFreezeAndRevalidation(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		t.Run(fmt.Sprint(stale), func(t *testing.T) {
+			b, binding, n, root := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
+			items := localUploadItems()
+			config := x6.DefaultRemapConfig()
+			release, err := b.acquireIO(context.Background(), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			type result struct {
+				p   mouse.MacroProgress
+				err error
+			}
+			done := make(chan result, 1)
+			go func() {
+				p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, config, items, noMacroWait)
+				done <- result{p, err}
+			}()
+			deadline := time.Now().Add(time.Second)
+			for {
+				b.ioMu.Lock()
+				pending := b.commandPending
+				b.ioMu.Unlock()
+				if pending {
+					break
+				}
+				if time.Now().After(deadline) {
+					release()
+					t.Fatal("command not queued")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			config.Buttons[0].Action = x6.RemapOff
+			items[1].Events[0].KeyCode = "KeyB"
+			items[1].Repeat = 255
+			if stale {
+				writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "B\n")
+			}
+			if len(n.writes) != 0 {
+				t.Fatal("queued I/O")
+			}
+			release()
+			got := <-done
+			if stale {
+				if !errors.Is(got.err, mouse.ErrStaleBinding) || len(n.writes) != 0 || got.p != (mouse.MacroProgress{}) {
+					t.Fatal(got)
+				}
+			} else {
+				if got.err != nil || n.writes[0][3] != 2 || n.writes[4][8] != 2 || n.writes[4][31] != 4 {
+					t.Fatal(got, n.writes)
+				}
+			}
+		})
+	}
+}
+
 func TestCompositeMultiSequenceOrderAndProgress(t *testing.T) {
 	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
 	cfg := x6.DefaultRemapConfig()

@@ -48,10 +48,10 @@ func TestX6LocalMappingRejectsWithoutLoss(t *testing.T) {
 		event Event
 	}{
 		{"unknown local key", Event{Type: Keyboard, Action: Down, KeyCode: "UnknownPhysicalKey"}},
-		{"other letter", Event{Type: Keyboard, Action: Down, KeyCode: "KeyB"}},
-		{"Alt", Event{Type: Keyboard, Action: Down, KeyCode: "AltLeft"}},
-		{"right control", Event{Type: Keyboard, Action: Down, KeyCode: "ControlRight"}},
-		{"right shift", Event{Type: Keyboard, Action: Down, KeyCode: "ShiftRight"}},
+		{"F13", Event{Type: Keyboard, Action: Down, KeyCode: "F13"}},
+		{"media", Event{Type: Keyboard, Action: Down, KeyCode: "MediaPlayPause"}},
+		{"ISO OEM102", Event{Type: Keyboard, Action: Down, KeyCode: "IntlBackslash"}},
+		{"generic modifier", Event{Type: Keyboard, Action: Down, KeyCode: "Control"}},
 		{"verbatim padded key", Event{Type: Keyboard, Action: Down, KeyCode: " KeyA "}},
 		{"blank key", Event{Type: Keyboard, Action: Down, KeyCode: " \t"}},
 		{"stale mouse key", Event{Type: MouseLeft, Action: Down, KeyCode: " "}},

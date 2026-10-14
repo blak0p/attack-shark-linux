@@ -3,9 +3,12 @@ package desktop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
@@ -70,6 +73,361 @@ func macroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro) {
 	}
 	return s, command, m
 }
+func TestMacroApplyPrevalidationPreservesState(t *testing.T) {
+	for _, mutation := range []string{"library", "unsupported", "destination", "duplicate", "capability"} {
+		t.Run(mutation, func(t *testing.T) {
+			s, c, m := macroFixture(t)
+			staged := s.StageMacroAssignment(m.ID, 6, 1)
+			state := s.currentRemapState()
+			switch mutation {
+			case "library":
+				_, _ = s.UpdateMacro(m.ID, "renamed", m.Events)
+			case "unsupported":
+				m, _ = s.UpdateMacro(m.ID, m.Name, []macros.Event{{Type: macros.Keyboard, KeyCode: "F13", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "F13", Action: macros.Up}})
+				state.mu.Lock()
+				state.macroPendingMap[6].Events = append([]macros.Event(nil), m.Events...)
+				state.mu.Unlock()
+			case "destination":
+				state.mu.Lock()
+				state.macroPendingMap[6].Button = 8
+				state.mu.Unlock()
+			case "duplicate":
+				state.mu.Lock()
+				state.macroPendingMap[7] = cloneMacroDraft(state.macroPendingMap[6])
+				state.mu.Unlock()
+			case "capability":
+				m, _ = s.UpdateMacro(m.ID, m.Name, []macros.Event{{Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up}})
+				staged = s.StageMacroAssignment(m.ID, 6, 1)
+			}
+			before := s.GetRemapSnapshot()
+			config := cloneRemapConfig(staged.Pending)
+			config.Buttons[3].Action = x6.RemapFire
+			got := s.ApplyRemap(config)
+			if got.Error.Code == "" || got.Revision != before.Revision || !reflect.DeepEqual(got.Pending, before.Pending) || !reflect.DeepEqual(got.MacroDrafts, before.MacroDrafts) || got.MacroProgress != before.MacroProgress || got.RetryAvailable != before.RetryAvailable || c.normal+c.composite != 0 {
+				t.Fatalf("invalid Apply changed state: before=%+v after=%+v calls=%d", before, got, c.normal+c.composite)
+			}
+		})
+	}
+}
+
+func TestMacroApplyFreezesConfigBeforeSerialization(t *testing.T) {
+	for _, boundary := range []string{"state-load", "macro-transport"} {
+		t.Run(boundary, func(t *testing.T) {
+			s, c, m := macroFixture(t)
+			config := cloneRemapConfig(s.GetRemapSnapshot().Pending)
+			if boundary == "macro-transport" {
+				config = cloneRemapConfig(s.StageMacroAssignment(m.ID, 6, 1).Pending)
+			}
+			config.Buttons[3].Action = x6.RemapFire
+			want := cloneRemapConfig(config)
+			entered, resume := make(chan struct{}), make(chan struct{})
+			var releaseOnce, gateOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(resume) }) }
+			defer release()
+			gate := func() {
+				gateOnce.Do(func() {
+					close(entered)
+					<-resume
+				})
+			}
+			if boundary == "state-load" {
+				binding, ok := s.selectedBinding()
+				if !ok || binding.SessionOnly {
+					t.Fatal("fixture requires a persistent selected binding")
+				}
+				// Re-enter state loading through the existing persistence boundary.
+				// Apply owns operationMu here but has not acquired state.applyMu.
+				s.mu.Lock()
+				delete(s.remapComponent.states, binding.ID)
+				s.remapPersistence = remapSelectionPersistence{
+					load: func(Binding) (x6.DeviceConfig, error) {
+						gate()
+						return x6.DeviceConfig{}, nil
+					},
+				}
+				s.mu.Unlock()
+			} else {
+				c.during = gate
+			}
+			result := make(chan RemapSnapshot, 1)
+			go func() { result <- s.ApplyRemap(config) }()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("Apply did not reach the synchronization boundary")
+			}
+			// Channel receipt orders this mutation after the initial copy; a failed
+			// TryLock cannot establish that happens-before relationship.
+			config.Buttons[3].Action = x6.RemapOff
+			release()
+			var got RemapSnapshot
+			select {
+			case got = <-result:
+			case <-time.After(time.Second):
+				t.Fatal("Apply did not finish after releasing the boundary")
+			}
+			if got.Error.Code != "" || !reflect.DeepEqual(got.Applied, want) || !reflect.DeepEqual(got.Pending, want) {
+				t.Fatalf("caller config leaked through boundary wait: %+v", got)
+			}
+			if boundary == "macro-transport" {
+				if c.composite != 1 || c.normal != 0 || !reflect.DeepEqual(c.multiConfig, want) {
+					t.Fatalf("macro command changed: %+v calls=%d/%d", c.multiConfig, c.composite, c.normal)
+				}
+			} else if c.normal == 0 || c.composite != 0 {
+				t.Fatalf("ordinary remap command changed: calls=%d/%d", c.composite, c.normal)
+			}
+		})
+	}
+}
+
+func TestMacroTimedStageApplyCapability(t *testing.T) {
+	s, c, m := macroFixture(t)
+	events := []macros.Event{{Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Up, DelayMS: 100}}
+	m, err := s.UpdateMacro(m.ID, "captured chord", events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := s.StageMacroAssignmentWithMode(m.ID, 6, 2, 1)
+	if staged.Error.Code != "" || staged.MacroPending == nil || c.composite+c.normal != 0 {
+		t.Fatalf("stage rejected or wrote: %+v", staged)
+	}
+	// This legacy-only command must never receive a timed payload.
+	got := s.ApplyRemap(staged.Pending)
+	if got.Error.Code == "" || c.composite+c.normal != 0 || got.MacroProgress != (mouse.MacroProgress{}) || !reflect.DeepEqual(got.MacroPending, staged.MacroPending) {
+		t.Fatalf("missing capability mutated: %+v", got)
+	}
+}
+
+type localMacroCommandFake struct {
+	*macroCommandFake
+	localCalls int
+	localItems []mouse.MacroLocalItem
+}
+
+func (f *localMacroCommandFake) SendX6MultiMacroLocalAssignmentBound(_ context.Context, _ Binding, config protocol.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
+	f.localCalls++
+	f.multiConfig = cloneRemapConfig(config)
+	f.localItems = make([]mouse.MacroLocalItem, len(items))
+	for i, item := range items {
+		item.Events = append([]macros.Event(nil), item.Events...)
+		f.localItems[i] = item
+	}
+	if f.during != nil {
+		f.during()
+	}
+	return f.progress, f.err
+}
+func localMacroFixture(t *testing.T) (*Service, *localMacroCommandFake, macros.Macro) {
+	s, c, m := macroFixture(t)
+	local := &localMacroCommandFake{macroCommandFake: c}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidates := []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "alpha", Path: "/dev/mock-a"}, {VendorID: 0x1d57, ProductID: 0xfa60, Serial: "beta", Path: "/dev/mock-b"}}
+	s.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, local))
+	inventory := s.RefreshInventory(context.Background())
+	s.SelectDevice(inventory.Devices[0].ID)
+	return s, local, m
+}
+
+// This command seam uses the real serializers; HID's private opener/wait seam
+// is covered independently in hidlinux, without opening a real node here.
+type officialSerializedCommand struct {
+	*localMacroCommandFake
+	reports [][]byte
+}
+
+func (f *officialSerializedCommand) SendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding Binding, config protocol.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
+	buttons := make([]uint8, len(items))
+	var chunks [][]byte
+	for i, item := range items {
+		buttons[i] = item.Button
+		destination, err := protocol.MacroDestinationForButton(item.Button)
+		if err != nil {
+			return mouse.MacroProgress{}, err
+		}
+		encoded, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		if err != nil {
+			return mouse.MacroProgress{}, err
+		}
+		chunks = append(chunks, encoded...)
+	}
+	report, err := protocol.EncodeMultiMacroAssignmentReport(config, buttons)
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	f.reports = append([][]byte{report}, chunks...)
+	return f.localMacroCommandFake.SendX6MultiMacroLocalAssignmentBound(ctx, binding, config, items)
+}
+func officialFDSTake() []macros.Event {
+	var events []macros.Event
+	for i, code := range []string{"KeyF", "KeyD", "KeyS", "KeyF", "KeyD"} {
+		events = append(events, macros.Event{Type: macros.Keyboard, KeyCode: code, Action: macros.Down, DelayMS: int64(100 * (i + 1))}, macros.Event{Type: macros.Keyboard, KeyCode: code, Action: macros.Up, DelayMS: int64(20 + 10*i)})
+	}
+	events[9].DelayMS = 600 // retained locally; terminal writer must encode 10
+	return events
+}
+func TestX6OfficialFDSSavedSelectedStagedApplied(t *testing.T) {
+	s, local, _ := localMacroFixture(t)
+	command := &officialSerializedCommand{localMacroCommandFake: local}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidates := []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "alpha", Path: "/dev/mock-a"}}
+	s.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command))
+	inventory := s.RefreshInventory(context.Background())
+	s.SelectDevice(inventory.Devices[0].ID)
+	events := officialFDSTake()
+	m, err := s.CreateMacro("F/D/S ten", events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := s.ListMacros()
+	if err != nil || len(listed) != 2 {
+		t.Fatal(listed, err)
+	}
+	saved, err := s.ReadMacro(m.ID)
+	if err != nil || !reflect.DeepEqual(saved.Events, events) {
+		t.Fatal(saved, err)
+	}
+	staged := s.StageMacroAssignmentWithMode(m.ID, 7, 3, 2)
+	if staged.Error.Code != "" || !reflect.DeepEqual(staged.MacroPending.Events, events) || len(command.reports) != 0 || command.localCalls+command.normal+command.composite != 0 {
+		t.Fatal(staged, command)
+	}
+	config := cloneRemapConfig(staged.Pending)
+	config.Buttons[3].Action = x6.RemapFire
+	applied := s.ApplyRemap(config)
+	if applied.Error.Code != "" || applied.Firmware != "success" || applied.MacroProgress != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadConfirmed}) || !reflect.DeepEqual(applied.Applied, config) || !reflect.DeepEqual(applied.MacroApplied.Events, events) || command.localCalls != 1 || len(command.reports) != 4 {
+		t.Fatal(applied, command)
+	}
+	expected := make([]byte, 128)
+	expected[0], expected[4], expected[25] = 2, 3, 10
+	copy(expected[26:], []byte{0x0b, 9, 0x83, 9, 0x15, 7, 0x83, 7, 0x1f, 0x16, 0x85, 0x16, 0x29, 9, 0x85, 9, 0x33, 7, 0x81, 7})
+	expected[126], expected[127] = 3, 0xa7
+	for i, size := range []int{60, 60, 8} {
+		report := command.reports[i+1]
+		header := byte(0x40)
+		if i == 2 {
+			header = 0x0c
+		}
+		if len(report) != 64 || !reflect.DeepEqual(report[:4], []byte{9, header, 6, byte(i)}) || !reflect.DeepEqual(report[4:4+size], expected[i*60:i*60+size]) {
+			t.Fatalf("report %d: %x", i, report)
+		}
+		for _, b := range report[4+size:] {
+			if b != 0 {
+				t.Fatal("nonzero final padding")
+			}
+		}
+	}
+	saved, _ = s.ReadMacro(m.ID)
+	if !reflect.DeepEqual(saved.Events, events) {
+		t.Fatal("Apply rewrote source delays")
+	}
+}
+
+func TestX6OfficialInvalidStageAndApplyNoMutation(t *testing.T) {
+	key := func(code string, action macros.Action) macros.Event {
+		return macros.Event{Type: macros.Keyboard, KeyCode: code, Action: action, DelayMS: 10}
+	}
+	for _, tt := range []struct {
+		name   string
+		events []macros.Event
+	}{
+		{"simultaneous aliases", []macros.Event{key("Enter", macros.Down), key("NumpadEnter", macros.Down), key("Enter", macros.Up), key("NumpadEnter", macros.Up)}},
+		{"alias release", []macros.Event{key("Enter", macros.Down), key("NumpadEnter", macros.Up)}},
+		{"repeated down", []macros.Event{key("Enter", macros.Down), key("Enter", macros.Down), key("Enter", macros.Up)}},
+		{"prototype identity", []macros.Event{key("constructor", macros.Down), key("constructor", macros.Up)}},
+		{"oversize", repeatLocalClicks(24)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, c, valid := localMacroFixture(t)
+			staged := s.StageMacroAssignment(valid.ID, 6, 1)
+			invalid, err := s.CreateMacro(tt.name, tt.events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := s.GetRemapSnapshot()
+			rejected := s.StageMacroAssignment(invalid.ID, 7, 1)
+			if rejected.Error.Code == "" || rejected.Revision != before.Revision || !reflect.DeepEqual(rejected.MacroDrafts, before.MacroDrafts) || rejected.MacroProgress != before.MacroProgress || !reflect.DeepEqual(rejected.Pending, before.Pending) {
+				t.Fatal(before, rejected)
+			}
+			// Simulate a malformed staged snapshot to prove Apply independently gates it.
+			state := s.currentRemapState()
+			state.mu.Lock()
+			state.macroPendingMap[6].ID = invalid.ID
+			state.macroPendingMap[6].Name = invalid.Name
+			state.macroPendingMap[6].Events = append([]macros.Event(nil), invalid.Events...)
+			state.mu.Unlock()
+			before = s.GetRemapSnapshot()
+			rejected = s.ApplyRemap(staged.Pending)
+			if rejected.Error.Code == "" || rejected.Revision != before.Revision || !reflect.DeepEqual(rejected.MacroDrafts, before.MacroDrafts) || rejected.MacroProgress != before.MacroProgress || !reflect.DeepEqual(rejected.Pending, before.Pending) || c.localCalls+c.normal+c.composite != 0 {
+				t.Fatal(before, rejected, c)
+			}
+			saved, _ := s.ReadMacro(invalid.ID)
+			if !reflect.DeepEqual(saved.Events, tt.events) {
+				t.Fatal("local source lost")
+			}
+		})
+	}
+}
+
+func keyboardTake() []macros.Event {
+	return []macros.Event{{Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Up, DelayMS: 100}}
+}
+
+func TestMacroLocalMixedApplyAndStaleCompletion(t *testing.T) {
+	for _, mutation := range []string{"none", "library", "selection", "draft", "partial", "missing ACK"} {
+		t.Run(mutation, func(t *testing.T) {
+			s, c, m := localMacroFixture(t)
+			chord, err := s.CreateMacro("Captured chord", keyboardTake())
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.StageMacroAssignment(m.ID, 6, 255)
+			staged := s.StageMacroAssignmentWithMode(chord.ID, 7, 1, 2)
+			config := cloneRemapConfig(staged.Pending)
+			config.Buttons[3].Action = x6.RemapFire
+			before := staged.Applied
+			c.during = func() {
+				switch mutation {
+				case "library":
+					_, _ = s.UpdateMacro(chord.ID, "renamed", chord.Events)
+				case "selection":
+					inventory := s.RefreshInventory(context.Background())
+					s.SelectDevice(inventory.Devices[1].ID)
+				case "draft":
+					s.ClearButtonMacroAssignment(7)
+				}
+			}
+			if mutation == "partial" {
+				c.err = errors.New("write failure")
+				c.progress.Upload = mouse.MacroUploadPossiblyPartial
+			}
+			if mutation == "missing ACK" {
+				c.progress.Upload = mouse.MacroUploadNotStarted
+			}
+			got := s.ApplyRemap(config)
+			if c.localCalls != 1 || c.composite+c.normal != 0 || len(c.localItems) != 2 || c.localItems[0].Button != 6 || c.localItems[1].Button != 7 || !reflect.DeepEqual(c.localItems[1].Events, chord.Events) || !reflect.DeepEqual(c.multiConfig, config) || got.MacroProgress != c.progress {
+				t.Fatalf("mixed transport contract: %+v command=%+v", got, c)
+			}
+			if mutation == "none" {
+				if got.Error.Code != "" || got.Firmware != "success" || len(got.MacroAppliedDrafts) != 2 || got.Persistence != "not_supported" {
+					t.Fatal(got)
+				}
+			} else {
+				if got.Error.Code == "" || got.Firmware != "failed" || !reflect.DeepEqual(got.Applied, before) || len(got.MacroAppliedDrafts) != 0 {
+					t.Fatal(got)
+				}
+				if mutation == "library" || mutation == "selection" || mutation == "draft" {
+					if got.Error.Code != StaleBinding {
+						t.Fatal(got.Error)
+					}
+				}
+			}
+			s.RetryRemapPersistence()
+			if c.localCalls != 1 {
+				t.Fatal("automatic transport retry")
+			}
+		})
+	}
+}
+
 func TestMacroPlaybackModes(t *testing.T) {
 	for _, mode := range []uint8{0, 1, 2} {
 		s, c, m := macroFixture(t)
@@ -152,6 +510,39 @@ func TestMacroOrderedSequenceApplyFrozenDraft(t *testing.T) {
 	}
 }
 
+func repeatLocalClicks(count int) []macros.Event {
+	var events []macros.Event
+	for i := 0; i < count; i++ {
+		events = append(events, macros.Event{Type: macros.MouseLeft, Action: macros.Down}, macros.Event{Type: macros.MouseLeft, Action: macros.Up})
+	}
+	return events
+}
+
+func TestMacroExpandedStageRetainsBalancedLayouts(t *testing.T) {
+	cases := [][]macros.Event{
+		repeatLocalClicks(3),
+		{{Type: macros.MouseLeft, Action: macros.Down, DelayMS: 10}, {Type: macros.MouseLeft, Action: macros.Up, DelayMS: 10}},
+		{{Type: macros.Keyboard, KeyCode: "ControlLeft", Action: macros.Down, DelayMS: 1800}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down}, {Type: macros.MouseRight, Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Up}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up}, {Type: macros.MouseRight, Action: macros.Up}, {Type: macros.Keyboard, KeyCode: "ControlLeft", Action: macros.Up}},
+	}
+	for i, events := range cases {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			s, c, m := macroFixture(t)
+			m, err := s.UpdateMacro(m.ID, m.Name, events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := s.StageMacroAssignment(m.ID, 6, 255)
+			if got.Error.Code != "" || !reflect.DeepEqual(got.MacroPending.Events, events) || c.normal+c.composite != 0 {
+				t.Fatal(got)
+			}
+			after, _ := s.ReadMacro(m.ID)
+			if !reflect.DeepEqual(after, m) {
+				t.Fatal("staging edited library")
+			}
+		})
+	}
+}
+
 func TestMacroStrictNegativeAdmissionPreservesDraftAndLibrary(t *testing.T) {
 	valid := []macros.Event{{Type: macros.MouseLeft, Action: macros.Down}, {Type: macros.MouseLeft, Action: macros.Up}}
 	cases := []struct {
@@ -163,15 +554,16 @@ func TestMacroStrictNegativeAdmissionPreservesDraftAndLibrary(t *testing.T) {
 		{"empty", nil, 1, 1},
 		{"single", valid[:1], 1, 1},
 		{"incomplete second pair", append(append([]macros.Event{}, valid...), valid[0]), 1, 1},
-		{"multi sequence (three clicks)", append(append(append([]macros.Event{}, valid...), valid...), valid...), 1, 1},
-		{"second pair timing", append(append([]macros.Event{}, valid...), macros.Event{Type: macros.MouseRight, Action: macros.Down}, macros.Event{Type: macros.MouseRight, Action: macros.Up, DelayMS: 1}), 1, 1},
+		// T4 admits longer balanced/timed takes; preserve overflow rejection here.
+		{"source event overflow", repeatLocalClicks(24), 1, 1},
+		{"second pair timing overflow", append(append([]macros.Event{}, valid...), macros.Event{Type: macros.MouseRight, Action: macros.Down}, macros.Event{Type: macros.MouseRight, Action: macros.Up, DelayMS: 51200}), 1, 1},
 		{"second pair reversed", append(append([]macros.Event{}, valid...), valid[1], valid[0]), 1, 1},
 		{"second pair unmatched", append(append([]macros.Event{}, valid...), valid[0], macros.Event{Type: macros.MouseRight, Action: macros.Up}), 1, 1},
 		{"different buttons", []macros.Event{valid[0], {Type: macros.MouseRight, Action: macros.Up}}, 1, 1},
 		{"reversed", []macros.Event{valid[1], valid[0]}, 1, 1},
 		{"two downs", []macros.Event{valid[0], valid[0]}, 1, 1},
-		{"down timing", []macros.Event{{Type: macros.MouseLeft, Action: macros.Down, DelayMS: 1}, valid[1]}, 1, 1},
-		{"up timing", []macros.Event{valid[0], {Type: macros.MouseLeft, Action: macros.Up, DelayMS: 1}}, 1, 1},
+		{"down timing overflow", []macros.Event{{Type: macros.MouseLeft, Action: macros.Down, DelayMS: 51200}, valid[1]}, 1, 1},
+		{"up timing overflow", []macros.Event{valid[0], {Type: macros.MouseLeft, Action: macros.Up, DelayMS: 51200}}, 1, 1},
 		{"repeat zero", valid, 0, 1}, {"repeat negative", valid, -1, 1}, {"repeat 256", valid, 256, 1},
 		{"button zero", valid, 1, 0}, {"button eight", valid, 1, 8},
 	}

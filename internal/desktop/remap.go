@@ -69,6 +69,8 @@ func (c *remapComponent) stateForBinding(binding Binding) *remapState {
 func (c *remapComponent) snapshot() RemapSnapshot { return remapSnapshotOf(c.currentState()) }
 
 func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
+	// Freeze caller-owned data before waiting on either serialization lock.
+	config = cloneRemapConfig(config)
 	s := c.service
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
@@ -94,10 +96,7 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 		}
 		return snapshot
 	}
-	state.pending = cloneRemapConfig(config)
-	state.revision++
-	revision := state.revision
-	state.firmware, state.persistence, state.retry, state.err = "pending", "", nil, Error{}
+	observedRevision := state.revision
 	var drafts []*MacroDraft
 	for b := uint8(1); b <= 7; b++ {
 		if d := state.macroPendingMap[b]; d != nil {
@@ -107,6 +106,23 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 	if len(drafts) == 0 && state.macroPending != nil {
 		drafts = append(drafts, cloneMacroDraft(state.macroPending))
 	}
+	state.mu.Unlock()
+	if len(drafts) > 0 {
+		if code := c.prevalidateMacroBound(binding, config, drafts); code != "" {
+			return failRemap(state, code)
+		}
+	}
+	// Staging is intentionally allowed during validation. Never overwrite a newer
+	// draft or attribute this operation to a replacement selection.
+	state.mu.Lock()
+	if state.revision != observedRevision || !s.bindingCurrent(binding) {
+		state.mu.Unlock()
+		return failRemap(state, StaleBinding)
+	}
+	state.pending = cloneRemapConfig(config)
+	state.revision++
+	revision := state.revision
+	state.firmware, state.persistence, state.retry, state.err = "pending", "", nil, Error{}
 	state.mu.Unlock()
 	if len(drafts) > 0 {
 		c.applyMacroBound(binding, state, revision, cloneRemapConfig(config), drafts)

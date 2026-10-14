@@ -39,7 +39,7 @@ func admittedSequenceWithMode(events []macros.Event, repeat int, mode uint8) (ma
 	sequence := macros.X6Sequence{Repeat: repeat, Mode: mode}
 	for i := 0; i < len(events); i += 2 {
 		down, up := events[i], events[i+1]
-		if down.Type != up.Type || down.Action != macros.Down || up.Action != macros.Up || down.DelayMS != 0 || up.DelayMS != 0 {
+		if down.KeyCode != "" || up.KeyCode != "" || down.Type != up.Type || down.Action != macros.Down || up.Action != macros.Up || down.DelayMS != 0 || up.DelayMS != 0 {
 			return macros.X6Sequence{}, false
 		}
 		sequence.Buttons = append(sequence.Buttons, down.Type)
@@ -66,8 +66,8 @@ func (s *Service) StageMacroAssignmentWithMode(id string, button uint8, repeat i
 	state := s.remapComponent.stateForBinding(binding)
 	m, err := s.ReadMacro(id)
 	_, destinationErr := protocol.MacroDestinationForButton(button)
-	_, valid := admittedSequenceWithMode(m.Events, repeat, mode)
-	if err != nil || destinationErr != nil || !valid {
+	_, admissionErr := macros.AdmitX6LocalBlock(m.Events, repeat, mode)
+	if err != nil || destinationErr != nil || admissionErr != nil {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
@@ -167,6 +167,48 @@ func (s *Service) macroDraftCurrent(d *MacroDraft) bool {
 	return err == nil && m.Name == d.Name && reflect.DeepEqual(m.Events, d.Events)
 }
 
+// prevalidateMacroBound performs local admission before Apply changes visible
+// draft/revision/retry/progress state. It never invokes a command or device I/O.
+// Apply repeats freshness checks at dispatch and checks completion for races.
+func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.RemapConfig, drafts []*MacroDraft) ErrorCode {
+	s := c.service
+	if !s.bindingCurrent(binding) {
+		return StaleBinding
+	}
+	buttons := make([]uint8, len(drafts))
+	seen := make(map[uint8]bool, len(drafts))
+	legacy := true
+	for i, draft := range drafts {
+		if draft == nil || seen[draft.Button] {
+			return InvalidConfiguration
+		}
+		seen[draft.Button] = true
+		buttons[i] = draft.Button
+		destination, err := protocol.MacroDestinationForButton(draft.Button)
+		if err != nil || !s.macroDraftCurrent(draft) {
+			return InvalidConfiguration
+		}
+		if _, err := macros.EncodeX6LocalUpload(destination, draft.Events, draft.Repeat, draft.Mode); err != nil {
+			return InvalidConfiguration
+		}
+		_, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
+		legacy = legacy && valid
+	}
+	if _, err := protocol.EncodeMultiMacroAssignmentReport(pending, buttons); err != nil {
+		return InvalidConfiguration
+	}
+	s.mu.Lock()
+	inventory := s.inventory
+	s.mu.Unlock()
+	if inventory == nil {
+		return StaleBinding
+	}
+	if (legacy && !inventory.MacroSequenceAssignmentsAvailable()) || (!legacy && !inventory.MacroLocalAssignmentsAvailable()) {
+		return ApplyFailed
+	}
+	return ""
+}
+
 // The remap apply guards are held. The immutable copy is what reaches transport,
 // even if the library changes while I/O is in flight. Completion checks reject
 // stale drafts and retain the observed progress instead of claiming full apply.
@@ -181,7 +223,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 			failRemap(state, InvalidConfiguration)
 			return
 		}
-		if _, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode); !valid {
+		if _, err := macros.AdmitX6LocalBlock(draft.Events, draft.Repeat, draft.Mode); err != nil {
 			failRemap(state, InvalidConfiguration)
 			return
 		}
@@ -194,14 +236,24 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		return
 	}
 	items := make([]mouse.MacroSequenceItem, len(drafts))
+	localItems := make([]mouse.MacroLocalItem, len(drafts))
+	legacy := true
 	for i, draft := range drafts {
-		sequence, _ := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
+		sequence, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
+		legacy = legacy && valid
+		localItems[i] = mouse.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
 		items[i] = mouse.MacroSequenceItem{
 			Button:   draft.Button,
 			Sequence: sequence,
 		}
 	}
-	progress, err := inventory.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, pending, items)
+	var progress mouse.MacroProgress
+	var err error
+	if legacy {
+		progress, err = inventory.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, pending, items)
+	} else {
+		progress, err = inventory.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, pending, localItems)
+	}
 	libraryCurrent := true
 	for _, draft := range drafts {
 		if !s.macroDraftCurrent(draft) {
