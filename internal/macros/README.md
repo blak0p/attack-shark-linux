@@ -3,6 +3,37 @@
 The library validates local names and event data independently of hardware.
 A locally valid macro is not necessarily representable by the X6 codec.
 
+## Local keyboard storage
+
+`Event{Type: Keyboard, Action: Down | Up, DelayMS: int64, KeyCode: string}`
+stores an opaque physical key identity, suitable for browser `KeyboardEvent.code`.
+Keyboard events require a nonblank trimmed identity but preserve the accepted
+string verbatim, including whitespace and unknown/unverified identities. There
+is no key allowlist, firmware mapping, or device-support admission. Mouse events
+reject every nonempty `KeyCode`, including whitespace-only strings.
+
+Actions remain down/up and local delays remain nonnegative. Validation does not
+mutate input; CRUD preserves order, independent copies, and atomic persistence.
+JSON uses optional `key_code`; mouse-only serialization omits it and existing
+mouse documents remain readable. Schema version stays **1**: this is additive
+compatibility for the current reader, not forward compatibility with older
+binaries that reject unknown fields or event types.
+
+Frontend contracts, Wails conversion, and version-1 single-macro import/export
+preserve the same opaque identity and per-event delay contract. Unknown fields
+still reject. The timeline labels keyboard identity and down/up separately; only
+one or two recognized complete zero-delay mouse clicks without nonempty key
+fields display assignment eligibility. This display does not admit an upload.
+
+Recording policies (minimum/default 10 and between-press timing), recording UI,
+and upload integration remain separate work. Existing complete-click sequence
+admission still rejects keyboard events.
+
+Both `internal/macros/models.ts` binding mirrors were narrowly updated together
+for `Keyboard` and optional `key_code`. Full generation via the `bindings` task
+in `cmd/x6configurator/Taskfile.yml` rewrites the complete binding tree, so it was
+not run in this bounded change. The constructor preserves absent mouse key fields.
+
 ## Supported codec API
 
 - `X6Click{Button: MouseLeft | MouseRight, Repeat: int}` selects the exact
@@ -67,6 +98,62 @@ Mode occupies logical byte **0**; repeat remains byte **4**, with the existing
 checksum at bytes **126–127**. Uploads keep the same **60/60/8** chunk framing,
 including final header `09 0c <destination> 02`. No local timer or device I/O is
 introduced by the codec. Existing capture fixtures remain fixed mode.
+
+## Raw timed events: forward offline encoding only
+
+`EncodeX6TimedBlock([]X6TimedEvent, repeat, mode)` creates a logical block
+without changing the legacy mouse codec, local library, UI or device admission.
+Each raw event carries `Code byte`, `Action` (Down/Up), and `DelayMS int64`.
+Codes are copied verbatim: this API provides no keyboard mapping or support list.
+
+Delay belongs **after the preceding event**, represented by that event's pair.
+The terminal event always encodes 10, regardless of its valid source delay.
+For unsigned16 source delays, zero normalizes to 1; the writer rounds delay/10
+(half up), then ORs with 01 for down or 81 for up. At **1271 and above**, it
+uses quotient `floor(delay/200)` and remainder `delay%200` (zero becomes 1),
+encoding the remainder on the event and appending `[quotient, 03]`.
+
+| Rejection boundary | Policy |
+|---|---|
+| Source events | Require 1–46 |
+| Source delays, including terminal | Require 0–65535 and quotient at most 255; 51200 rejects |
+| Encoded extensions | At most 10, never silently drop later extensions |
+| Output pairs | At most 50, leaving checksum bytes untouched |
+| Repeat / mode | Require 1–255 / 0–2 |
+
+Every rejection returns nil output and preserves the input. The block uses mode
+at byte 0, repeat at byte 4, pair count at byte 25, pairs at byte 26 and the
+existing additive checksum at bytes 126–127. Unused bytes remain zero.
+
+This is traced **host arithmetic**, not proof of firmware acceptance or physical
+timing. In particular, 51199 is arithmetically encodable, not playback-verified.
+OR encoding loses information; no inverse timing decoder is provided. Domain,
+editor, recording policies, upload admission and transport integration remain
+separate work. The legacy template limitations below still apply to legacy APIs.
+
+## Local identities to offline candidates
+
+`MapX6LocalEvents([]Event)` returns independent `[]X6TimedEvent` values. It
+validates local type/action/identity and nonnegative delays, preserves order and
+source timing **after each event**, and does not overwrite terminal timing.
+`EncodeX6TimedBlock` remains responsible for unsigned16, capacity, extension,
+repeat/mode limits and the traced terminal 10 rule. Empty local sequences map to
+an empty slice; they still cannot be encoded as a timed block.
+
+| Exact local identity | Offline raw candidate | Evidence |
+|---|---|---|
+| `KeyA` | `04` | A-compatible keyboard upload |
+| `ControlLeft` | `e0` | Ctrl/A-compatible keyboard upload |
+| `ShiftLeft` | `e1` | Shift/A-compatible keyboard upload |
+| Five existing mouse types | `f1`–`f5` | Existing complete-click sequence codec |
+
+Keyboard evidence is indexed in
+[`keyboard-captures.json`](../../captures/0x09-macro/keyboard-captures.json).
+These are limited capture-backed candidates, not a generic HID table or physical
+acceptance guarantee. Alt, right modifiers, other letters, unknown keys and even
+padded known identities reject mapping with nil output and unchanged input.
+They remain valid opaque local data when nonblank. No identity normalization,
+inverse timing, assignment/apply call, transport or device I/O is introduced.
 
 ## Evidence versus extrapolation
 

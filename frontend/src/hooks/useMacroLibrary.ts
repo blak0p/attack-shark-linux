@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Macro, MacroLibraryService } from "../desktop-contract";
-import { importMacroFile } from "../macros/macro-file";
+import { copyMacroEvent, importMacroFile } from "../macros/macro-file";
 
 type DraftEvent = Omit<Macro["events"][number], "delay_ms"> & { delay_ms: number | string };
 type Draft = { id?: string; name: string; events: DraftEvent[] };
@@ -22,8 +22,14 @@ export function useMacroLibrary(service: MacroLibraryService) {
   const readRequest = useRef(0);
   const listRequest = useRef(0);
   const submitting = useRef(false);
-  const invalidEvent = draft?.events.findIndex((event) => !validDelay(event.delay_ms)) ?? -1;
-  const validationError = invalidEvent < 0 ? "" : `Event ${invalidEvent + 1} delay must be a nonnegative whole number of milliseconds.`;
+  const validationError = (() => {
+    for (const [index, event] of (draft?.events ?? []).entries()) {
+      if (!validDelay(event.delay_ms)) return `Event ${index + 1} delay must be a nonnegative whole number of milliseconds.`;
+      try { copyMacroEvent({ ...event, delay_ms: Number(event.delay_ms) }, `Event ${index + 1}`); }
+      catch (failure) { return errorMessage(failure); }
+    }
+    return "";
+  })();
 
   const editEvents = (update: (events: DraftEvent[]) => DraftEvent[]) => {
     if (submitting.current || reading || loading || confirmation) return;

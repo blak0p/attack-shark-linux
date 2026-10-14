@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const bindings = vi.hoisted(() => ({
   ListMacros: vi.fn(), CreateMacro: vi.fn(), ReadMacro: vi.fn(), UpdateMacro: vi.fn(), DeleteMacro: vi.fn(),
@@ -43,8 +43,58 @@ vi.mock("@wailsio/runtime", async (importOriginal) => ({
 }));
 
 import { desktopService } from "./wails-service";
+import { Macro as CanonicalMacro, EventType as CanonicalEventType } from "../bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
+import { Macro as EmbeddedMacro, EventType as EmbeddedEventType } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
+
+it.each([CanonicalMacro, EmbeddedMacro])("binding models preserve keyboard keys and absent legacy mouse keys", (Model) => {
+  const source = { id: "models", name: "Models", events: [
+    { type: "keyboard", action: "down", delay_ms: 123, key_code: " UnknownPhysicalKey " },
+    { type: "mouse_left", action: "up", delay_ms: 0 },
+  ] };
+  const result = Model.createFrom(JSON.stringify(source));
+  expect(JSON.parse(JSON.stringify(result))).toEqual(source);
+  expect(Object.hasOwn(result.events[1], "key_code")).toBe(false);
+  expect(CanonicalEventType.Keyboard).toBe("keyboard");
+  expect(EmbeddedEventType).toEqual(CanonicalEventType);
+});
+
+beforeEach(() => Object.values(bindings).forEach((binding) => binding.mockReset()));
 
 describe("desktopService", () => {
+  it("preserves opaque keyboard identity through all local CRUD boundaries with independent copies", async () => {
+    const events = [{ type: "keyboard", action: "down", delay_ms: 123, key_code: " UnknownPhysicalKey " },
+      { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }];
+    const macro = { id: "keyboard", name: "Keyboard", events };
+    const before = structuredClone(macro);
+    bindings.ListMacros.mockResolvedValueOnce([macro]);
+    bindings.ReadMacro.mockResolvedValueOnce(macro);
+    bindings.CreateMacro.mockResolvedValueOnce(macro);
+    bindings.UpdateMacro.mockResolvedValueOnce(macro);
+    const input = events as Parameters<typeof desktopService.CreateMacro>[1];
+    const results = [(await desktopService.ListMacros())[0], await desktopService.ReadMacro(macro.id),
+      await desktopService.CreateMacro(macro.name, input), await desktopService.UpdateMacro(macro.id, macro.name, input)];
+    for (const result of results) {
+      expect(result).toEqual(macro);
+      expect(result.events[0]).not.toBe(events[0]);
+      result.events[0].delay_ms = 9;
+    }
+    expect(bindings.CreateMacro).toHaveBeenLastCalledWith(macro.name, events);
+    expect(bindings.UpdateMacro).toHaveBeenLastCalledWith(macro.id, macro.name, events);
+    expect(bindings.CreateMacro.mock.calls.at(-1)?.[1][0]).not.toBe(events[0]);
+    expect(macro).toEqual(before);
+  });
+  it.each([
+    { type: "keyboard", key_code: "" }, { type: "keyboard", key_code: " \t" },
+    { type: "keyboard" }, { type: "mouse_left", key_code: "KeyA" },
+    { type: "mouse_right", key_code: " " },
+  ])("rejects invalid local identity on read and before save: %j", async (identity) => {
+    const events = [{ ...identity, action: "down", delay_ms: 0 }];
+    bindings.ReadMacro.mockResolvedValueOnce({ id: "bad", name: "Bad", events });
+    await expect(desktopService.ReadMacro("bad")).rejects.toThrow(/key_code/);
+    const count = bindings.CreateMacro.mock.calls.length;
+    await expect(desktopService.CreateMacro("Bad", events as Parameters<typeof desktopService.CreateMacro>[1])).rejects.toThrow(/key_code/);
+    expect(bindings.CreateMacro.mock.calls).toHaveLength(count);
+  });
   it.each([0, 1, 2] as const)("forwards numeric mode %s and normalizes legacy mode", async (mode) => {
     const draft = { ID: "click", Name: "Click", Button: 6, Repeat: 1, Mode: mode, Events: [] };
     bindings.StageMacroAssignmentWithMode.mockResolvedValueOnce({ MacroPending: draft, MacroDrafts: { 6: draft } });

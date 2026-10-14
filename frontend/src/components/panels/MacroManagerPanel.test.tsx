@@ -46,6 +46,46 @@ const serviceFor = (overrides: Partial<MacroLibraryService> = {}): MacroLibraryS
   ...overrides,
 });
 
+it.each([
+  [{ type: "keyboard", action: "down", delay_ms: 0, key_code: "KeyA" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }],
+  [{ type: "mouse_left", action: "down", delay_ms: 0 }, { type: "mouse_left", action: "up", delay_ms: 0 }, { type: "keyboard", action: "down", delay_ms: 0, key_code: "KeyA" }, { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }],
+  [{ type: "mouse_unknown", action: "down", delay_ms: 0 }, { type: "mouse_unknown", action: "up", delay_ms: 0 }],
+  [{ type: "mouse_left", action: "down", delay_ms: 0, key_code: " " }, { type: "mouse_left", action: "up", delay_ms: 0 }],
+  [{ type: "mouse_left", action: "down", delay_ms: 0 }, { type: "mouse_left", action: "up", delay_ms: 0, key_code: "KeyA" }],
+].map((events) => ({ events })))("never labels keyboard/mixed/unknown/stale sequences eligible: %j", async ({ events: raw }) => {
+  const stored = { id: "one", name: "Unsafe", events: raw } as Macro;
+  const service = serviceFor({ ListMacros: vi.fn().mockResolvedValue([stored]), ReadMacro: vi.fn().mockResolvedValue(stored) });
+  render(<MacroManagerPanel service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: `Unsafe · ${raw.length} events` }));
+  const list = await screen.findByRole("list", { name: "Ordered timeline" });
+  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  expect(screen.queryByText(/Eligible for assignment/)).not.toBeInTheDocument();
+  if (raw.some((event) => event.type === "keyboard")) {
+    expect(list).toHaveTextContent("KeyA · down");
+    expect(list).toHaveTextContent("KeyA · up");
+  }
+});
+it("imports, labels and exports the saved opaque keyboard copy without hardware calls", async () => {
+  const events = [{ type: "keyboard", action: "down", delay_ms: 0, key_code: " UnknownPhysicalKey " },
+    { type: "keyboard", action: "up", delay_ms: 7, key_code: "KeyA" }];
+  const service = serviceFor();
+  let blob!: Blob;
+  vi.spyOn(URL, "createObjectURL").mockImplementation((value: unknown) => { blob = value as Blob; return "blob:keyboard"; });
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  render(<MacroManagerPanel service={service} />);
+  await screen.findByRole("button", { name: "Clicks · 2 events" });
+  upload(JSON.stringify({ version: 1, name: "Keyboard", events }));
+  await screen.findByDisplayValue("Keyboard");
+  expect(service.CreateMacro).toHaveBeenLastCalledWith("Keyboard", events);
+  expect(screen.getByRole("list", { name: "Ordered timeline" })).toHaveTextContent("UnknownPhysicalKey · down");
+  expect(screen.getByText(/Local sequence only/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Export saved macro" }));
+  const text = await new Promise<string>((resolve) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob);
+  });
+  expect(JSON.parse(text)).toEqual({ version: 1, name: "Keyboard", events });
+});
 it("renders clean guidance text for button assignment and no cross-view assign button", async () => {
   const service = serviceFor();
   render(<MacroManagerPanel service={service} />);

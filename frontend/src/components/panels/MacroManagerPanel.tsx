@@ -11,7 +11,10 @@ function timeline(events: NonNullable<Library["draft"]>["events"]) {
   const rows: { index: number; count: number }[] = [];
   for (let index = 0; index < events.length;) {
     const down = events[index], up = events[index + 1];
-    const paired = down.action === "down" && down.delay_ms === 0 && up?.action === "up"
+    const paired = mouseButtons.some((button) => button.type === down.type)
+      && (down.key_code === undefined || down.key_code === "")
+      && (up?.key_code === undefined || up.key_code === "")
+      && down.action === "down" && down.delay_ms === 0 && up?.action === "up"
       && up.delay_ms === 0 && up.type === down.type;
     rows.push({ index, count: paired ? 2 : 1 });
     index += paired ? 2 : 1;
@@ -202,12 +205,13 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
               <ol aria-label="Ordered timeline">
                 {rows.map(({ index, count }, position) => {
                   const event = draft.events[index];
-                  const label = mouseButtons.find((button) => button.type === event.type)?.label;
+                  const label = event.type === "keyboard" ? (event.key_code || "Keyboard (missing identity)")
+                    : mouseButtons.find((button) => button.type === event.type)?.label.replace(" mouse", "") ?? event.type;
                   return (
                     <li key={index}>
                       <span className="macro-step">{String(position + 1).padStart(2, "0")}</span>
                       <div>
-                        <strong>{label?.replace(" mouse", "")}{count === 2 ? " click" : ` · ${event.action}`}</strong>
+                        <strong>{label}{count === 2 ? " click" : ` · ${event.action}`}</strong>
                         <small>{count === 2 ? "Complete click · zero local delay" : `Raw event ${index + 1} · ${event.delay_ms} ms`}</small>
                       </div>
                     </li>

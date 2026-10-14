@@ -1,4 +1,5 @@
 import { Events } from "@wailsio/runtime";
+import { copyMacroEvent } from "./macros/macro-file";
 import * as bindings from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
 import type { Action, EventType, Macro as GeneratedMacro } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
 import type { RemapSnapshot as GeneratedRemapSnapshot } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
@@ -23,15 +24,15 @@ const bindingRemap = (config: RemapConfig): GeneratedRemapConfig => ({
 });
 
 const bindingEvents = (events: MacroEvent[]) => events.map((event) => ({
-  ...event, type: event.type as EventType, action: event.action as Action,
+  ...copyMacroEvent(event), type: event.type as EventType, action: event.action as Action,
 }));
 const localMacro = (macro: GeneratedMacro): Macro => ({
   id: macro.id, name: macro.name,
   events: macro.events.map((event): MacroEvent => {
     if ((event.type !== "mouse_left" && event.type !== "mouse_right" &&
-         event.type !== "mouse_middle" && event.type !== "mouse_back" && event.type !== "mouse_forward") ||
+         event.type !== "mouse_middle" && event.type !== "mouse_back" && event.type !== "mouse_forward" && event.type !== "keyboard") ||
         (event.action !== "down" && event.action !== "up")) throw new Error("Unsupported local macro event");
-    return { type: event.type, action: event.action, delay_ms: event.delay_ms };
+    return copyMacroEvent(event);
   }),
 });
 
