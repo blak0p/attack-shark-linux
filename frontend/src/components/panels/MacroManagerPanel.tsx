@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { OperationFeedback } from "../OperationFeedback";
 import { GnomeSelect } from "./GnomeSelect";
 import { captureInput, startTake, stopTake, type DelayPolicy, type Take } from "../../macros/recorder";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
@@ -42,14 +43,16 @@ const mouseButtons: { button: number; type: Macro["events"][number]["type"]; lab
 export function MacroManagerPanel({
   service,
   library,
+  feedbackManaged = false,
   ...rest
 }: {
   service: MacroLibraryService;
   library?: Library;
+  feedbackManaged?: boolean;
   onAssign?(id: string): void;
   assignmentReady?: boolean;
 }) {
-  return library ? <MacroManagerEditor library={library} service={service} /> : <LocalMacroManager service={service} />;
+  return library ? <MacroManagerEditor library={library} service={service} feedbackManaged={feedbackManaged} /> : <LocalMacroManager service={service} />;
 }
 
 function LocalMacroManager({ service }: { service: MacroLibraryService }) {
@@ -57,7 +60,7 @@ function LocalMacroManager({ service }: { service: MacroLibraryService }) {
   return <MacroManagerEditor library={library} service={service} />;
 }
 
-function MacroManagerEditor({ library, service }: { library: Library; service: MacroLibraryService }) {
+function MacroManagerEditor({ library, service, feedbackManaged = false }: { library: Library; service: MacroLibraryService; feedbackManaged?: boolean }) {
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
   const unavailable = busy || reading || loading || confirmation;
   const [clickType, setClickType] = useState<Macro["events"][number]["type"]>("mouse_left");
@@ -156,7 +159,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
           <h2>Macro library</h2>
           <button type="button" className="button primary" disabled={navigationDisabled} onClick={() => { cancelFocus(); library.newMacro(); }}>New macro</button>
         </div>
-        {loading && <p role="status">Loading library…</p>}
+
         {!loading && loaded && macros.length === 0 && <p className="hint">No macros in your library yet.</p>}
         <div className="macro-cards">
           {macros.map((macro) => (
@@ -214,7 +217,7 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
           </details>
         </header>
 
-        {reading && <p role="status">Loading macro…</p>}
+
         {!draft ? (
           <p className="macro-empty">Select a macro or create a new one.</p>
         ) : (
@@ -368,9 +371,13 @@ function MacroManagerEditor({ library, service }: { library: Library; service: M
             )}
           </>
         )}
-        {busy && <p role="status">Saving local library…</p>}
-        {(validationError || error) && <p role="alert" className="macro-error">{validationError || error}</p>}
-        {notice && <p role="status">{notice === "Saved to library. No device changes made." ? "✓ Saved" : notice === "Imported as a new local macro. No device changes made." ? "✓ Imported" : notice === "Macro deleted from library." ? "✓ Deleted" : notice}</p>}
+        {validationError && <p role="alert" className="macro-error">{validationError}</p>}
+        {!feedbackManaged && <OperationFeedback scope="local-library" busy={busy || loading || reading} results={[{
+          id: "library", label: "Macros", version: notice, error,
+          success: notice === "Saved to library. No device changes made." ? "Saved"
+            : notice === "Imported as a new local macro. No device changes made." ? "Imported"
+            : notice === "Macro deleted from library." ? "Deleted" : undefined,
+        }]} />}
       </article>
     </div>
   );

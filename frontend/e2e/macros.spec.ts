@@ -52,7 +52,7 @@ test("local input recording preserves policies through save and export without d
   await expect(surface).toHaveText("⌨ / 🖱");
   await expect(page.getByRole("button", { name: "Start recording", exact: true })).toBeFocused();
   await page.getByRole("button", { name: "Save to library", exact: true }).click();
-  await expect(page.getByText("✓ Saved")).toBeVisible();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   const saved = await page.evaluate(() => window.__macroTest.library().find(macro => macro.name === "Local recording")!);
   expect(saved.events.slice(0, 6)).toEqual([
     { type: "keyboard", key_code: "ControlLeft", action: "down", delay_ms: 0 },
@@ -106,7 +106,7 @@ for (const width of [1280, 620]) {
     await expect(timeline.locator("strong")).toHaveText(["Key E", "Key S"]);
     await expect(timeline.locator("small")).toHaveText(["↓ 10 ms / ↑ 10 ms", "↓ 10 ms / ↑ 10 ms"]);
     await page.getByRole("button", { name: "Save to library", exact: true }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     const saved = await page.evaluate(() => window.__macroTest.library()[0]);
     expect(saved.events).toEqual(["KeyE", "KeyS"].flatMap(key_code => [
       { type: "keyboard", key_code, action: "down", delay_ms: 10 },
@@ -172,7 +172,7 @@ test("T6 F/D/S ten-event recording stages and applies strict mock transport with
   await page.getByRole("button", { name: "Stop recording", exact: true }).click();
   await expect(page.getByText(/Ready to assign/)).toBeVisible();
   await page.getByRole("button", { name: "Save to library", exact: true }).click();
-  await expect(page.getByText("✓ Saved")).toBeVisible();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   const recorded = await page.evaluate(() => window.__macroTest.library()[0]);
   expect(recorded.events).toEqual(["KeyF", "KeyD", "KeyS", "KeyF", "KeyD"].flatMap(key_code => [
     { type: "keyboard", key_code, action: "down", delay_ms: 10 },
@@ -186,7 +186,7 @@ test("T6 F/D/S ten-event recording stages and applies strict mock transport with
   await page.getByLabel("Macro name", { exact: true }).fill("Legacy click");
   await page.getByRole("button", { name: "Add click", exact: true }).click();
   await page.getByRole("button", { name: "Save to library", exact: true }).click();
-  await expect(page.getByText("✓ Saved")).toBeVisible();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   const importedEvents = recorded.events.map(event => ({ ...event, delay_ms: 100 }));
   const imports = [
     { name: "Captured default100", events: importedEvents, eligible: true },
@@ -285,7 +285,7 @@ for (const width of [1280, 620]) {
       await page.getByRole("button", { name: "Add click" }).click();
     }
     await page.getByRole("button", { name: "Save to library" }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     const saved = await page.evaluate(() => window.__macroTest.library()[0]);
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Button remapping", exact: true, level: 1 })).toBeVisible();
@@ -366,7 +366,7 @@ test("saved macro stages one device overlay, discards locally and reports confir
   await page.getByRole("button", { name: "Forward click", exact: true }).click();
   await page.getByRole("button", { name: "Add click" }).click();
   await page.getByRole("button", { name: "Save to library" }).click();
-  await expect(page.getByText("✓ Saved")).toBeVisible();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Button remapping", exact: true }).click();
   await page.getByRole("button", { name: "Button 4 action" }).click();
   await page.getByRole("menuitem", { name: "Basic", exact: true }).click();
@@ -428,7 +428,7 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("button", { name: `${label[0].toUpperCase()}${label.slice(1)} click`, exact: true }).click();
     await page.getByRole("button", { name: "Add click" }).click();
     await page.getByRole("button", { name: "Save to library" }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation !== "SelectDevice"))).toEqual([]);
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     await assignMacro(page, 6, type);
@@ -438,7 +438,7 @@ for (const type of ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "
     await page.getByRole("link", { name: "Macros", exact: true }).click();
     await page.getByLabel("Macro name", { exact: true }).fill("Changed saved name");
     await page.getByRole("button", { name: "Save to library" }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.__routingTest.remapSnapshot("alpha")?.MacroPending)).toEqual(frozen);
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     await page.getByRole("button", { name: "Apply remap" }).click();
@@ -460,7 +460,7 @@ for (const mode of [1, 2] as const) {
     await page.getByRole("button", { name: "Left click", exact: true }).click();
     await page.getByRole("button", { name: "Add click" }).click();
     await page.getByRole("button", { name: "Save to library" }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     await page.getByRole("link", { name: "Button remapping", exact: true }).click();
     const dialog = await openMacro(page, 6);
     await expect(dialog.getByRole("button", { name: "Playback mode" })).toContainText("Repeat a set number of times");
@@ -559,7 +559,7 @@ for (const width of [1280, 620]) {
     // Balanced five-button takes are now eligible even offline; this is not playback.
     await expect(page.getByText(/Ready to assign/)).toBeVisible();
     await page.getByRole("button", { name: "Save to library" }).click();
-    await expect(page.getByText("✓ Saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
     expect(await page.locator(".macro-manager").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     // The desktop shell scrolls internally; reset it for an honest top-of-editor capture.
     await page.locator(".macro-manager").evaluate((element) => {

@@ -34,6 +34,10 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - Sliders and toggles in **Performance**, **Lighting**, and **Controls** are debounced and automatically applied to the hardware after one second of user inactivity.
   - **Button Remapping** uses an explicit draft workflow requiring confirmation before sending new bindings to the hardware, preventing accidental lockouts.
 
+### Local macro feedback
+
+Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors remain visible, including device errors that do not prevent a successful local save.
+
 ---
 
 ## Performance View
