@@ -17,6 +17,7 @@ import { ButtonRemapPanel } from "./components/panels/ButtonRemapPanel";
 import { DeviceStatusPanel } from "./components/panels/DeviceStatusPanel";
 import { ResetPanel } from "./components/panels/ResetPanel";
 import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
+import { WorkspaceFeedback } from "./components/WorkspaceFeedback";
 import { UpdateBanner } from "./components/UpdateBanner";
 export type {
   ConfigurationEvent,
@@ -105,17 +106,22 @@ export function App({ service }: { service: DesktopService }) {
   const assignmentScope = useMemo(() => ({ service, selectedBinding, assignmentAvailable }), [service, selectedBinding, assignmentAvailable]);
 
   const macroWorkspace = (
-    <WorkspaceView key="macros" id="macros" title="Macros" subtitle="Manage your shared local library." placeholder="Local library">
-      <MacroManagerPanel service={service} library={macroLibrary} />
+    <WorkspaceView key="macros" id="macros" title="Macros">
+      <MacroManagerPanel service={service} library={macroLibrary} feedbackManaged />
     </WorkspaceView>
   );
 
+  const feedback = <WorkspaceFeedback initializing={!snapshot} model={model} library={macroLibrary} feedbackFor={feedbackFor} retries={{
+    dpi: actions.retryPersistence, polling: actions.retryPollingPersistence,
+    debounce: actions.retryDebouncePersistence, sleep: actions.retryNormalSleepPersistence,
+  }} />;
+
   if (!snapshot) return (
-    <WorkspaceShell activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
+    <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
       titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
-      connectionStatus={<p className="connection offline">Device configuration loading</p>}>
+      connectionStatus={<p className="connection offline">Connecting…</p>}>
       {macroWorkspace}
-      <WorkspaceView id="performance" title="Performance"><p role="status">Loading configuration…</p></WorkspaceView>
+      <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
     </WorkspaceShell>
   );
 
@@ -173,36 +179,6 @@ export function App({ service }: { service: DesktopService }) {
         </label>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-        {snapshot.Firmware && (
-          <span
-            role="status"
-            aria-label={
-              snapshot.Firmware === "success"
-                ? "Firmware applied"
-                : snapshot.Firmware === "pending"
-                ? "Firmware synchronization queued"
-                : "Firmware synchronization failed"
-            }
-          >
-            {snapshot.Firmware === "success"
-              ? "Firmware applied"
-              : snapshot.Firmware === "pending"
-              ? "Firmware synchronization queued"
-              : "Firmware synchronization failed"}
-          </span>
-        )}
-        {snapshot.Persistence && (
-          <span role="status">
-            {snapshot.Persistence === "success" ? "Persistence saved" : "Persistence failed"}
-          </span>
-        )}
-        {snapshot.RetryAvailable && (
-          <button type="button" className="button" onClick={actions.retryPersistence}>
-            Retry local persistence
-          </button>
-        )}
-      </div>
     </TopBar>
   );
 
@@ -217,11 +193,6 @@ export function App({ service }: { service: DesktopService }) {
         {connected ? "Device available" : "Device unavailable"}
       </b>
       <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
-      {errorCode && (
-        <span role="alert" style={{ display: "block", color: "var(--danger)", marginTop: 4 }}>
-          {feedbackFor(errorCode)}
-        </span>
-      )}
     </div>
   );
 
@@ -230,6 +201,7 @@ export function App({ service }: { service: DesktopService }) {
       activeView={activeView}
       onNavigate={setActiveView}
       busy={automaticApplyBusy}
+      feedback={feedback}
       deviceName="Attack Shark X6"
       deviceSubtitle="Wireless Gaming Mouse"
       titlebar={titlebarElement}
@@ -241,8 +213,6 @@ export function App({ service }: { service: DesktopService }) {
       <WorkspaceView
         id="performance"
         title="Performance"
-        subtitle="DPI, polling rate, and normal sleep."
-        placeholder="Device values"
       >
         <div className="stack">
           <DpiPanel
@@ -258,6 +228,7 @@ export function App({ service }: { service: DesktopService }) {
 
           {polling && (
             <PollingPanel
+              feedbackManaged
               snapshot={polling}
               ready={ready}
               onStagePollingRate={actions.stagePollingRate}
@@ -269,6 +240,7 @@ export function App({ service }: { service: DesktopService }) {
 
           {normalSleep && (
             <SleepPanel
+              feedbackManaged
               snapshot={normalSleep}
               ready={ready}
               onStage={actions.stageNormalSleep}
@@ -284,14 +256,11 @@ export function App({ service }: { service: DesktopService }) {
       <WorkspaceView
         id="lighting"
         title="Lighting"
-        subtitle="Select an effect, its available speed, and lighting color."
-        placeholder="Available effects"
       >
         {lighting && (
           <LightingPanel>
             <article className="card">
               <h2 id="lighting-title">Effect</h2>
-              <p className="hint">Effect labels are supplied by the device.</p>
               <label className="lighting-effect-select">
                 <span className="sr-only">Effect</span>
                 <LightingEffectSelect
@@ -310,7 +279,6 @@ export function App({ service }: { service: DesktopService }) {
 
             <article className="card">
               <h2>Lighting color</h2>
-              <p className="hint">Colors are supplied by the selected effect.</p>
 
               {lightingEffect && lightingEffect.SpeedVariants.length > 1 && (
                 <div className="range-row" style={{ marginBottom: 14 }}>
@@ -387,21 +355,6 @@ export function App({ service }: { service: DesktopService }) {
               </fieldset>
             </article>
 
-            <div
-              className="lighting-state status"
-              role="status"
-              aria-label="Lighting status"
-            >
-              {lighting.Firmware === "success" ? (
-                "Lighting applied"
-              ) : lighting.Firmware === "failed" ? (
-                <span role="alert">
-                  Lighting application failed: {feedbackFor(lighting.Error.Code)}
-                </span>
-              ) : (
-                "Lighting selection pending"
-              )}
-            </div>
           </LightingPanel>
         )}
       </WorkspaceView>
@@ -410,8 +363,6 @@ export function App({ service }: { service: DesktopService }) {
       <WorkspaceView
         id="controls"
         title="Controls"
-        subtitle="Mouse features and key response time."
-        placeholder="Pending settings"
       >
         <article className="card">
           <MouseFeaturesPanel
@@ -426,6 +377,7 @@ export function App({ service }: { service: DesktopService }) {
 
           {debounce && (
             <PowerSettingsPanel
+              feedbackManaged
               value={debounce.Desired}
               appliedValue={debounce.Applied}
               firmwareStatus={debounce.Firmware}
@@ -445,11 +397,10 @@ export function App({ service }: { service: DesktopService }) {
       <WorkspaceView
         id="remapping"
         title="Button remapping"
-        subtitle="Review the complete assignment, then apply or discard it."
-        placeholder="Pending assignment"
       >
         {remap && (
           <ButtonRemapPanel
+            feedbackManaged
             remap={remap}
             ready={ready && !model.remapBusy}
             macros={macroLibrary.macros}
@@ -471,8 +422,6 @@ export function App({ service }: { service: DesktopService }) {
       <WorkspaceView
         id="device"
         title="Device"
-        subtitle="Connection, battery, inventory, and factory reset."
-        placeholder="Device status"
       >
         <div className="stack">
           <DeviceStatusPanel
@@ -481,8 +430,6 @@ export function App({ service }: { service: DesktopService }) {
             battery={snapshot.Battery}
             serial={inventory?.Selected?.ID.Serial || undefined}
             inventory={inventory}
-            errorCode={errorCode}
-            feedbackFor={feedbackFor}
             onSelectDevice={actions.selectDevice}
           />
 
@@ -524,9 +471,7 @@ export function App({ service }: { service: DesktopService }) {
         </div>
       </WorkspaceView>
 
-      <p aria-live="polite" className="notice">
-        {notice}
-      </p>
+
     </WorkspaceShell>
   );
 }

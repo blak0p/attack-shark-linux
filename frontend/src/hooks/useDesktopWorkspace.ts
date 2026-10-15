@@ -210,13 +210,13 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         return updated;
       });
     })),
-    retryDebouncePersistence: () => void service.RetryDebouncePersistence().then(setDebounce),
+    retryDebouncePersistence: () => void runAutomaticApply(() => service.RetryDebouncePersistence().then(setDebounce)),
     stageNormalSleep: (minutes) => void runAutomaticApply(() => service.StageNormalSleep(minutes).then((staged) => {
       setNormalSleep(staged);
       if (staged.Error.Code) return staged;
       return service.ApplyNormalSleep().then((updated) => { setNormalSleep(updated); return updated; });
     })),
-    retryNormalSleepPersistence: () => void service.RetryNormalSleepPersistence().then(setNormalSleep),
+    retryNormalSleepPersistence: () => void runAutomaticApply(() => service.RetryNormalSleepPersistence().then(setNormalSleep)),
 		stageLighting: (selection) => void runAutomaticApply(() => service.StageLighting(selection).then((staged) => {
       setLighting(staged);
       if (staged.Error?.Code) return staged;
@@ -293,8 +293,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         setRemapBusy(false);
       });
     },
-    retryPersistence: () => void service.RetryPersistence().then(setSnapshot),
-    retryPollingPersistence: () => void service.RetryPollingPersistence().then(setPolling),
+    retryPersistence: () => void runAutomaticApply(() => service.RetryPersistence().then(setSnapshot)),
+    retryPollingPersistence: () => void runAutomaticApply(() => service.RetryPollingPersistence().then(setPolling)),
   };
 		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, update, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0, remapBusy, remapError }, actions };
 }

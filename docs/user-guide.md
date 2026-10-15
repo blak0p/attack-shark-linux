@@ -28,11 +28,16 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - **⌁ Controls**: Sensor enhancements (Angle snap, Ripple control, Lift-off distance) and key response debounce.
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
-- **Top Bar**: Displays the active mouse profile name (**Attack Shark X6**), an optional device selector dropdown when multiple eligible receivers are plugged in, and real-time firmware synchronization and persistence status badges (`Firmware applied`, `Persistence saved`).
+- **Top Bar**: Displays the active mouse profile name (**Attack Shark X6**) and a device selector when multiple eligible receivers are available.
+- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors remain visible with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
 - **Connection & Battery Card (Bottom Left)**: Live indicator showing device availability (`Device available` / `Device unavailable`) and current battery level percentage (`Battery 100%`). Hardware battery heartbeats and physical DPI button presses are pushed live from the mouse dongle to the UI.
 - **Auto-Sync vs. Draft Confirmation**:
   - Sliders and toggles in **Performance**, **Lighting**, and **Controls** are debounced and automatically applied to the hardware after one second of user inactivity.
   - **Button Remapping** uses an explicit draft workflow requiring confirmation before sending new bindings to the hardware, preventing accidental lockouts.
+
+### Local macro feedback
+
+Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors remain visible, including device errors that do not prevent a successful local save.
 
 ---
 
@@ -61,7 +66,7 @@ Controls how frequently the mouse reports position updates to the host computer:
 - **Selectable Rates**: `125 Hz` (8 ms), `250 Hz` (4 ms), `500 Hz` (2 ms), and `1,000 Hz` (1 ms).
 - **Default**: `1,000 Hz` for maximum responsiveness and tracking accuracy in competitive gaming.
 - **Battery Impact**: Lower rates (e.g., 250 Hz or 500 Hz) reduce CPU wakeups and conserve wireless battery life during productivity or travel use.
-- **Status Indicator**: Confirms when the selected frequency has been acknowledged by hardware (`Applied 1000 Hz`) and persisted to the local per-device profile.
+- **Feedback**: Uses the shared `Working…` / `Applied` feedback. The selected rate stays visible in its control; local-save failures remain visible separately.
 
 ### 3. Normal Sleep
 
@@ -87,7 +92,7 @@ The **Lighting** view configures the RGB LED lighting strip and illuminated logo
 
 - **Animation Speed Slider**: For animated lighting effects, adjust the animation speed step-by-step.
 - **Color Presets**: Select from device-supported color swatches (e.g., Neon Green, Magenta, Orange, Yellow) or effect-controlled multi-color modes.
-- **Live Status**: Displays the current synchronization state (`Lighting selection pending` while staging, `Lighting applied` upon hardware acknowledgement).
+- **Feedback**: Uses the same progress indicator and brief `Applied` confirmation as other settings.
 
 ---
 
@@ -119,7 +124,7 @@ The **Controls** view provides fine-grained control over sensor tracking charact
 - **Tradeoffs**:
   - *Lower values (2–4 ms)*: Minimize click registration latency for maximum reaction speed in competitive gaming.
   - *Higher values (8–16 ms)*: Provide greater electrical switch debounce margin, preventing accidental double-clicking on aging switches.
-- **Status & Retry**: Displays applied debounce delay (`Applied 8 ms`) with a retry button if local persistence needs re-synchronization.
+- **Value & Retry**: The chosen milliseconds stay visible beside the title. Progress and confirmation use the shared feedback region; local-save failures retain their retry action.
 
 ---
 

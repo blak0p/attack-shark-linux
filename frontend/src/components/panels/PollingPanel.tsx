@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { PollingSnapshot } from "../../desktop-contract";
 
 export type PollingPanelProps = {
+  feedbackManaged?: boolean;
   snapshot?: PollingSnapshot | null;
   ready?: boolean;
   onStagePollingRate?: (rate: number) => void;
@@ -12,6 +13,7 @@ export type PollingPanelProps = {
 };
 
 export function PollingPanel({
+  feedbackManaged = false,
   snapshot,
   ready = true,
   onStagePollingRate,
@@ -35,7 +37,6 @@ export function PollingPanel({
   return (
     <article id="polling" className="card" aria-labelledby="polling-title">
       <h2 id="polling-title">Polling rate</h2>
-      <p className="hint">Higher rates favor responsiveness; lower rates favor battery life.</p>
       <div className="segmented" role="radiogroup" aria-label="Polling rate">
         {rates.map((rate) => {
           const isSelected = snapshot.Desired === rate;
@@ -56,7 +57,7 @@ export function PollingPanel({
           );
         })}
       </div>
-      <div className="status" role="status" aria-label="Polling status">
+      {!feedbackManaged && <div className="status" role="status" aria-label="Polling status">
         {snapshot.Firmware === "pending" ? (
           <>
             <span className="pending-spinner" aria-hidden="true" />
@@ -76,7 +77,7 @@ export function PollingPanel({
             Retry polling persistence
           </button>
         )}
-      </div>
+      </div>}
     </article>
   );
 }

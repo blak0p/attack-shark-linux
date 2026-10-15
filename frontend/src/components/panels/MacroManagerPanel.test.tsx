@@ -657,7 +657,7 @@ it.each(["new", "select"] as const)("recovers from a stalled read via %s without
   fireEvent.click(cards[0]);
   await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
   fireEvent.click(cards[0]);
-  expect(screen.getByText("Loading macro…")).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Operation status" })).toBeInTheDocument();
   const start = screen.getByRole("button", { name: "Start recording" });
   const save = screen.getByRole("button", { name: "Save to library" });
   expect(start).toBeDisabled();
@@ -676,7 +676,7 @@ it.each(["new", "select"] as const)("recovers from a stalled read via %s without
   }
   const name = recovery === "new" ? "Recovered draft" : "Second";
   await waitFor(() => expect(screen.getByLabelText("Macro name")).toHaveValue(name));
-  expect(screen.queryByText("Loading macro…")).not.toBeInTheDocument();
+  expect(screen.queryByRole("status", { name: "Operation status" })).not.toBeInTheDocument();
   await act(async () => resolve(macro("one", "Late stale read")));
   expect(screen.getByLabelText("Macro name")).toHaveValue(name);
   expect(screen.getByRole("list", { name: "Ordered timeline" }).children).toHaveLength(recovery === "new" ? 0 : 2);
@@ -727,7 +727,7 @@ it("shows loading/list errors, retries, and retains draft while preventing dupli
     CreateMacro: vi.fn().mockReturnValue(pending),
   });
   render(<MacroManagerPanel service={service} />);
-  expect(screen.getByText("Loading library…")).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Operation status" })).toBeInTheDocument();
   expect(await screen.findByRole("alert")).toHaveTextContent("Unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Retry library" }));
   await screen.findByText("No macros in your library yet.");

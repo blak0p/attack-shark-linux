@@ -175,6 +175,7 @@ function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, 
 }
 
 export function ButtonRemapPanel({
+  feedbackManaged = false,
   remap,
   ready,
   onStage,
@@ -191,6 +192,7 @@ export function ButtonRemapPanel({
   assignmentAvailable = ready,
   onConsumeIntent: _onConsumeIntent,
 }: {
+  feedbackManaged?: boolean;
   remap: Remap;
   ready: boolean;
   macros?: Macro[];
@@ -267,11 +269,10 @@ export function ButtonRemapPanel({
       }}
     >
       <h2 id="button-remap-title">Button remapping</h2>
-      <p className="hint">Review the complete assignment below, then apply or discard it.</p>
 
-      {!libraryReady && <p className="hint">Saved library unavailable or loading. Open Macros to retry.</p>}
-      {libraryReady && macros.some(macro => !compatible(macro)) && <p className="hint">Unsupported saved macros remain in your local library. Open Macros for the assignment reason; no events are discarded.</p>}
-      {error && <p role="alert">{error}</p>}
+      {!libraryReady && <p className="hint">Library unavailable. Retry in Macros.</p>}
+      {libraryReady && macros.some(macro => !compatible(macro)) && <p className="hint">Some macros cannot be sent. See Macros for details.</p>}
+      {!feedbackManaged && error && <p role="alert">{error}</p>}
 
       {remap.Pending.Buttons.map((button) => {
         const draft = getButtonMacroDraft(remap, button.Button);
@@ -336,6 +337,7 @@ export function ButtonRemapPanel({
         document.body,
       )}
 
+      <details className="group"><summary>Assignment summary</summary>
       <p aria-label="Remap assignment summary" className="hint" style={{ marginTop: 14 }}>
         {remap.Pending.Buttons.map(
           (button) =>
@@ -344,6 +346,7 @@ export function ButtonRemapPanel({
             }`
         ).join(", ")}
       </p>
+      </details>
 
       <div className="actions">
         <button type="button" className="button" disabled={!isAvailable} onClick={onDiscard}>
@@ -354,7 +357,8 @@ export function ButtonRemapPanel({
         </button>
       </div>
 
-      {residualMacroProgress && <p className="hint">Prior macro transport progress retained; macro device state may be partial or unknown. Playback and device persistence unverified.</p>}
+      {residualMacroProgress && <p className="hint" title="Previous macro transport progress retained; playback and device persistence unverified.">Device state may be partial or unknown.</p>}
+      {(!feedbackManaged || macroTransport) && <details className="group" open={!feedbackManaged}><summary>Device details</summary>
       <div className="status" role="status" aria-label="Button remapping status">
         {macroTransport
           ? remap.Firmware === "success"
@@ -375,6 +379,7 @@ export function ButtonRemapPanel({
             </>
           : "Remap draft pending confirmation"}
       </div>
+      </details>}
     </article>
   );
 }

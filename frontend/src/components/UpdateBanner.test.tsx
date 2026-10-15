@@ -29,7 +29,7 @@ it("announces loading and launch failures while disabling duplicate approval", (
   const view = render(<UpdateBanner update={{ Version: "1.2.0" }} applying={true} error="" onApply={apply} />);
   const query = () => within(view.container);
   expect(query().getByRole("status")).toHaveAttribute("aria-live", "polite");
-  expect(query().getByRole("button", { name: "Updating…" })).toBeDisabled();
+  expect(query().getByRole("button", { name: "Update and restart" })).toBeDisabled();
 
   view.rerender(<UpdateBanner update={{ Version: "1.2.0" }} applying={false} error="launch failed" onApply={apply} />);
   expect(query().getByRole("alert")).toHaveTextContent("Update failed: launch failed");

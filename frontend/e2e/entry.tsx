@@ -208,7 +208,16 @@ const service = {
 const guarded = new Proxy(service, {
   get(target, key) {
     if (typeof key === "string" && !(key in target)) return () => { throw new Error(`Unexpected mock operation: ${key}`); };
-    return Reflect.get(target, key);
+    const operation = Reflect.get(target, key);
+    // Opt-in latency makes pending feedback observable; default routing fixtures are unchanged.
+    if (new URLSearchParams(window.location.search).has("feedback") && typeof operation === "function" &&
+        ["ApplyDPI", "ApplyPollingRate", "ApplyRemap", "CreateMacro", "UpdateMacro", "DeleteMacro", "ReadMacro"].includes(String(key))) {
+      return async (...args: unknown[]) => {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        return operation(...args);
+      };
+    }
+    return operation;
   },
 }) as unknown as DesktopService;
 Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {

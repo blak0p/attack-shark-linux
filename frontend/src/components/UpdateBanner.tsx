@@ -4,7 +4,7 @@ export function UpdateBanner({ update, applying, error, onApply }: { update: Upd
   return <aside className="update-banner" role="status" aria-live="polite">
     <span>Version {update.Version} is ready.</span>
     <button type="button" className="button" disabled={applying} onClick={onApply}>
-      {applying ? "Updating…" : "Update and restart"}
+      Update and restart
     </button>
     {error && <span role="alert">Update failed: {error}</span>}
   </aside>;

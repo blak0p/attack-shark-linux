@@ -1,4 +1,5 @@
 export type PowerSettingsPanelProps = {
+  feedbackManaged?: boolean;
   value: number;
   appliedValue?: number;
   firmwareStatus?: string;
@@ -12,6 +13,7 @@ export type PowerSettingsPanelProps = {
 };
 
 export function PowerSettingsPanel({
+  feedbackManaged = false,
   value,
   appliedValue,
   firmwareStatus,
@@ -25,8 +27,10 @@ export function PowerSettingsPanel({
 }: PowerSettingsPanelProps) {
   return (
     <div className="group">
-      <h2>Key response time</h2>
-      <p className="hint">Lower values reduce click response latency.</p>
+      <div className="card-head">
+        <h2>Key response time</h2>
+        <span aria-label="Key response time value">{value} ms</span>
+      </div>
       <div className="range-row">
         <span>2 ms</span>
         <input
@@ -41,7 +45,7 @@ export function PowerSettingsPanel({
         />
         <span>25 ms</span>
       </div>
-      <div className="power-settings-state status" role="status" aria-label="Key response time status">
+      {!feedbackManaged && <div className="power-settings-state status" role="status" aria-label="Key response time status">
         {firmwareStatus === "pending"
           ? "Applying…"
           : firmwareStatus === "failed"
@@ -56,7 +60,7 @@ export function PowerSettingsPanel({
             Retry key response persistence
           </button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

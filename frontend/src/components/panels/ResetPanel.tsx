@@ -23,7 +23,7 @@ export function ResetPanel({
         <div>
           <h2 id="reset-title">Reset to factory</h2>
           <p className="hint" style={{ margin: "3px 0 0" }}>
-            This resets DPI, lighting/sleep/key response time, polling, and button remapping on the selected device.
+            Restore mouse defaults.
           </p>
         </div>
         {children ?? (
@@ -45,9 +45,12 @@ export function ResetPanel({
           className="group"
           style={{ marginTop: 14 }}
         >
+          <p>Restore mouse defaults and clear local profiles after acknowledgement. Onboard macros may remain.</p>
+          <details className="group"><summary>Reset details</summary>
           <p style={{ margin: 0 }}>
             This resets DPI (active stage 2), lighting (Static DPI), sleep (0.5 minutes), key response time (4 ms), polling (1000 Hz), and default button remapping. Local profiles are cleared only after all four supported lanes acknowledge; onboard macro deletion and complete device memory erasure are unverified.
           </p>
+          </details>
           <div className="actions">
             <button type="button" className="button" onClick={onCancel}>
               Cancel factory reset
