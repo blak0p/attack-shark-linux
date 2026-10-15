@@ -369,7 +369,7 @@ describe("ButtonRemapPanel", () => {
     expect(status).not.toHaveTextContent("Remap and macro transport confirmed");
     expect(status).not.toHaveTextContent("Macro assignment staged locally");
     expect(status).toHaveTextContent(Firmware === "success" ? "Button remapping applied" : Firmware === "failed" ? "Button remapping failed" : "Remap draft pending confirmation");
-    expect(screen.getByText(/Prior macro transport progress/)).toHaveTextContent("partial or unknown");
+    expect(screen.getByText("Device state may be partial or unknown.")).toHaveTextContent("partial or unknown");
   });
 
   it("still confirms a matching applied macro rather than ordinary transport", () => {
@@ -377,7 +377,7 @@ describe("ButtonRemapPanel", () => {
     render(<ButtonRemapPanel remap={{ ...remap, Applied: remap.Pending, MacroPending: draft, MacroApplied: draft,
       MacroProgress: { Assignment: 2, Upload: 2 }, Firmware: "success" } as never} ready onStage={vi.fn()} />);
     expect(screen.getByRole("status")).toHaveTextContent("Remap and macro transport confirmed");
-    expect(screen.queryByText(/Prior macro transport progress/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Device state may be partial or unknown.")).not.toBeInTheDocument();
   });
 
   it("renders exactly seven closed-action selectors and preserves DPI markers", () => {

@@ -405,9 +405,9 @@ test("saved macro stages one device overlay, discards locally and reports confir
   await page.getByRole("menuitem", { name: "Basic", exact: true }).click();
   await page.getByRole("menuitem", { name: "Fire", exact: true }).click();
   await page.getByRole("button", { name: "Apply remap" }).click();
-  await expect(page.getByLabel("Button remapping status")).toContainText("Button remapping applied");
-  await expect(page.getByLabel("Button remapping status")).not.toContainText("macro transport confirmed");
-  await expect(page.getByText(/Prior macro transport progress retained/)).toContainText("partial or unknown");
+  await expect(page.getByRole("status", { name: "Operation status" })).toContainText("Applied");
+  await expect(page.getByRole("status", { name: "Operation status" })).not.toContainText("macro transport confirmed");
+  await expect(page.getByText("Device state may be partial or unknown.", { exact: true })).toBeVisible();
   const ordinarySnapshot = await page.evaluate(() => window.__routingTest.remapSnapshot("alpha"));
   expect(ordinarySnapshot?.MacroApplied).toBeNull();
   expect(ordinarySnapshot?.MacroProgress).toEqual({ Assignment: 2, Upload: 1 });

@@ -36,7 +36,7 @@ export function MouseFeaturesPanel({
         <div className="row">
           <label htmlFor="angle-snap-toggle">
             <strong>Angle snap</strong>
-            <span>Align sensor movement to straight lines</span>
+            <span>Straighten movement</span>
           </label>
           <input
             id="angle-snap-toggle"
@@ -51,7 +51,7 @@ export function MouseFeaturesPanel({
         <div className="row">
           <label htmlFor="ripple-control-toggle">
             <strong>Ripple control</strong>
-            <span>Smooth sensor jitter at high DPI values</span>
+            <span>Reduce jitter</span>
           </label>
           <input
             id="ripple-control-toggle"
@@ -66,7 +66,7 @@ export function MouseFeaturesPanel({
         <div className="row">
           <label htmlFor="lod-select">
             <strong>Lift-off distance</strong>
-            <span>Sensor tracking cutoff height</span>
+            <span>Tracking height</span>
           </label>
           <select
             id="lod-select"

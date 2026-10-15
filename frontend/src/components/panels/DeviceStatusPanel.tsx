@@ -37,14 +37,12 @@ export function DeviceStatusPanel({
         <div className="row">
           <label>
             <strong>Application version</strong>
-            <span>Installed application</span>
           </label>
           <b>{applicationVersion?.trim() || "development build"}</b>
         </div>
         <div className="row">
           <label>
             <strong>Interface</strong>
-            <span>Active physical interface</span>
           </label>
           <b>{connectionType || "unavailable"}</b>
         </div>
@@ -52,7 +50,6 @@ export function DeviceStatusPanel({
         <div className="row">
           <label>
             <strong>Battery charge</strong>
-            <span>Remaining battery capacity</span>
           </label>
           <b>{battery != null ? `${battery}%` : "unavailable"}</b>
         </div>
@@ -60,7 +57,6 @@ export function DeviceStatusPanel({
         <div className="row">
           <label>
             <strong>Serial identifier</strong>
-            <span>Hardware identity</span>
           </label>
           <b>{serial || "unavailable"}</b>
         </div>

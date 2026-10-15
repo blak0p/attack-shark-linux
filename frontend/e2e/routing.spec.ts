@@ -18,7 +18,7 @@ test("Browser draft requires explicit apply on the selected mouse", async ({ pag
   await expect(page.getByLabel("Remap assignment summary")).toContainText("Button 7: Search");
   expect(await page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation === "ApplyRemap"))).toEqual([]);
   await page.getByRole("button", { name: "Apply remap" }).click();
-  await expect(page.getByRole("status", { name: "Button remapping status" })).toContainText("Button remapping applied");
+  await expect(page.getByRole("status", { name: "Operation status" })).toContainText("Applied");
   await expect.poll(() => page.evaluate(() => window.__routingTest.calls.filter((call) => call.operation === "ApplyRemap"))).toEqual([
     { operation: "ApplyRemap", destination: betaID, config: { Buttons: [
       { Button: 1, Action: "left", PreservedDefault: "" },
@@ -51,7 +51,7 @@ test("non-default mouse receives the requested polling operation", async ({ page
   await page.getByRole("combobox", { name: "Mouse device" }).selectOption("beta");
   await expect(page.getByRole("combobox", { name: "Mouse device" })).toHaveValue("beta");
   await page.getByRole("radio", { name: "500 Hz" }).click();
-  await expect(page.getByRole("status", { name: "Polling status" })).toContainText("Applied 500 Hz");
+  await expect(page.getByRole("status", { name: "Operation status" })).toContainText("Applied");
   await expect.poll(() => page.evaluate(() => window.__routingTest.calls)).toEqual([
     { operation: "SelectDevice", destination: betaID, requested: betaID },
     { operation: "StagePollingRate", destination: betaID, value: 500 },
@@ -64,7 +64,7 @@ test("non-default mouse receives a validated DPI change through the UI", async (
   await page.getByRole("combobox", { name: "Mouse device" }).selectOption("beta");
   await expect(page.getByRole("combobox", { name: "Mouse device" })).toHaveValue("beta");
   await page.getByRole("slider", { name: "Stage 4 DPI" }).fill("3500");
-  await expect(page.getByText("DPI applied.")).toBeVisible();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
   await expect(page.getByRole("slider", { name: "Stage 4 DPI" })).toHaveValue("3500");
   expect(await page.evaluate(() => window.__routingTest.dpiSnapshot().Applied.DPI[3])).toBe(3500);
   await expect.poll(() => page.evaluate(() => window.__routingTest.calls)).toEqual([
@@ -80,7 +80,7 @@ test("application failure is visible after targeting the non-default mouse", asy
   await expect(page.getByRole("combobox", { name: "Mouse device" })).toHaveValue("beta");
   await page.evaluate(() => window.__routingTest.failNextApply());
   await page.getByRole("radio", { name: "250 Hz" }).click();
-  await expect(page.getByRole("status", { name: "Polling status" })).toContainText("Polling change failed");
+  await expect(page.getByRole("alert")).toContainText("Permission denied");
   await expect(page.getByRole("alert")).toContainText("Permission denied");
   await expect.poll(() => page.evaluate(() => window.__routingTest.calls.slice(-2))).toEqual([
     { operation: "StagePollingRate", destination: betaID, value: 250 },

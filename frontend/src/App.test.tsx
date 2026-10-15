@@ -212,7 +212,8 @@ it.each([true, false])("refreshes captured reset settings only after success=%s"
   fireEvent.click(screen.getByRole("button", { name: "Reset to factory" }));
   expect(service.ResetToFactory).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm factory reset" }));
-  await screen.findByText(success ? "Factory reset completed." : "Factory reset failed: ack_timeout.");
+  if (success) await screen.findByText("Reset");
+  else expect(await screen.findByRole("alert")).toHaveTextContent("Factory reset failed: ack_timeout.");
   reads.forEach((read) => expect(read).toHaveBeenCalledTimes(success ? 1 : 0));
   expect(screen.getByRole("combobox", { name: "Lighting effect" })).toHaveTextContent(success ? "Static DPI" : "Fixed");
   expect(screen.getByRole("slider", { name: "Key response time" })).toHaveValue(success ? "4" : "8");
@@ -395,14 +396,14 @@ describe("App", () => {
     });
     render(<App service={service} />);
     const device = await screen.findByRole("region", { name: "Device" });
-    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled application1.2.0-rc.5"));
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application version1.2.0-rc.5"));
     expect(device.querySelector(".device-status b")).toHaveTextContent("1.2.0-rc.5");
   });
 
   it("labels an empty compiled version as a development build", async () => {
     render(<App service={serviceFor(snapshot(), { GetApplicationVersion: vi.fn().mockResolvedValue("") })} />);
     const device = await screen.findByRole("region", { name: "Device" });
-    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versionInstalled applicationdevelopment build"));
+    await waitFor(() => expect(device.querySelector(".device-status")).toHaveTextContent("Application versiondevelopment build"));
   });
 
   it("shows available connection and supplied battery information", async () => {
@@ -430,7 +431,7 @@ describe("App", () => {
     const service = serviceFor(snapshot({ Error: { Code: code } }));
     render(<App service={service} />);
 
-    expect((await screen.findAllByRole("alert")).every((alert) => alert.textContent === message)).toBe(true);
+    expect((await screen.findAllByRole("alert")).every((alert) => alert.textContent?.includes(message))).toBe(true);
   });
 
   it("distinguishes selected inventory from a disconnected status read", async () => {
@@ -536,7 +537,7 @@ describe("App", () => {
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ ActiveStage: 1 })));
 	await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
-	expect(screen.getByText("DPI applied.")).toBeInTheDocument();
+	expect(screen.getByText("Applied")).toBeInTheDocument();
   });
 
   it("blocks the full workspace until overlapping automatic configuration applies settle", async () => {
@@ -550,18 +551,18 @@ describe("App", () => {
 
   fireEvent.change(await screen.findByRole("slider", { name: "Stage 1 DPI" }), { target: { value: "1600" } });
   await waitFor(() => expect(service.StageDPI).toHaveBeenCalledOnce());
-  expect(screen.getByText("Applying configuration…")).toBeInTheDocument();
-  expect(screen.getByRole("status", { name: "Applying configuration…" })).toBeInTheDocument();
-  expect(screen.getByRole("status", { name: "Applying configuration…" })).toHaveAttribute("aria-live", "polite");
+  expect(screen.getByText("Working…")).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Operation status" })).toBeInTheDocument();
+  expect(screen.getByRole("status", { name: "Operation status" })).toHaveAttribute("aria-live", "polite");
   expect(screen.getByRole("main").closest(".workspace-shell")).toHaveAttribute("aria-busy", "true");
   expect(document.querySelector(".workspace-shell-content")).toHaveAttribute("inert");
 
   await act(async () => dpiStage.resolve(snapshot({ Pending: { ...configuration(), DPI: [1600, ...configuration().DPI.slice(1)] } })));
   await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
-  expect(screen.getByText("Applying configuration…")).toBeInTheDocument();
+  expect(screen.getByText("Working…")).toBeInTheDocument();
 
   await act(async () => dpiApply.resolve(snapshot({ Firmware: "success" })));
-  await waitFor(() => expect(screen.queryByText("Applying configuration…")).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText("Working…")).not.toBeInTheDocument());
   expect(screen.getByRole("main").closest(".workspace-shell")).toHaveAttribute("aria-busy", "false");
   expect(document.querySelector(".workspace-shell-content")).not.toHaveAttribute("inert");
 });
@@ -576,7 +577,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     fireEvent.click(screen.getByRole("button", { name: "Confirm factory reset" }));
 
     await waitFor(() => expect(service.ResetToFactory).toHaveBeenCalledOnce());
-    expect(screen.getByText("Factory reset completed.")).toBeInTheDocument();
+    expect(await screen.findByText("Reset")).toBeInTheDocument();
   });
 
   it("cancels a displayed factory reset without calling the desktop service", async () => {
@@ -600,17 +601,17 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: expect.arrayContaining([1600]) })));
     await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
     expect(screen.queryByRole("button", { name: "Apply DPI" })).not.toBeInTheDocument();
-    expect(screen.getByText("DPI applied.")).toBeInTheDocument();
+    expect(screen.getByText("Applied")).toBeInTheDocument();
   });
 
   it("renders distinct firmware and persistence outcomes with a persistence-only retry", async () => {
     const service = serviceFor(snapshot({ Firmware: "success", Persistence: "failed", RetryAvailable: true }) as Snapshot, { RetryPersistence: vi.fn().mockResolvedValue(snapshot({ Firmware: "success", Persistence: "success", RetryAvailable: false }) as Snapshot) });
     render(<App service={service} />);
 
-    expect(await screen.findByText("Firmware applied")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry local persistence" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Applied to mouse; local save failed.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(service.RetryPersistence).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Persistence saved")).toBeInTheDocument();
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
   });
 
   it("keeps persisted odd debounce milliseconds unchanged in the controls", async () => {
@@ -619,7 +620,8 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     });
     render(<App service={service} />);
 
-    expect(await screen.findByRole("status", { name: "Key response time status" })).toHaveTextContent("Applied 25 ms");
+    await screen.findByRole("slider", { name: "Key response time" });
+    expect(screen.queryByText("Applied 25 ms")).not.toBeInTheDocument();
     const slider = screen.getByRole("slider", { name: "Key response time" });
     expect(slider).toHaveValue("25");
     fireEvent.change(slider, { target: { value: "3" } });
@@ -629,7 +631,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
   it("renders pending firmware as queued feedback during automatic synchronization", async () => {
     render(<App service={serviceFor(snapshot({ Firmware: "pending" }))} />);
 
-    expect(await screen.findByRole("status", { name: "Firmware synchronization queued" })).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Operation status" })).toHaveTextContent("Working…");
     expect(screen.queryByText("Firmware synchronization failed")).not.toBeInTheDocument();
   });
 
@@ -651,11 +653,11 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     });
     render(<App service={service} />);
 
-    expect(await screen.findByRole("status", { name: "Polling status" })).toHaveTextContent(message);
-    expect(screen.getByRole("status", { name: "Normal sleep status" })).toHaveTextContent(message);
-    expect(screen.getByRole("status", { name: "Key response time status" })).toHaveTextContent(message);
-    expect(screen.getByRole("status", { name: "Button remapping status" })).toHaveTextContent(message);
-    expect(document.querySelector(".device-status")).toHaveTextContent(message);
+    await waitFor(() => expect(screen.getAllByRole("alert").filter(alert => alert.classList.contains("feedback-message"))).toHaveLength(5));
+    for (const label of ["Mouse settings", "Polling rate", "Sleep", "Key response time", "Buttons"]) {
+      expect(screen.getAllByRole("alert").find(alert => alert.textContent?.startsWith(label + ":"))).toHaveTextContent(message);
+    }
+    expect(document.querySelector(".device-status")).not.toHaveTextContent(message);
   });
 
   it("refreshes acknowledged colors without replacing editable pending controls", async () => {
@@ -820,7 +822,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(await screen.findByText("Receiver detected, configuration unavailable.")).toBeInTheDocument();
     expect(screen.getByText("Serial unavailable")).toBeInTheDocument();
     expect(screen.getByText("Connection: dongle")).toBeInTheDocument();
-    expect(screen.getAllByText("ambiguous identity")).toHaveLength(2);
+    expect(screen.getAllByText("ambiguous identity")).toHaveLength(1);
 	expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: /Stage/ }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
     expect(screen.getAllByRole("slider").every((slider) => (slider as HTMLInputElement).disabled)).toBe(true);
@@ -883,7 +885,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     const selected = screen.getByRole("radio", { name: "1000 Hz" });
     selected.focus();
     expect(selected).toHaveFocus();
-    expect(screen.getByText(/Higher rates favor responsiveness; lower rates favor battery life/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Higher rates favor responsiveness; lower rates favor battery life/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/live.*polling|polling.*live/i)).not.toBeInTheDocument();
   });
 
@@ -901,7 +903,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.ApplyPollingRate).toHaveBeenCalledOnce());
 
 	await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: 500, Firmware: "success", Persistence: "success" }) }));
-    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz");
+    expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied");
   });
 
 	it("renders polling failure and persistence failure completion events", async () => {
@@ -913,10 +915,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 		await screen.findByRole("radiogroup", { name: "Polling rate" });
 
 		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 1000, Firmware: "failed", Persistence: "" }) }));
-    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling change failed");
+    expect(screen.getByRole("alert")).toHaveTextContent("application failed");
 
 		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 250, Applied: 250, Firmware: "success", Persistence: "failed", RetryAvailable: true }) }));
-    expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Polling preference was not saved.");
+    expect(screen.getByRole("alert")).toHaveTextContent("local save failed");
 	});
 
 	it("retries failed polling persistence and refreshes the existing polling status", async () => {
@@ -929,10 +931,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 		await screen.findByRole("radiogroup", { name: "Polling rate" });
 
 		await act(async () => listeners[0]({ Binding: selectedDevice, Snapshot: pollingSnapshot({ Desired: 500, Applied: 500, Persisted: null, Firmware: "success", Persistence: "failed", RetryAvailable: true }) }));
-		fireEvent.click(screen.getByRole("button", { name: "Retry polling persistence" }));
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
 		await waitFor(() => expect(service.RetryPollingPersistence).toHaveBeenCalledOnce());
-	await waitFor(() => expect(screen.getByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz"));
+	await waitFor(() => expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Saved"));
 	});
 
 	it("shows acknowledged persistence for an eligible serial-less X6 binding", async () => {
@@ -943,7 +945,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 		});
 		render(<App service={service} />);
 
-		expect(await screen.findByRole("status", { name: "Polling status" })).toHaveTextContent("Applied 500 Hz");
+		await screen.findByRole("radio", { name: "500 Hz" });
+    expect(screen.getByRole("radio", { name: "500 Hz" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByText("Applied 500 Hz")).not.toBeInTheDocument();
 		expect(screen.queryByText(/session-only device/i)).not.toBeInTheDocument();
 	});
 
@@ -1105,7 +1109,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
     await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Apply lighting" })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Lighting status" })).toHaveTextContent("Lighting applied");
+    expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied");
   });
 
   it.each([
@@ -1119,7 +1123,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
 
     await chooseLightingEffect("Fixed");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(`Lighting application failed: ${message}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent(`Lighting: ${message}`);
     expect(screen.queryByText("Lighting applied")).not.toBeInTheDocument();
   });
 
@@ -1147,4 +1151,59 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(document.getElementById("workspace-view-performance")).toHaveAttribute("data-active", "false");
     expect(screen.getByRole("button", { name: "Reset to factory" })).toBeInTheDocument();
   });
+});
+
+
+it("uses one animated feedback region during apply and removes duplicate success messages", async () => {
+  const request = deferred<Snapshot>();
+  const service = serviceFor(snapshot(), { ApplyDPI: vi.fn().mockReturnValue(request.promise) });
+  render(<App service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Stage 1" }));
+  await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
+  const status = screen.getByRole("status", { name: "Operation status" });
+  expect(status).toHaveTextContent("Working…");
+  expect(document.querySelectorAll(".pending-spinner")).toHaveLength(1);
+  await act(async () => request.resolve(snapshot({ Firmware: "success", Revision: 1 })));
+  expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied");
+  expect(screen.queryByText("Firmware applied")).not.toBeInTheDocument();
+  expect(screen.queryByText("Persistence saved")).not.toBeInTheDocument();
+  expect(screen.queryByText("DPI applied.")).not.toBeInTheDocument();
+});
+
+
+it("keeps the existing controls without redundant workspace and settings prose", async () => {
+  render(<App service={serviceFor(snapshot())} />);
+  await screen.findByRole("radio", { name: "500 Hz" });
+  for (const text of ["DPI, polling rate, and normal sleep.", "Effect labels are supplied by the device.", "Colors are supplied by the selected effect.", "Higher rates favor responsiveness; lower rates favor battery life.", "Lower values reduce click response latency.", "Installed application", "Remaining battery capacity"]) {
+    expect(screen.queryByText(text)).not.toBeInTheDocument();
+  }
+  expect(screen.getByRole("radio", { name: "500 Hz" })).toBeEnabled();
+  expect(screen.getByRole("slider", { name: "Key response time" })).toBeEnabled();
+  expect(screen.getByLabelText("Key response time value")).toHaveTextContent("8 ms");
+  expect(screen.getByRole("button", { name: "Apply remap" })).toBeInTheDocument();
+});
+
+
+it.each([
+  ["DPI", "RetryPersistence", "GetSnapshot"],
+  ["polling", "RetryPollingPersistence", "GetPollingSnapshot"],
+  ["debounce", "RetryDebouncePersistence", "GetDebounceSnapshot"],
+  ["sleep", "RetryNormalSleepPersistence", "GetNormalSleepSnapshot"],
+] as const)("animates a local %s persistence retry without resending settings", async (lane, method, getter) => {
+  const pending = deferred<unknown>();
+  const failed = { Firmware: "success", Persistence: "failed", RetryAvailable: true };
+  const current = lane === "DPI" ? snapshot(failed) : lane === "polling" ? pollingSnapshot(failed) : lane === "debounce" ? debounceSnapshot(failed) : normalSleepSnapshot(failed);
+  const service = serviceFor(lane === "DPI" ? current as Snapshot : snapshot(), {
+    [getter]: vi.fn().mockResolvedValue(current),
+    [method]: vi.fn().mockReturnValue(pending.promise),
+  });
+  render(<App service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(service[method]).toHaveBeenCalledOnce());
+  expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Working…");
+  expect(document.querySelectorAll(".pending-spinner")).toHaveLength(1);
+  await act(async () => pending.resolve({ ...current, Persistence: "success", RetryAvailable: false }));
+  expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Saved");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  for (const request of [service.StageDPI, service.ApplyDPI, service.StagePollingRate, service.ApplyPollingRate, service.StageDebounce, service.ApplyDebounce, service.StageNormalSleep, service.ApplyNormalSleep]) expect(request).not.toHaveBeenCalled();
 });

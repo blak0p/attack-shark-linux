@@ -12,6 +12,7 @@ export type WorkspaceShellProps = {
   deviceSubtitle?: string;
   connectionStatus?: ReactNode;
   titlebar?: ReactNode;
+  feedback?: ReactNode;
 };
 
 export function WorkspaceShell({
@@ -23,6 +24,7 @@ export function WorkspaceShell({
   deviceSubtitle = "Gaming Mouse",
   connectionStatus,
   titlebar,
+  feedback,
 }: WorkspaceShellProps) {
   const [internalActiveView, setInternalActiveView] = useState<WorkspaceViewId>("performance");
   const currentView = activeViewProp ?? internalActiveView;
@@ -57,16 +59,10 @@ export function WorkspaceShell({
           </WorkspaceViewContext>
         </main>
       </div>
-      {busy && (
-        <div
-          className="configuration-overlay"
-          role="status"
-          aria-label="Applying configuration…"
-          aria-live="polite"
-        >
-          Applying configuration…
-        </div>
-      )}
+      {busy && (feedback ? <div className="configuration-overlay" aria-hidden="true" /> : (
+        <div className="configuration-overlay" role="status" aria-live="polite">Working…</div>
+      ))}
+      {feedback}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { NormalSleepSnapshot } from "../../desktop-contract";
 
 type SleepPanelProps = {
+  feedbackManaged?: boolean;
   snapshot: NormalSleepSnapshot;
   ready: boolean;
   onStage: (minutes: number) => void;
@@ -9,7 +10,7 @@ type SleepPanelProps = {
   feedbackFor?: (code: string) => string;
 };
 
-export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedbackFor }: SleepPanelProps) {
+export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedbackFor, feedbackManaged = false }: SleepPanelProps) {
   return (
     <article id="normal-sleep" className="card" aria-labelledby="sleep-title">
       <h2 id="sleep-title">Normal sleep</h2>
@@ -30,7 +31,7 @@ export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedb
         />
         <span>60 minutes</span>
       </div>
-      <div className="status" role="status" aria-label="Normal sleep status">
+      {!feedbackManaged && <div className="status" role="status" aria-label="Normal sleep status">
         {snapshot.Firmware === "pending"
           ? "Applying…"
           : snapshot.Firmware === "failed"
@@ -45,7 +46,7 @@ export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedb
             Retry sleep persistence
           </button>
         )}
-      </div>
+      </div>}
     </article>
   );
 }
