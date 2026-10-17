@@ -232,11 +232,11 @@ func (a *Adapter) enumerateLocked(ctx context.Context, match transport.Match) ([
 		if key == "" {
 			key = "invalid physical path"
 			a.sources[key] = candidate
-			result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: transport.Dongle})
+			result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: x6Connection(candidate)})
 			continue
 		}
 		a.sources[key] = candidate
-		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: transport.Dongle})
+		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: x6Connection(candidate)})
 	}
 	if len(result) == 0 {
 		return nil, &Error{Kind: NotFound, Err: errors.New("validated X6 VID:PID was not found")}
@@ -363,7 +363,14 @@ func (a *Adapter) validateCandidate(ctx context.Context, candidate Candidate) er
 }
 
 func matchesX6Identity(candidate Candidate) bool {
-	return candidate.VendorID == x6VendorID && candidate.ProductID == x6ProductID
+	return candidate.VendorID == x6VendorID && (candidate.ProductID == x6ProductID || candidate.ProductID == transport.X6WiredMatch().ProductID)
+}
+
+func x6Connection(candidate Candidate) transport.Connection {
+	if candidate.VendorID == x6VendorID && candidate.ProductID == transport.X6WiredMatch().ProductID {
+		return transport.Wired
+	}
+	return transport.Dongle
 }
 
 func hasPhysicalPath(candidate Candidate) bool {

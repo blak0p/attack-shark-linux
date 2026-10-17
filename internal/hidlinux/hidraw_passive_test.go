@@ -264,6 +264,47 @@ type failingHidrawOpener struct{ err error }
 
 func (o failingHidrawOpener) OpenNode(string) (hidrawNode, error) { return nil, o.err }
 
+func TestHidrawReadInterruptINDiagnostics(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		openErr error
+		reports [][]byte
+		want    string
+		kind    ErrorKind
+	}{
+		{name: "permission", openErr: os.ErrPermission, want: `operation=open reports=0 outcome=error error_kind="permission denied"`, kind: Permission},
+		{name: "timeout", want: `operation=read reports=0 outcome=error error_kind="timeout"`, kind: Timeout},
+		{name: "report", reports: [][]byte{{0x01}}, want: `operation=read reports=1 outcome=ok error_kind="none"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			node := &fakeHidrawNode{reports: tt.reports}
+			if tt.name == "timeout" {
+				node.block = make(chan struct{})
+			}
+			var opener hidrawNodeOpener = fakeHidrawOpener{nodes: map[string]hidrawNode{filepath.Join(root, "dev/hidraw3"): node}}
+			if tt.openErr != nil {
+				opener = failingHidrawOpener{err: tt.openErr}
+			}
+			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 50 * time.Millisecond, opener: opener}
+			if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+				t.Fatal(err)
+			}
+			var logs bytes.Buffer
+			oldWriter := inventoryDiagnosticWriter
+			inventoryDiagnosticWriter = &logs
+			defer func() { inventoryDiagnosticWriter = oldWriter }()
+			err := backend.ReadInterruptIN(context.Background(), transport.InputSource{Path: "1:1-4"}, func([]byte) bool { return false })
+			if tt.kind == "" && err != nil || tt.kind != "" && !IsErrorKind(err, tt.kind) {
+				t.Fatalf("error = %v, want kind %q", err, tt.kind)
+			}
+			if !strings.Contains(logs.String(), "event=status_read vid_pid=1d57:fa60 hidraw_basename=hidraw3 "+tt.want) {
+				t.Fatalf("missing diagnostic %q in %q", tt.want, logs.String())
+			}
+		})
+	}
+}
+
 func TestHidrawReadInterruptINClassifiesNodeAccessFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name string

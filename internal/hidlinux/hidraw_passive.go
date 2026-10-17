@@ -108,6 +108,15 @@ func NewHidrawBackend() *HidrawBackend {
 
 // Enumerate scans sysfs for X6 USB devices without opening or claiming them.
 func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([]transport.Candidate, error) {
+	return b.enumerateMatches(ctx, match)
+}
+
+// EnumerateX6 refreshes both USB modes together, retaining every source for validation.
+func (b *HidrawBackend) EnumerateX6(ctx context.Context) ([]transport.Candidate, error) {
+	return b.enumerateMatches(ctx, transport.X6Match(), transport.X6WiredMatch())
+}
+
+func (b *HidrawBackend) enumerateMatches(ctx context.Context, matches ...transport.Match) ([]transport.Candidate, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -134,7 +143,13 @@ func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([
 		}
 		index := candidateIndex
 		candidateIndex++
-		profileMatch := candidate.VendorID == match.VendorID && candidate.ProductID == match.ProductID
+		profileMatch := false
+		for _, match := range matches {
+			if candidate.VendorID == match.VendorID && candidate.ProductID == match.ProductID {
+				profileMatch = true
+				break
+			}
+		}
 		interfaceNumber, endpoint := inventoryInterfaceFacts(candidate)
 		if !profileMatch {
 			inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=unknown profile_match=false profile_validation=not_applicable eligibility=false warning=vid_pid_mismatch selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "")
@@ -149,7 +164,7 @@ func (b *HidrawBackend) Enumerate(ctx context.Context, match transport.Match) ([
 		b.sources[key] = candidate
 		b.sourceIndexes[key] = index
 		b.mu.Unlock()
-		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial, Connection: transport.Dongle})
+		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Serial: candidate.Serial, Connection: x6Connection(candidate)})
 		inventoryDiagnosticf("event=enumeration candidate_index=%d vid_pid=%04x:%04x interface_number=%d endpoint=0x%02x hid_usage=unknown serial_present=%t hidraw_basename=%s profile_match=true profile_validation=not_checked eligibility=pending warning=none selected_binding_present=false", index, candidate.VendorID, candidate.ProductID, interfaceNumber, endpoint, candidate.Serial != "", b.inventoryHidrawBasename(candidate))
 	}
 	if len(result) == 0 {
@@ -231,7 +246,7 @@ func (b *HidrawBackend) ValidateDescriptor(ctx context.Context, source transport
 }
 
 // ReadInterruptIN performs one bounded, passive status read through hidraw.
-func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.InputSource, use func([]byte) bool) error {
+func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.InputSource, use func([]byte) bool) (resultErr error) {
 	b.mu.Lock()
 	candidate, ok := b.sources[source.Path]
 	b.mu.Unlock()
@@ -242,10 +257,24 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 	if err != nil {
 		return err
 	}
+	operation, reports := "open", 0
+	defer func() {
+		outcome, kind := "ok", ErrorKind("none")
+		if resultErr != nil {
+			outcome, kind = "error", IO
+			var typed *Error
+			if errors.As(classify(resultErr), &typed) {
+				kind = typed.Kind
+			}
+		}
+		// Log metadata only: never report bytes, serials, or physical paths.
+		inventoryDiagnosticf("event=status_read vid_pid=%04x:%04x hidraw_basename=%s operation=%s reports=%d outcome=%s error_kind=%q", candidate.VendorID, candidate.ProductID, filepath.Base(path), operation, reports, outcome, kind)
+	}()
 	node, err := b.opener.OpenNode(path)
 	if err != nil {
 		return classify(err)
 	}
+	operation = "read"
 	b.mu.Lock()
 	b.activeNode = node
 	b.activePath = source.Path
@@ -280,6 +309,7 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 			release()
 			continue
 		}
+		reports++
 		if !use(buffer[:count]) {
 			release()
 			return nil
@@ -300,10 +330,10 @@ func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, contin
 	if err := ctx.Err(); err != nil {
 		return classify(err)
 	}
-	if _, err := b.Enumerate(ctx, transport.X6Match()); err != nil {
+	if _, err := b.EnumerateX6(ctx); err != nil {
 		return &diagnosticError{operation: "discovery", err: err}
 	}
-	candidate, err := b.commandCandidate()
+	candidate, err := b.commandCandidate(ctx)
 	if err != nil {
 		return &diagnosticError{operation: "discovery", err: err}
 	}
@@ -358,19 +388,39 @@ func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, contin
 	}
 }
 
-func (b *HidrawBackend) commandCandidate() (Candidate, error) {
+func (b *HidrawBackend) commandCandidate(ctx context.Context) (Candidate, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.sources) == 0 {
+	sources := make([]transport.Candidate, 0, len(b.sources))
+	for key, c := range b.sources {
+		sources = append(sources, transport.Candidate{Path: key, VendorID: c.VendorID, ProductID: c.ProductID, Serial: c.Serial, Connection: x6Connection(c)})
+	}
+	b.mu.Unlock()
+	eligible := make([]transport.Candidate, 0, len(sources))
+	var validationErr error
+	for _, c := range sources {
+		if _, err := b.ValidateDescriptor(ctx, c, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err == nil {
+			eligible = append(eligible, c)
+		} else {
+			validationErr = err
+		}
+	}
+	preferred := transport.PreferX6Wired(eligible)
+	if len(preferred) == 0 {
+		if validationErr != nil {
+			return Candidate{}, validationErr
+		}
 		return Candidate{}, &Error{Kind: NotFound, Err: errors.New("no validated X6 device is available for DPI Apply")}
 	}
-	if len(b.sources) != 1 {
+	if len(preferred) != 1 {
 		return Candidate{}, &Error{Kind: Mismatch, Err: errors.New("multiple validated X6 devices are available for DPI Apply")}
 	}
-	for _, candidate := range b.sources {
-		return candidate, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	candidate, ok := b.sources[preferred[0].Path]
+	if !ok {
+		return Candidate{}, &Error{Kind: NotFound, Err: errors.New("validated X6 device is no longer present")}
 	}
-	panic("unreachable")
+	return candidate, nil
 }
 
 func (b *HidrawBackend) dispatchListenerReport(path string, report []byte) {

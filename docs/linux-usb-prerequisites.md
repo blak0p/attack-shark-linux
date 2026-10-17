@@ -17,7 +17,8 @@ the device world-writable. The release asset is
    sudo udevadm trigger
    ```
 
-2. Unplug and reconnect the dongle. The rule matches only `1d57:fa60`, uses
+2. Unplug and reconnect the dongle or cable. The two exact hidraw rules match
+   only the X6 dongle `1d57:fa60` and cable `1d57:fa61`, use
    `TAG+="uaccess"` for the active seat user, and keeps device mode `0660`.
 
 The policy never requires root and must not be changed to world-writable `0666`.
@@ -54,6 +55,7 @@ udev, and replug the dongle:
 
 ```udev
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa60", GROUP="attack-shark-x6", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa61", GROUP="attack-shark-x6", MODE="0660"
 ```
 
 ```sh
@@ -85,9 +87,26 @@ does not mean the app should be run as root. Check, in order:
 - The rule is installed at `/etc/udev/rules.d/60-attack-shark-x6-hidraw.rules`.
 - Rules were reloaded, the trigger command ran, and the dongle was replugged.
 - For group policy, the user belongs to `attack-shark-x6` and has logged in again.
-- The dongle identity still appears as `1d57:fa60`.
+- The USB identity still appears as `1d57:fa60` (dongle) or `1d57:fa61` (cable).
+
+## Cable and dongle connected together
+
+One validated X6 cable takes priority when exactly one eligible cable and one
+eligible dongle are present. Status, listening, and automatic configuration
+selection use the cable; a cable read failure does not fall through to dongle
+status. An invalid cable descriptor does not hide a valid dongle. The two PIDs
+retain separate saved identities; this preference does not prove they are the
+same physical mouse. Multiple cables or receivers are not automatically merged.
 
 ## Troubleshooting
+
+When launching the app from a terminal, `x6_inventory event=status_read`
+records passive status-read outcomes without logging report contents. An
+`operation=open` error with `error_kind="permission denied"` identifies a node
+access failure. An `operation=read` error with `error_kind="timeout"` means the
+node opened but the status operation did not finish before its deadline;
+`reports=0` means no nonempty reports reached its callback. Descriptor validation
+alone does not establish successful node access or a fresh battery reading.
 
 Confirm the USB identity:
 

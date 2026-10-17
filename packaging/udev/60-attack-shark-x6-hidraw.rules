@@ -1,4 +1,4 @@
-# Attack Shark X6 hidraw access policy (VID:PID 1d57:fa60).
+# Attack Shark X6 hidraw access policy (dongle 1d57:fa60, cable 1d57:fa61).
 #
 # The Linux configurator reads live status reports (battery, DPI ACK) from the
 # /dev/hidrawN node backing the dongle's status interface. hidraw is served by
@@ -6,9 +6,10 @@
 # never detaches usbhid — the mouse keeps working while the app is open.
 #
 # ATTRS{idVendor}/ATTRS{idProduct} walk up the parent chain to the USB device,
-# so the rule matches only hidraw nodes belonging to the X6 dongle.
+# so the rules match only hidraw nodes belonging to these exact X6 USB IDs.
 # TAG+="uaccess" grants the active local-seat user access; MODE="0660" keeps the
 # node non-world-writable. Do not run the app as root or change this to 0666.
 # Install in /etc/udev/rules.d/, reload udev rules, trigger, then replug the
 # dongle.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa60", TAG+="uaccess", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d57", ATTRS{idProduct}=="fa61", TAG+="uaccess", MODE="0660"

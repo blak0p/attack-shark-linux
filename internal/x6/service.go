@@ -102,10 +102,11 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.transport == nil {
 		return Status{}, &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
 	}
-	candidates, err := s.transport.Enumerate(ctx, transport.X6Match())
+	candidates, err := transport.EnumerateX6(ctx, s.transport)
 	if err != nil {
 		return Status{}, &ServiceError{NoUsableDevice, err}
 	}
+	candidates = s.preferredCandidates(ctx, candidates)
 	var readErr error
 	for _, connection := range []Connection{Dongle, Wired} {
 		for _, candidate := range candidates {
@@ -155,8 +156,15 @@ func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error 
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		candidates, err := s.transport.Enumerate(ctx, transport.X6Match())
+		candidates, err := transport.EnumerateX6(ctx, s.transport)
 		if err != nil {
+			if !waitOrDone(ctx, listenRetryDelay) {
+				return nil
+			}
+			continue
+		}
+		candidates = s.preferredCandidates(ctx, candidates)
+		if len(candidates) > 1 {
 			if !waitOrDone(ctx, listenRetryDelay) {
 				return nil
 			}
@@ -198,6 +206,17 @@ func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error 
 			return nil
 		}
 	}
+}
+
+// preferredCandidates chooses a connection only after descriptor admission.
+func (s *Service) preferredCandidates(ctx context.Context, candidates []transport.Candidate) []transport.Candidate {
+	eligible := make([]transport.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if _, err := s.transport.ValidateDescriptor(ctx, c, InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83}); err == nil {
+			eligible = append(eligible, c)
+		}
+	}
+	return transport.PreferX6Wired(eligible)
 }
 
 // waitOrDone sleeps for the given delay unless ctx is cancelled first. It

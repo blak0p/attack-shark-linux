@@ -18,8 +18,13 @@ type dpiComponent struct {
 	sync    *SyncCoordinator
 }
 
-func (c *dpiComponent) refreshStatus(ctx context.Context) Snapshot {
+func (c *dpiComponent) refreshStatus(ctx context.Context) (result Snapshot) {
+	slog.Info("x6_desktop", "operation", "RefreshStatus", "phase", "entry")
+	defer func() {
+		slog.Info("x6_desktop", "operation", "RefreshStatus", "phase", "complete", "error_code", result.Error.Code)
+	}()
 	status, err := c.service.status.Status(ctx)
+	slog.Info("x6_desktop", "operation", "RefreshStatus", "phase", "status_returned", "error_code", errorCodeOrEmpty(err))
 	state := c.currentState()
 	state.mu.Lock()
 	defer state.mu.Unlock()
