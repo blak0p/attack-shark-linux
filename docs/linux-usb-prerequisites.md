@@ -97,6 +97,121 @@ There is no startup/UI integration, automatic installed helper, or system-write
 support yet. Future authenticated installation must preserve custom policies.
 Existing manual and release-installer instructions remain unchanged.
 
+## Authenticated helper contract (not yet installed)
+
+`internal/udevauth` adds separate Ed25519 artifacts without changing the legacy
+AppImage manifest. `NewPolicy(version)` takes bytes only from the canonical embed
+and history only from `KnownOfficialDigests()`, which returns an independent,
+sorted copy of checked-in official historical digests plus the canonical digest.
+There is no signing API accepting renderer-selected payload or history.
+`NewScriptManifest(version, finalScript)` hashes the final key-pinned script.
+Both return signing inputs with `SignedBytes()` and `Marshal(signature)`.
+`VerifyPolicy(wire, expectedVersion, publicKey)` returns authenticated policy bytes
+and recognized previous hashes; `VerifyScript(wire, script, expectedVersion,
+publicKey)` verifies the final script. Versions must be semantic versions and
+match the expected release **exactly**, including any `v` prefix or metadata.
+There is no newer-than requirement: same-version udev-only installation is valid.
+
+The canonical UTF-8/ASCII-compatible wire format is newline-terminated, ordered,
+with no extra fields or trailing data. The policy format is:
+
+```text
+attack-shark-udev-policy-v1
+version=1.2.3
+sha256=<64 lowercase hex characters>
+previous=<1–16 sorted unique lowercase SHA-256 digests, comma-separated>
+payload=<one-line canonical standard base64 of exact rule bytes>
+signature=<one-line canonical standard base64 Ed25519 signature>
+```
+
+The signature covers all preceding lines, including their final newline.
+The script manifest instead uses domain `attack-shark-udev-helper-v1`, followed
+by `version`, `sha256`, and `signature` only. Envelope size is at most 96 KiB;
+policy and final script sizes are at most 64 KiB. `previous` has no spaces,
+empty entries, duplicates or trailing comma; sorting is bytewise ascending.
+`MaxPreviousDigests` is 16. Verifiers accept bounded canonical history only under
+the release signature, not through a frozen local digest allowlist. Unsigned
+changes to that list invalidate the whole envelope.
+
+The release signing history retains the fa60-only snapshot digest
+`d7e14b66e339ab394c00c1881759443068001245ed163f7a49e511b264ee32f6`
+and the initial fa60+fa61 policy digest
+`c2862bc932a3454f16f2759510d23dc408b1ce9f015b1dce576cb4f58d2274be`.
+The current canonical digest is included automatically (and deduplicated).
+**Release maintenance:** before changing the canonical policy again, retain its
+outgoing official digest in `KnownOfficialDigests()`; keep the registry bounded,
+checked in, and sourced only from official release snapshots/digests. Never
+construct history from runtime git, an installed custom file, or renderer input.
+No duplicate current raw-policy file is introduced. Adding a new official digest
+does not require replacing an already trusted root helper.
+
+For remote candidates, the future T3 coordinator must compare installed bytes to
+`VerifyPolicy`'s returned `Policy.Bytes`, or their SHA-256 against its authenticated
+`Policy.Previous`. An unrecognized installed policy stays custom. A T1 `current`
+result refers only to the local embedded policy: it must not hide an update to a
+newer authenticated remote policy. `KnownOfficialDigests()` is a signing source,
+not a substitute for verifying remote history.
+
+`packaging/udev-helper/helper.sh` is an **unconfigured release template**, not a
+bootstrap installer. Its public-key placeholder fails closed. A future release
+step must pin the release public key, sign the final script digest, authenticate
+that script before installation, and explicitly install it root-owned at
+`/usr/local/libexec/attack-shark-linux-udev-helper`. After authorization, the
+script itself securely recreates only its fixed `/run/attack-shark-linux`
+directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when absent,
+including after reboot. Concurrent creators validate the resulting objects;
+unsafe pre-existing objects are rejected, never repaired or followed. No boot
+service or tmpfiles configuration is required. Bootstrap, release publishing,
+desktop integration and any authorization UI are not implemented yet.
+Do not execute the repository template with administrator privileges.
+
+The future installed command has one interface:
+
+```text
+attack-shark-linux-udev-helper VERSION < signed-policy
+attack-shark-linux-udev-helper --help
+```
+
+There are no destination, key, utility, environment-root, or command overrides.
+The only writable policy destination is
+`/etc/udev/rules.d/60-attack-shark-x6-hidraw.rules`. The helper requires trusted
+root-owned ancestors without group/world write permission, a safe installed
+script and lock, and root execution. It waits at most five seconds for its fixed
+lock and at most five seconds for bounded stdin. It independently verifies the
+signature with distro OpenSSL before policy installation. Allowed directives are
+only the canonical X6 hidraw/uaccess/0660 grammar for vendor `1d57` and products
+`fa60`/`fa61`, plus comments and empty lines; RUN, PROGRAM, OWNER, static groups
+and arbitrary directives are refused even with a valid signature.
+
+Private runtime directory/lock creation may precede rejection of an invalid
+payload. These fixed metadata-only changes are distinct from managed-rule writes
+or udev effects: rejection never authorizes either. With runtime objects already
+present, rejected input leaves the fixture filesystem entirely unchanged.
+
+Under the helper lock, existing content must exactly match the authenticated
+payload or one of its signed previous official digests. Symlink/nonregular, unsafe,
+oversized, custom and static-group files are preserved. An identical rule prints
+`current` (exit 0), without replacement or udev calls. The later desktop
+coordinator must use T1 inspection to skip elevation entirely when current.
+A changed rule is staged beside the destination, set to 0644, rechecked and
+atomically renamed. It prints `installed`; reload is followed only by USB and
+hidraw events under resolved matching USB device parents, never a global trigger.
+Each udev command has a ten-second timeout. Replugging may still be necessary.
+
+Success exits 0; invalid invocation exits 2; validation/installation failures
+exit 1. After replacement, reload failure exits 3 with
+`error: installed-but-reload-failed`; trigger failure exits 4 with
+`error: installed-but-trigger-failed`. Both retain stdout `installed`: these are
+partial successes, not claims that nothing changed. No persistent service,
+password input, sudo cache, Go root helper or root AppImage execution is involved.
+
+**Concurrency assumption:** the fixed root-owned lock serializes helper
+invocations. Independent administrator/root tools must not edit the managed rule
+concurrently. Existing custom policy is checked before staging and immediately
+before rename, but this is not compare-and-swap protection against arbitrary
+concurrent root writers. Root actors able to replace trusted directories or the
+helper are outside the unprivileged-attacker threat model.
+
 ## Permission-denied recovery
 
 The application maps `os.ErrPermission` to the UI error code
