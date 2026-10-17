@@ -56,10 +56,41 @@ trap 'exit 1' HUP INT TERM
 /usr/bin/timeout 5 /usr/bin/dd bs=98305 count=1 iflag=fullblock status=none > "$tmp/wire" 2>/dev/null || fail 'invalid policy'
 [ "$(/usr/bin/wc -c < "$tmp/wire")" -le 98304 ] || fail 'invalid policy'
 [ "$(/usr/bin/tail -c 1 "$tmp/wire" | /usr/bin/od -An -tu1 | /usr/bin/tr -d ' ')" = 10 ] || fail 'invalid policy'
-# Fixed line ordering, no unknown fields, CR, trailing data, or multiline base64.
-/usr/bin/awk -v version="$VERSION" '
+# Compare argv literally: awk -v would interpret backslash escapes in VERSION.
+[ "$(/usr/bin/sed -n '2p' "$tmp/wire")" = "version=$VERSION" ] || fail 'invalid policy'
+# Fixed line ordering and the same bounded semantic-version grammar as Go.
+/usr/bin/awk '
+function identifiers(text, prerelease, parts, n, i) {
+    if (text=="") return 0
+    n=split(text, parts, /\./)
+    for (i=1; i<=n; i++) {
+        if (parts[i]!~/^[0-9A-Za-z-]+$/) return 0
+        if (prerelease && parts[i]~/^[0-9]+$/ && length(parts[i])>1 && substr(parts[i],1,1)=="0") return 0
+    }
+    return 1
+}
+function semver(version, build, count, core, dash, numbers, i, size) {
+    if (length(version)<1 || length(version)>80) return 0
+    sub(/^v/, "", version)
+    count=split(version, build, /\+/)
+    if (count>2 || (count==2 && !identifiers(build[2],0))) return 0
+    core=build[1]
+    dash=index(core,"-")
+    if (dash) {
+        if (!identifiers(substr(core,dash+1),1)) return 0
+        core=substr(core,1,dash-1)
+    }
+    if (split(core,numbers,/\./)!=3) return 0
+    for (i=1; i<=3; i++) {
+        size=length(numbers[i])
+        if (numbers[i]!~/^[0-9]+$/ || (size>1 && substr(numbers[i],1,1)=="0")) return 0
+        # Prefix both operands to force lexical uint64-bound comparison.
+        if (size>20 || (size==20 && ("x" numbers[i])>"x18446744073709551615")) return 0
+    }
+    return 1
+}
 NR==1 { if ($0!="attack-shark-udev-policy-v1") exit 1 }
-NR==2 { if ($0!="version=" version || length(version)>80 || version!~/^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$/) exit 1 }
+NR==2 { if (substr($0,1,8)!="version=" || !semver(substr($0,9))) exit 1 }
 NR==3 { if (length($0)!=71 || $0!~/^sha256=[0-9a-f]+$/) exit 1 }
 NR==4 {
     if ($0!~/^previous=/) exit 1
