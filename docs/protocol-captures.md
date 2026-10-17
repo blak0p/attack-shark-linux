@@ -3,7 +3,8 @@
 Decoded reports captured from the official Attack Shark X6 Windows app (USBPcap
 inside a VirtualBox VM, USB passthrough of dongle `1D57:FA60`).
 
-Raw captures live in `captures/`. Every claim here is backed by a `.pcapng`.
+Raw captures live in `captures/`. Static serializer analysis and live hidraw
+transactions are labeled separately below; neither is a new USB capture.
 
 ## Transport (confirmed)
 
@@ -177,13 +178,12 @@ changes.
 | 1 | 1 | `0x0f` length (15) |
 | 2 | 1 | `0x01` fixed |
 | 3 | 1 | **light mode** (see table) |
-| 4 | 1 | deep-sleep high: `0x03 + 0x10 × wraps` |
-| 5 | 1 | **deep-sleep low**: `(min + 0.5) × 16` mod 256 |
+| 4 | 1 | high nibble: deep-sleep minutes bits 4–7; low nibble: `9 - speed` |
+| 5 | 1 | high nibble: deep-sleep minutes bits 0–3; low nibble: brightness for modes 1/9, otherwise `8` |
 | 6..8 | 3 | **color BGR** (e.g. `00 ff 00` green) |
 | 9 | 1 | **sleep timer** = minutes × 2 (bar 0.5-60 min, 0.5 steps) |
 | 10 | 1 | **response time**: direct milliseconds in the verified official host serializer; legacy capture interpretation was ms / 2 |
-| 11 | 1 | deep-sleep wraps: `0x01 + wraps` (also shifts on color pick) |
-| 12 | 1 | checksum `sum(bytes[3:11]) & 0xff` |
+| 11–12 | 2 | checksum `sum(bytes[3:11])`, 16-bit big-endian (high byte first) |
 
 ### Lighting modes
 
@@ -238,8 +238,7 @@ The earlier ms / 2 interpretation associated factory 8 ms with captured
 proof of scaling. The historical bytes and capture provenance below remain
 unchanged; they are not reinterpreted as different captures. Static host API
 buffer lengths are not proof of on-wire report length. This correction retains
-the application's 13-byte report and existing checksum algorithm; checksum
-format auditing is deferred.
+the application's 13-byte report. The checksum is the 16-bit sum documented below.
 
 ```
 05 0f 01 50 03 a8 00 ff 00 01 04 01 ff     # factory reset, direct 4 ms (0x04)
@@ -250,32 +249,84 @@ format auditing is deferred.
 
 ### Deep-sleep timer
 
-A 3-byte field (bytes 4, 5, 11) encodes the deep-sleep timer:
+The official host serializer packs deep-sleep minutes into the high nibble
+of byte 4 and the high nibble of byte 5:
 
+```python
+deep_sleep_minutes = (report[4] & 0xf0) | (report[5] >> 4)
+report[4] = (deep_sleep_minutes & 0xf0) | (9 - speed)
+report[5] = ((deep_sleep_minutes << 4) & 0xff) | (
+    brightness if mode in (1, 9) else 8
+)
 ```
-raw    = (min + 0.5) * 16
-wraps  = raw // 256
-byte5  = raw % 256
-byte4  = 0x03 + 0x10 * wraps
-byte11 = 0x01 + wraps
+
+Here `mode` is the unshifted mode number (`report[3] >> 4`). Mode 9 is
+included only to describe the serializer branch, not as a claim of firmware
+support. The official deep-sleep slider stores integer minutes from 1 to 60.
+The previously inferred `+0.5` came from treating the lighting nibble `8` as
+part of the timer. Byte 11 is not a timer or color field.
+
+The historical byte 4/5 pairs `03 48`, `03 a8`, `13 68`, `13 e8`, and `23 d8`
+decode to 4, 10, 22, 30, and 45 minutes respectively. This is host encoding
+evidence, not physical validation of sleep timing. The current Linux encoder
+preserves these template fields; adding editable deep sleep is separate work.
+
+### Checksum and evidence boundary
+
+Both checksum bytes must be recomputed after any payload change:
+
+```python
+checksum = sum(report[3:11])
+report[11] = checksum >> 8
+report[12] = checksum & 0xff
 ```
 
-Verified on 5 values (4, 10, 22, 30, 45 min) — all bytes match:
+Changing only debounce from 4 to 5 ms crosses a carry boundary:
 
-| min | byte4 | byte5 | byte11 |
-|---|---|---|---|
-| 4 | `0x03` | `0x48` | `0x01` |
-| 10 (default) | `0x03` | `0xa8` | `0x01` |
-| 22 | `0x13` | `0x68` | `0x02` |
-| 30 | `0x13` | `0xe8` | `0x02` |
-| 45 | `0x23` | `0xd8` | `0x03` |
+```text
+05 0f 01 50 03 a8 00 ff 00 01 04 01 ff
+05 0f 01 50 03 a8 00 ff 00 01 05 02 00
+```
 
-Byte 11 also shifts on color pick, so it is shared between the deep-sleep
-counter and the color selector.
+The official X6 serializer at VA `0x414060` writes the low byte at
+`0x414240` and the high byte at `0x414248`. Artifact provenance and the
+instruction sequence are recorded in [issue #168](https://github.com/blak0p/attack-shark-linux/issues/168).
+The official installer ZIP SHA-256 is
+`4825cf3b69ba6ce679ea87b7cc465ac063178deef4ad19c39ffe9657e792071e`;
+the extracted `X6.exe` SHA-256 is
+`154b825d700231f980883376f332fe78b93d295aa5ce8ef839ab41341aba8f6e`.
 
-Checksum verified on every payload: always `sum(bytes[3:11]) & 0xff`, no
-offset. Field deltas (mode, speed, color) propagate 1:1 to the checksum
-(additive).
+A [live wired X6 test](https://github.com/blak0p/attack-shark-linux/issues/168#issuecomment-6232430622)
+on `1d57:fa61`, HID interface 02, returned 13 bytes from `HIDIOCSFEATURE`
+and ACK `03 10 50 00 05` for the two vectors above and a final 8-ms vector
+ending in `08 02 03`. These are host transaction and ACK observations,
+not a USB capture, settings readback, or measured debounce/sleep behavior.
+Incorrect-checksum rejection was not tested. During this wired test the mouse
+was charging and breathing red, so that observation did not establish lighting
+application.
+
+A later [physical color test over the dongle](https://github.com/blak0p/attack-shark-linux/issues/168#issuecomment-6232670603)
+(`1d57:fa60`, interface 02, cable disconnected) observed these fixed-mode reports:
+
+| Report | Observed color/effect | Checksum |
+|---|---|---|
+| `05 0f 01 10 03 a8 ff 00 00 01 08 01 c3` | Red, steady | `01c3` |
+| `05 0f 01 10 03 a8 00 00 ff 01 08 01 c3` | Dark blue, steady | `01c3` |
+| `05 0f 01 10 03 a8 ff ff 00 01 08 02 c2` | Yellow, steady | `02c2` |
+
+Each successful transaction returned 13 bytes and ACK `03 10 50 00 05`.
+Blue to yellow changed only color and checksum, crossing the checksum high-byte
+boundary with an observed physical color change. The first yellow attempt had
+no expected ACK and no yellow; a single repeat after closing the desktop app
+received the ACK and produced yellow. The reason for that difference is unknown.
+These remain host transaction logs and human observations, not a USB capture or
+measurements of effective debounce/sleep timing.
+
+The fixed-mode color observations support RGB on this device/mode, contradicting
+the historical BGR labels above. Color order in other modes and application
+palette labeling require separate investigation; the checksum change does not
+reinterpret all historical capture colors.
+
 
 ## Report 0x06 — polling rate (9 B)
 
@@ -475,8 +526,8 @@ Heartbeats arrive roughly once per second while the app is open.
 - Meaning of `0x0c` handshake.
 - Whether `0x09` (macro) appears on macro operations.
 - Lighting **mode** in `0x05` byte [3] is decoded; color is bytes 6-8 BGR,
-  byte [11] is shared between deep-sleep wraps and color pick. Sleep timer =
-  byte [9] (min × 2), deep-sleep = bytes 4+5+11 (3-byte encoding above),
+  bytes [11–12] are the big-endian checksum. Sleep timer =
+  byte [9] (min × 2), deep-sleep = high nibbles of bytes 4 and 5 (above),
   response time = byte [10] (direct ms in the verified host; legacy captures
   had an ms / 2 inference, superseded above). Remaining modes (neon, heartbeat,
   fixed-DPI, breathing-DPI) still need captures. Source identifies `0x50`
