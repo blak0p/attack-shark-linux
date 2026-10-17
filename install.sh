@@ -177,10 +177,11 @@ while [ "$releases_page" -le "$MAX_RELEASE_PAGES" ]; do
 		download_url="$DOWNLOAD_ROOT/$tag"
 		valid_release=$(printf '%s' "$releases" | jq -e --arg tag "$tag" --arg root "$download_url" \
 			--arg appimage "$APPIMAGE_NAME" --arg manifest "$MANIFEST_NAME" --arg rule "$UDEV_RULE_NAME" --arg prerelease "$prerelease" '
+			([$appimage, ($appimage + ".sha256"), $manifest, $rule, "install.sh"] | sort) as $legacy |
+			(($legacy + ["attack-shark-linux-udev-helper", "udev-helper-manifest.txt", "udev-policy.txt"]) | sort) as $complete |
 			[.[] | select(.prerelease == ($prerelease == "true") and .draft == false and .tag_name == $tag) |
-			 select((.assets | length) == 5) |
-			 select(all(.assets[]; .name == $appimage or .name == ($appimage + ".sha256") or .name == $manifest or .name == $rule or .name == "install.sh")) |
-			 select((.assets | map(.name) | unique | length) == 5) |
+			 (.assets | map(.name) | sort) as $names |
+			 select($names == $legacy or $names == $complete) |
 			 select(all(.assets[]; .browser_download_url == ($root + "/" + .name)))
 			] | length == 1' 2>/dev/null) || continue
 		[ "$valid_release" = true ] || continue

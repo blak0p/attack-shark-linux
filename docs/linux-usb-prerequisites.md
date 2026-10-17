@@ -153,17 +153,42 @@ newer authenticated remote policy. `KnownOfficialDigests()` is a signing source,
 not a substitute for verifying remote history.
 
 `packaging/udev-helper/helper.sh` is an **unconfigured release template**, not a
-bootstrap installer. Its public-key placeholder fails closed. A future release
-step must pin the release public key, sign the final script digest, authenticate
-that script before installation, and explicitly install it root-owned at
+bootstrap installer. Its public-key placeholder fails closed. The release
+stage pins the release public key and signs the final script digest. Future
+bootstrap must authenticate that script before installation and explicitly install it root-owned at
 `/usr/local/libexec/attack-shark-linux-udev-helper`. After authorization, the
 script itself securely recreates only its fixed `/run/attack-shark-linux`
 directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when absent,
 including after reboot. Concurrent creators validate the resulting objects;
 unsafe pre-existing objects are rejected, never repaired or followed. No boot
-service or tmpfiles configuration is required. Bootstrap, release publishing,
+service or tmpfiles configuration is required. Bootstrap,
 desktop integration and any authorization UI are not implemented yet.
 Do not execute the repository template with administrator privileges.
+
+### Release staging
+
+`release stage -helper-template packaging/udev-helper/helper.sh` adds three
+artifacts alongside the unchanged AppImage outputs: `attack-shark-linux-udev-helper`,
+`udev-helper-manifest.txt`, and `udev-policy.txt`. Both release Task targets use
+this option; omitting it preserves the old stage invocation. The template must
+contain exactly one key placeholder. `BuildAuthArtifacts` validates and signs
+all authentication artifacts in memory before staging, using the existing seed
+and an x509/PEM Ed25519 public key. Invalid key, tag, or template inputs do not
+change staged artifacts. Filesystem write failures can still leave incomplete
+staging; never publish a failed stage.
+
+Future transport must fetch these fixed assets from an already verified expected
+release/tag and verify their exact version (tag without `v`), not trust an unsigned
+URL appended to the AppImage manifest. Older five-asset releases remain supported
+by the existing installer and AppImage updater. Normal installation accepts either
+exactly the five legacy asset names or all eight names (the legacy set plus the
+three authentication assets), with unique names and canonical release URLs.
+Incomplete, duplicated, unexpected, or ambiguous asset sets are rejected. Normal
+installation still downloads only the signed AppImage manifest and AppImage;
+it does not download, install, or execute the helper or signed policy. The existing
+`--install-udev` manual-rule opt-in remains separate and does not bootstrap a
+trusted helper. Do not execute a staged helper as root before trusted
+bootstrap authentication and explicit authorization.
 
 The future installed command has one interface:
 
