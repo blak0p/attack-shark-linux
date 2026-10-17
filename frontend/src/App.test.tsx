@@ -537,7 +537,7 @@ describe("App", () => {
 
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ ActiveStage: 1 })));
 	await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
-	expect(screen.getByText("Applied")).toBeInTheDocument();
+	expect(await screen.findByText("Applied")).toBeInTheDocument();
   });
 
   it("blocks the full workspace until overlapping automatic configuration applies settle", async () => {
@@ -601,7 +601,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.StageDPI).toHaveBeenCalledWith(expect.objectContaining({ DPI: expect.arrayContaining([1600]) })));
     await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
     expect(screen.queryByRole("button", { name: "Apply DPI" })).not.toBeInTheDocument();
-    expect(screen.getByText("Applied")).toBeInTheDocument();
+    expect(await screen.findByText("Applied")).toBeInTheDocument();
   });
 
   it("renders distinct firmware and persistence outcomes with a persistence-only retry", async () => {
