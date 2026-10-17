@@ -14,6 +14,13 @@ const x6ProfileID = "attack-shark-x6"
 // model-neutral profile contract without changing X6 callers.
 func NewProfile() mouse.Profile { return Profile{} }
 
+// NewWiredProfile keeps the cable PID in identity while sharing the X6 codec.
+func NewWiredProfile() mouse.Profile { return wiredProfile{} }
+
+type wiredProfile struct{ Profile }
+
+func (wiredProfile) Match() transport.Match { return transport.X6WiredMatch() }
+
 type Profile struct{}
 
 func (Profile) ID() string                     { return x6ProfileID }

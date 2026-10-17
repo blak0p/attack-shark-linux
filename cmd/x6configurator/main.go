@@ -47,6 +47,9 @@ type x6InventoryBackend interface {
 type x6InventorySource struct{ backend x6InventoryBackend }
 
 func (s x6InventorySource) Enumerate(ctx context.Context) ([]transport.Candidate, error) {
+	if combined, ok := s.backend.(transport.X6Enumerator); ok {
+		return combined.EnumerateX6(ctx)
+	}
 	return s.backend.Enumerate(ctx, x6.NewProfile().Match())
 }
 
@@ -73,7 +76,7 @@ func emergencyReset(ctx context.Context) error {
 	}
 	dataDir = filepath.Join(dataDir, "attack-shark-linux")
 	backend := hidlinux.NewHidrawBackend()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
 	if err != nil {
 		return err
 	}
@@ -199,7 +202,7 @@ func composeDesktopService(dataDir string, backend *hidlinux.HidrawBackend) (*de
 	}
 	status := x6.NewService(backend)
 	writer := x6.NewCommandService(backend)
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
 	service := composeDesktopServiceWithTargeted(dataDir, status, writer, registry, x6InventorySource{backend: backend}, backend)
 	return service, status
 }

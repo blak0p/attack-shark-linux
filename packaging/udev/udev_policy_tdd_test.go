@@ -21,8 +21,8 @@ func TestPackagedUdevPolicyContract(t *testing.T) {
 	if policyFile >= "73-seat-late.rules" {
 		t.Fatalf("policy filename %q must sort before 73-seat-late.rules", policyFile)
 	}
-	if len(activeLines) != 1 || activeLines[0] != policyLine {
-		t.Fatalf("active policy lines = %q, want exactly %q", activeLines, policyLine)
+	if len(activeLines) != 2 || activeLines[0] != policyLine || activeLines[1] != strings.Replace(policyLine, "fa60", "fa61", 1) {
+		t.Fatalf("active policy lines = %q, want exact fa60 and fa61 hidraw uaccess/0660 rules", activeLines)
 	}
 
 	policyText := readFile(t, policyPath)

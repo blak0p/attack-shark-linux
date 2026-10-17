@@ -37,4 +37,18 @@ type CommandTransport interface {
 	SendAndAwait(context.Context, []byte, func([]byte) bool) error
 }
 
-func X6Match() Match { return Match{VendorID: 0x1D57, ProductID: 0xFA60} }
+func X6Match() Match      { return Match{VendorID: 0x1D57, ProductID: 0xFA60} }
+func X6WiredMatch() Match { return Match{VendorID: 0x1D57, ProductID: 0xFA61} }
+
+// X6Enumerator discovers both supported USB modes in one coherent scan.
+// It is optional so existing single-match transports remain compatible.
+type X6Enumerator interface {
+	EnumerateX6(context.Context) ([]Candidate, error)
+}
+
+func EnumerateX6(ctx context.Context, backend PassiveInputTransport) ([]Candidate, error) {
+	if combined, ok := backend.(X6Enumerator); ok {
+		return combined.EnumerateX6(ctx)
+	}
+	return backend.Enumerate(ctx, X6Match())
+}

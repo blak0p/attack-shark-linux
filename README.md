@@ -54,7 +54,9 @@ See [docs/user-guide.md](docs/user-guide.md) for detailed feature descriptions a
 
 ## Prerequisites
 
-- Linux with the X6 dongle connected (`VID:PID 1d57:fa60`).
+- Linux with an X6 dongle (`1d57:fa60`) or X6 USB cable (`1d57:fa61`).
+  Both use the existing validated command protocol; Bluetooth and other models
+  are not supported. The actual PID remains part of each device's saved identity.
 - The packaged udev policy installed — see
   [docs/linux-usb-prerequisites.md](docs/linux-usb-prerequisites.md).
 

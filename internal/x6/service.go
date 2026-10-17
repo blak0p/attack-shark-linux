@@ -102,7 +102,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.transport == nil {
 		return Status{}, &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
 	}
-	candidates, err := s.transport.Enumerate(ctx, transport.X6Match())
+	candidates, err := transport.EnumerateX6(ctx, s.transport)
 	if err != nil {
 		return Status{}, &ServiceError{NoUsableDevice, err}
 	}
@@ -155,7 +155,7 @@ func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error 
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		candidates, err := s.transport.Enumerate(ctx, transport.X6Match())
+		candidates, err := transport.EnumerateX6(ctx, s.transport)
 		if err != nil {
 			if !waitOrDone(ctx, listenRetryDelay) {
 				return nil
