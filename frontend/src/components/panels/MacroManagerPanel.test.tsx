@@ -66,7 +66,7 @@ it("counts five presses during recording and after append without discarding ten
   await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
   const surface = screen.getByRole("region", { name: "Local input capture" });
-  expect(surface).toHaveTextContent("Recording · 0 presses");
+  await waitFor(() => expect(surface).toHaveTextContent("Recording · 0 presses"));
   for (const [index, code] of ["KeyE", "KeyS", "KeyT", "KeyO", "KeyE"].entries()) {
     fireEvent.keyDown(surface, { code });
     expect(surface).toHaveTextContent(`Recording · ${index + 1} ${index === 0 ? "press" : "presses"}`);

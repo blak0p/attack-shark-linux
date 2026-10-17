@@ -34,6 +34,7 @@ func ValidateResponseTime(responseTimeMs int) error {
 
 // EncodeLightingSettingsReport preserves the selected report 0x05 lighting
 // template while encoding normal sleep in byte 9 and response time in byte 10.
+// Bytes 11-12 hold the big-endian 16-bit sum of bytes 3-10.
 func EncodeLightingSettingsReport(settings LightingSettings) ([]byte, error) {
 	if err := ValidateNormalSleepMinutes(settings.NormalSleepMinutes); err != nil {
 		return nil, err
@@ -47,11 +48,12 @@ func EncodeLightingSettingsReport(settings LightingSettings) ([]byte, error) {
 	}
 	report[9] = byte(settings.NormalSleepMinutes * 2)
 	report[10] = byte(settings.ResponseTimeMs)
-	var checksum byte
+	var checksum uint16
 	for _, value := range report[3:11] {
-		checksum += value
+		checksum += uint16(value)
 	}
-	report[12] = checksum
+	report[11] = byte(checksum >> 8)
+	report[12] = byte(checksum)
 	return report, nil
 }
 
