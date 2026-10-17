@@ -114,6 +114,12 @@ go vet ./...         # static analysis
 (cd frontend && npm test)
 ```
 
+Frontend tests also work in hidden worktrees under `.git/` (run the same
+`npm test` command from `frontend`). The separate Vitest config permits only
+that worktree's frontend files while retaining sensitive-file and Git metadata
+protection, including `.git` pointer files. Development and build configuration
+remain unchanged.
+
 ### Test conventions
 
 - Backend unit tests live next to the code under test as `*_tdd_test.go`
