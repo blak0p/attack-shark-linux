@@ -78,6 +78,25 @@ manual fallback. The AppImage
 updater never elevates and never changes this udev policy; updates remain in
 the installed stable or RC channel.
 
+## Read-only policy library foundation
+
+The Go `packaging/udev` package embeds the canonical rule above directly, without
+another current-policy copy. `internal/udevpolicy` classifies injected read-only
+policy sources as `current`, `missing`, `outdated`, `custom`, or `error` for the
+fixed installed path. Only exact current bytes or the checked-in official
+fa60-only snapshot are recognized; static-group rules, added directives, and
+other local edits remain custom. Unreadable, symlink, nonregular, or oversized
+inputs produce errors, not permission to replace them.
+
+This stage is a read-only library foundation: on Linux,
+`Inspect(InstalledSource())` reads only the fixed installed path, using a bounded,
+no-follow, nonblocking open and a descriptor regular-file check. It rejects
+final-component symlink/nonregular replacements independently of the initial
+inspection. No caller-selected installed path or environment override is exposed.
+There is no startup/UI integration, automatic installed helper, or system-write
+support yet. Future authenticated installation must preserve custom policies.
+Existing manual and release-installer instructions remain unchanged.
+
 ## Permission-denied recovery
 
 The application maps `os.ErrPermission` to the UI error code
