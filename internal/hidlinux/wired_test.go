@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -63,9 +64,69 @@ func TestWiredDescriptorAdmission(t *testing.T) {
 	if err != nil || len(only) != 1 || only[0].ProductID != 0xfa60 {
 		t.Fatalf("exact scan = %v, %v", only, err)
 	}
+
+}
+
+func TestPairedCommandUsesCable(t *testing.T) {
+	node := newCommandHidrawNode([][]byte{{3, 0x10, 0x50, 0, 4}})
+	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
+	cableFixture(t, root)
+	hidraw := filepath.Join(root, "sys/class/hidraw/hidraw4")
+	if err := os.MkdirAll(hidraw, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "sys/bus/hid/devices/0003:1D57:FA61.0002"), filepath.Join(hidraw, "device")); err != nil {
+		t.Fatal(err)
+	}
+	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw4"), node: node}
+	backend.opener = opener
 	payload := append([]byte{4}, make([]byte, 55)...)
-	if err := backend.SendAndAwait(context.Background(), payload, func([]byte) bool { return false }); !IsErrorKind(err, Mismatch) {
-		t.Fatalf("ambiguous command = %v", err)
+	if err := backend.SendAndAwait(context.Background(), payload, func([]byte) bool { return false }); err != nil || opener.opens() != 1 || !bytes.Equal(node.written(), payload) {
+		t.Fatalf("send=%v opens=%d writes=%x", err, opener.opens(), node.written())
+	}
+}
+
+func TestPairedCommandAdmissionAndBoundCable(t *testing.T) {
+	for _, mode := range []string{"bound cable", "invalid cable", "two cables"} {
+		t.Run(mode, func(t *testing.T) {
+			node := newCommandHidrawNode([][]byte{{3, 0x10, 0x50, 0, 4}})
+			backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
+			cableFixture(t, root)
+			hidraw := filepath.Join(root, "sys/class/hidraw/hidraw4")
+			if err := os.MkdirAll(hidraw, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(root, "sys/bus/hid/devices/0003:1D57:FA61.0002"), filepath.Join(hidraw, "device")); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "dev/hidraw4")
+			if mode == "invalid cable" {
+				writeFixtureFile(t, filepath.Join(root, "sys/bus/hid/devices/0003:1D57:FA61.0002/report_descriptor"), "invalid")
+				path = filepath.Join(root, "dev/hidraw3")
+			}
+			if mode == "two cables" {
+				writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/idProduct"), "fa61\n")
+				writeFixtureFile(t, filepath.Join(root, "sys/bus/hid/devices/0003:1D57:FA60.0001/uevent"), "HID_ID=0003:00001D57:0000FA61\nHID_PHYS=usb-0000:0d:00.0-4/input2\n")
+			}
+			opener := &countingHidrawOpener{path: path, node: node}
+			backend.opener = opener
+			payload := append([]byte{4}, make([]byte, 55)...)
+			var err error
+			if mode == "bound cable" {
+				err = backend.SendAndAwaitBound(context.Background(), mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa61, Serial: "cable"}, Path: "1:1-5", ProfileID: "attack-shark-x6"}, payload, func([]byte) bool { return false })
+			} else {
+				err = backend.SendAndAwait(context.Background(), payload, func([]byte) bool { return false })
+			}
+			if mode == "two cables" {
+				if !IsErrorKind(err, Mismatch) || opener.opens() != 0 || len(node.written()) != 0 {
+					t.Fatalf("ambiguous send=%v opens=%d writes=%x", err, opener.opens(), node.written())
+				}
+				return
+			}
+			if err != nil || opener.opens() != 1 || !bytes.Equal(node.written(), payload) {
+				t.Fatalf("send=%v opens=%d writes=%x", err, opener.opens(), node.written())
+			}
+		})
 	}
 }
 

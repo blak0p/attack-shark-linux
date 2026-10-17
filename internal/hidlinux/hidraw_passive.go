@@ -318,7 +318,7 @@ func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, contin
 	if _, err := b.EnumerateX6(ctx); err != nil {
 		return &diagnosticError{operation: "discovery", err: err}
 	}
-	candidate, err := b.commandCandidate()
+	candidate, err := b.commandCandidate(ctx)
 	if err != nil {
 		return &diagnosticError{operation: "discovery", err: err}
 	}
@@ -373,19 +373,39 @@ func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, contin
 	}
 }
 
-func (b *HidrawBackend) commandCandidate() (Candidate, error) {
+func (b *HidrawBackend) commandCandidate(ctx context.Context) (Candidate, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.sources) == 0 {
+	sources := make([]transport.Candidate, 0, len(b.sources))
+	for key, c := range b.sources {
+		sources = append(sources, transport.Candidate{Path: key, VendorID: c.VendorID, ProductID: c.ProductID, Serial: c.Serial, Connection: x6Connection(c)})
+	}
+	b.mu.Unlock()
+	eligible := make([]transport.Candidate, 0, len(sources))
+	var validationErr error
+	for _, c := range sources {
+		if _, err := b.ValidateDescriptor(ctx, c, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err == nil {
+			eligible = append(eligible, c)
+		} else {
+			validationErr = err
+		}
+	}
+	preferred := transport.PreferX6Wired(eligible)
+	if len(preferred) == 0 {
+		if validationErr != nil {
+			return Candidate{}, validationErr
+		}
 		return Candidate{}, &Error{Kind: NotFound, Err: errors.New("no validated X6 device is available for DPI Apply")}
 	}
-	if len(b.sources) != 1 {
+	if len(preferred) != 1 {
 		return Candidate{}, &Error{Kind: Mismatch, Err: errors.New("multiple validated X6 devices are available for DPI Apply")}
 	}
-	for _, candidate := range b.sources {
-		return candidate, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	candidate, ok := b.sources[preferred[0].Path]
+	if !ok {
+		return Candidate{}, &Error{Kind: NotFound, Err: errors.New("validated X6 device is no longer present")}
 	}
-	panic("unreachable")
+	return candidate, nil
 }
 
 func (b *HidrawBackend) dispatchListenerReport(path string, report []byte) {

@@ -89,6 +89,15 @@ does not mean the app should be run as root. Check, in order:
 - For group policy, the user belongs to `attack-shark-x6` and has logged in again.
 - The USB identity still appears as `1d57:fa60` (dongle) or `1d57:fa61` (cable).
 
+## Cable and dongle connected together
+
+One validated X6 cable takes priority when exactly one eligible cable and one
+eligible dongle are present. Status, listening, and automatic configuration
+selection use the cable; a cable read failure does not fall through to dongle
+status. An invalid cable descriptor does not hide a valid dongle. The two PIDs
+retain separate saved identities; this preference does not prove they are the
+same physical mouse. Multiple cables or receivers are not automatically merged.
+
 ## Troubleshooting
 
 Confirm the USB identity:

@@ -47,10 +47,34 @@ type x6InventoryBackend interface {
 type x6InventorySource struct{ backend x6InventoryBackend }
 
 func (s x6InventorySource) Enumerate(ctx context.Context) ([]transport.Candidate, error) {
+	var candidates []transport.Candidate
+	var err error
 	if combined, ok := s.backend.(transport.X6Enumerator); ok {
-		return combined.EnumerateX6(ctx)
+		candidates, err = combined.EnumerateX6(ctx)
+	} else {
+		candidates, err = s.backend.Enumerate(ctx, x6.NewProfile().Match())
 	}
-	return s.backend.Enumerate(ctx, x6.NewProfile().Match())
+	if err != nil {
+		return nil, err
+	}
+	// Preference is based on validated paths, never VID/PID discovery alone.
+	eligible := make([]transport.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if (c.VendorID == transport.X6Match().VendorID && (c.ProductID == transport.X6Match().ProductID || c.ProductID == transport.X6WiredMatch().ProductID)) && s.backend.ProfileValid(ctx, c, x6.NewProfile().HIDFacts()) {
+			eligible = append(eligible, c)
+		}
+	}
+	preferred := transport.PreferX6Wired(eligible)
+	if len(preferred) == 1 && len(eligible) == 2 {
+		result := make([]transport.Candidate, 0, len(candidates)-1)
+		for _, c := range candidates {
+			if c != eligible[0] && c != eligible[1] || c == preferred[0] {
+				result = append(result, c)
+			}
+		}
+		return result, nil
+	}
+	return candidates, nil
 }
 
 func (s x6InventorySource) ProfileValid(ctx context.Context, candidate transport.Candidate, facts mouse.HIDFacts) bool {
