@@ -100,6 +100,14 @@ same physical mouse. Multiple cables or receivers are not automatically merged.
 
 ## Troubleshooting
 
+When launching the app from a terminal, `x6_inventory event=status_read`
+records passive status-read outcomes without logging report contents. An
+`operation=open` error with `error_kind="permission denied"` identifies a node
+access failure. An `operation=read` error with `error_kind="timeout"` means the
+node opened but the status operation did not finish before its deadline;
+`reports=0` means no nonempty reports reached its callback. Descriptor validation
+alone does not establish successful node access or a fresh battery reading.
+
 Confirm the USB identity:
 
 ```sh

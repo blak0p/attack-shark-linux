@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
@@ -38,7 +39,17 @@ func (c *inventoryComponent) attach(inventory *mouse.TargetedService, s *Service
 	c.pollingSync = s.pollingComponent.sync
 }
 
-func (c *inventoryComponent) refresh(ctx context.Context, s *Service) Inventory {
+func (c *inventoryComponent) refresh(ctx context.Context, s *Service) (outcome Inventory) {
+	slog.Info("x6_desktop", "operation", "RefreshInventory", "phase", "entry")
+	defer func() {
+		eligible := 0
+		for _, device := range outcome.Devices {
+			if device.Eligible {
+				eligible++
+			}
+		}
+		slog.Info("x6_desktop", "operation", "RefreshInventory", "phase", "complete", "error_code", outcome.Error.Code, "eligible_count", eligible, "selected_binding_present", outcome.Selected != nil)
+	}()
 	s.mu.Lock()
 	inventory := s.inventory
 	s.mu.Unlock()

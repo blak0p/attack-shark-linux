@@ -246,7 +246,7 @@ func (b *HidrawBackend) ValidateDescriptor(ctx context.Context, source transport
 }
 
 // ReadInterruptIN performs one bounded, passive status read through hidraw.
-func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.InputSource, use func([]byte) bool) error {
+func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.InputSource, use func([]byte) bool) (resultErr error) {
 	b.mu.Lock()
 	candidate, ok := b.sources[source.Path]
 	b.mu.Unlock()
@@ -257,10 +257,24 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 	if err != nil {
 		return err
 	}
+	operation, reports := "open", 0
+	defer func() {
+		outcome, kind := "ok", ErrorKind("none")
+		if resultErr != nil {
+			outcome, kind = "error", IO
+			var typed *Error
+			if errors.As(classify(resultErr), &typed) {
+				kind = typed.Kind
+			}
+		}
+		// Log metadata only: never report bytes, serials, or physical paths.
+		inventoryDiagnosticf("event=status_read vid_pid=%04x:%04x hidraw_basename=%s operation=%s reports=%d outcome=%s error_kind=%q", candidate.VendorID, candidate.ProductID, filepath.Base(path), operation, reports, outcome, kind)
+	}()
 	node, err := b.opener.OpenNode(path)
 	if err != nil {
 		return classify(err)
 	}
+	operation = "read"
 	b.mu.Lock()
 	b.activeNode = node
 	b.activePath = source.Path
@@ -295,6 +309,7 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 			release()
 			continue
 		}
+		reports++
 		if !use(buffer[:count]) {
 			release()
 			return nil
