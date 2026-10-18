@@ -67,7 +67,28 @@ func TestPolicyCheck(t *testing.T) {
 				}
 				return &http.Response{StatusCode: tc.status, Status: http.StatusText(tc.status), Body: io.NopCloser(strings.NewReader(tc.body))}, nil
 			})})
-			result, err := CheckPolicy(context.Background(), transport, manifest, tc.current, tc.public)
+			result, authenticatedWire, err := CheckPolicyWithWire(context.Background(), transport, manifest, tc.current, tc.public)
+			if tc.fail || tc.unavailable {
+				if authenticatedWire != nil {
+					t.Fatal("returned rejected wire")
+				}
+			} else {
+				if string(authenticatedWire) != tc.body {
+					t.Fatal("wire changed")
+				}
+				before := string(result.Bytes)
+				authenticatedWire[0] ^= 1
+				if string(result.Bytes) != before {
+					t.Fatal("wire aliases policy")
+				}
+			}
+			legacy, legacyErr := CheckPolicy(context.Background(), transport, manifest, tc.current, tc.public)
+			if fmt.Sprint(legacyErr) != fmt.Sprint(err) || (legacy == nil) != (result == nil) {
+				t.Fatalf("legacy mismatch: %v %v / %v %v", legacy, legacyErr, result, err)
+			}
+			if legacy != nil && (legacy.Version != result.Version || string(legacy.Bytes) != string(result.Bytes) || strings.Join(legacy.Previous, ",") != strings.Join(result.Previous, ",")) {
+				t.Fatal("legacy policy changed")
+			}
 			if (err != nil) != tc.fail {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
@@ -83,7 +104,7 @@ func TestPolicyCheck(t *testing.T) {
 				}
 				return
 			}
-			if calls != 1 || result.Version != "1.2.0" || string(result.Bytes) != string(envelope.payload) || strings.Join(result.Previous, ",") != envelope.previous {
+			if calls != 2 || result.Version != "1.2.0" || string(result.Bytes) != string(envelope.payload) || strings.Join(result.Previous, ",") != envelope.previous {
 				t.Fatalf("result=%+v calls=%d", result, calls)
 			}
 		})
