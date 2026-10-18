@@ -180,6 +180,21 @@ construct history from runtime git, an installed custom file, or renderer input.
 No duplicate current raw-policy file is introduced. Adding a new official digest
 does not require replacing an already trusted root helper.
 
+### Read-only remote policy checks
+
+`udevauth.CheckPolicy(ctx, transport, manifest, currentVersion, releaseKey)` is
+available for backend-selected release manifests. It authenticates the unchanged
+AppImage manifest, requires the installed channel and a non-older version, and
+fetches only `udev-policy.txt` from the canonical repository and exact release tag.
+Same-version checks support USB-only updates. Requests have a 15-second deadline;
+the envelope fetch is bounded to 96 KiB and the existing policy verifier validates
+its exact version, signature, digest, grammar and signed history. A nil policy
+with no error means the artifact is unavailable (HTTP 404), including old releases;
+other HTTP, read, size and authentication failures return errors, not support.
+This check never applies an AppImage, writes rules, installs a helper or elevates.
+Manifest, version and key selection must remain backend-owned, not renderer input.
+The existing AppImage check/apply APIs and legacy releases are unchanged.
+
 For remote candidates, the future T3 coordinator must compare installed bytes to
 `VerifyPolicy`'s returned `Policy.Bytes`, or their SHA-256 against its authenticated
 `Policy.Previous`. An unrecognized installed policy stays custom. A T1 `current`
