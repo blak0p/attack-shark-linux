@@ -78,6 +78,41 @@ manual fallback. The AppImage
 updater never elevates and never changes this udev policy; updates remain in
 the installed stable or RC channel.
 
+## One-time authenticated USB permissions setup
+
+For releases publishing the signed helper and policy assets, use a **trusted,
+versioned release installer** to set up future USB permission updates:
+
+```sh
+sh ./install.sh --setup-usb-permissions
+# To select the signed RC channel instead:
+sh ./install.sh --beta --setup-usb-permissions
+```
+
+This is separate from AppImage installation and the legacy `--install-udev`
+manual-rule flow. Setup requires `/usr/bin/python3` and system OpenSSL. Python 3
+is used only by this initial bootstrap, not by normal app use or the installed
+shell helper. If Python is missing, install it through your distro package
+manager and rerun setup; the installer never installs packages automatically.
+Run setup as your normal user: it requests administrator authorization once
+through system `sudo`, never collects a password in the app, and never runs an
+AppImage as root. Trust in the installer and its embedded release key is required;
+a downloaded AppImage is not a root trust anchor.
+
+Setup verifies the selected release and helper/policy signatures before asking
+for authorization. The fixed bootstrap program then copies bounded regular files
+without following final symlinks, verifies that root-private copy again, and
+installs only the authenticated helper at its canonical root-owned path. The
+helper validates and applies the signed policy independently. Custom and
+static-group rules are preserved, not overwritten. There is no daemon.
+
+Older releases without the three authentication assets cannot perform setup;
+normal AppImage installation remains supported. Setup never changes the
+AppImage. If helper installation succeeds but policy application or udev reload
+fails, the output reports that partial result. Inspect it before retrying;
+no automatic retry is performed. Reconnecting the mouse may still be necessary.
+The in-app coordinator and combined update UI are not implemented yet.
+
 ## Read-only policy library foundation
 
 The Go `packaging/udev` package embeds the canonical rule above directly, without
@@ -93,11 +128,11 @@ This stage is a read-only library foundation: on Linux,
 no-follow, nonblocking open and a descriptor regular-file check. It rejects
 final-component symlink/nonregular replacements independently of the initial
 inspection. No caller-selected installed path or environment override is exposed.
-There is no startup/UI integration, automatic installed helper, or system-write
-support yet. Future authenticated installation must preserve custom policies.
-Existing manual and release-installer instructions remain unchanged.
+There is no startup/UI integration or automatic helper installation yet. Explicit
+authenticated setup is described above; it preserves custom policies. Existing
+manual and normal AppImage installation paths remain available.
 
-## Authenticated helper contract (not yet installed)
+## Authenticated helper contract
 
 `internal/udevauth` adds separate Ed25519 artifacts without changing the legacy
 AppImage manifest. `NewPolicy(version)` takes bytes only from the canonical embed
@@ -154,15 +189,16 @@ not a substitute for verifying remote history.
 
 `packaging/udev-helper/helper.sh` is an **unconfigured release template**, not a
 bootstrap installer. Its public-key placeholder fails closed. The release
-stage pins the release public key and signs the final script digest. Future
-bootstrap must authenticate that script before installation and explicitly install it root-owned at
+stage pins the release public key and signs the final script digest. The trusted
+bootstrap authenticates that script before installation and explicitly installs it root-owned at
 `/usr/local/libexec/attack-shark-linux-udev-helper`. After authorization, the
 script itself securely recreates only its fixed `/run/attack-shark-linux`
 directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when absent,
 including after reboot. Concurrent creators validate the resulting objects;
 unsafe pre-existing objects are rejected, never repaired or followed. No boot
-service or tmpfiles configuration is required. Bootstrap,
-desktop integration and any authorization UI are not implemented yet.
+service or tmpfiles configuration is required. Explicit bootstrap is available
+through the release installer; desktop integration and its authorization UI
+are not implemented yet.
 Do not execute the repository template with administrator privileges.
 
 ### Release staging
