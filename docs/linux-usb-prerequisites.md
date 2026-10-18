@@ -111,7 +111,8 @@ normal AppImage installation remains supported. Setup never changes the
 AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
-The in-app coordinator and combined update UI are not implemented yet.
+The desktop coordinator is available as a backend library; installed-helper
+invocation, production composition and the combined update UI remain pending.
 
 ## Read-only policy library foundation
 
@@ -195,12 +196,45 @@ This check never applies an AppImage, writes rules, installs a helper or elevate
 Manifest, version and key selection must remain backend-owned, not renderer input.
 The existing AppImage check/apply APIs and legacy releases are unchanged.
 
-For remote candidates, the future T3 coordinator must compare installed bytes to
+For remote candidates, the desktop coordinator compares installed bytes to
 `VerifyPolicy`'s returned `Policy.Bytes`, or their SHA-256 against its authenticated
 `Policy.Previous`. An unrecognized installed policy stays custom. A T1 `current`
 result refers only to the local embedded policy: it must not hide an update to a
 newer authenticated remote policy. `KnownOfficialDigests()` is a signing source,
 not a substitute for verifying remote history.
+
+### Desktop coordinator contract (backend only)
+
+Trusted Go composition calls `ConfigureUnifiedUpdates` after `ConfigureUpdater`,
+with a read-only installed source and `PolicyUpdateBackend`. Its `Check` must
+return only authenticated T3a candidates. Its `Apply` must independently validate
+the signed payload and installed policy under the installed helper lock; the
+coordinator's pre-apply inspection is not a replacement for that security check.
+No production backend is installed by this library slice.
+
+`CheckUnifiedUpdates` returns display-only AppImage and policy availability and
+individual errors; it never authorizes or applies. `ApplyUnifiedUpdate` is the
+single explicit approval action, with no renderer-selected candidate or inputs.
+Legacy check/apply calls invalidate that approval. All operations serialize on
+the existing AppImage state lock and use the existing operation deadlines.
+Current, custom, unavailable and failed inspections do not invoke policy apply.
+
+Policy and AppImage writes are not atomic. The returned result distinguishes
+AppImage replacement, policy installation, policy reload/trigger errors and
+relaunch errors. Retries never repeat completed replacement or policy writes.
+A policy partial failure defers relaunch on the first action; a subsequent
+explicit action can relaunch without repeating the write, retaining the policy
+error for display. A check of the same candidate also retains that partial result.
+App and relaunch failures also survive rechecks of the same target until the
+relevant explicit retry succeeds. Cancellation is checked after acquiring the
+shared lock and between unified callbacks: a canceled apply cannot start a later
+policy write, AppImage replacement or relaunch. If cancellation follows a write,
+`ApplyUnifiedUpdate` returns both its individual result and the context error;
+callers must not discard that result. This does not change legacy updater errors
+or relaunch behavior.
+The UI must display these individual outcomes rather than claim combined success.
+AppImage replacement remains user-local. OS authorization, startup wiring and
+frontend bindings are subsequent integration work, not working features here.
 
 `packaging/udev-helper/helper.sh` is an **unconfigured release template**, not a
 bootstrap installer. Its public-key placeholder fails closed. The release
