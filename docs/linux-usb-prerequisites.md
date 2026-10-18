@@ -75,8 +75,8 @@ fails instead of falling back to an RC or `main`. It installs the AppImage under
 the current OS account's user-local data directory. Its optional udev flow is
 separate, requires explicit approval before `sudo`, and otherwise provides a
 manual fallback. The AppImage
-updater never elevates and never changes this udev policy; updates remain in
-the installed stable or RC channel.
+updater never elevates; optional authenticated policy application uses only the
+fixed installed helper. Updates remain in the installed stable or RC channel.
 
 ## One-time authenticated USB permissions setup
 
@@ -111,8 +111,9 @@ normal AppImage installation remains supported. Setup never changes the
 AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
-The desktop coordinator and fixed installed-helper executor are backend libraries;
-production composition and the combined update UI remain pending.
+The desktop now composes the authenticated coordinator and fixed installed-helper
+executor. The combined update UI and automatic startup check/notice remain T4 work;
+construction alone does not fetch releases, inspect installed files or authorize.
 
 ## Read-only policy library foundation
 
@@ -129,7 +130,9 @@ This stage is a read-only library foundation: on Linux,
 no-follow, nonblocking open and a descriptor regular-file check. It rejects
 final-component symlink/nonregular replacements independently of the initial
 inspection. No caller-selected installed path or environment override is exposed.
-There is no startup/UI integration or automatic helper installation yet. Explicit
+Startup now wires this fixed read-only source for explicit unified checks; the
+automatic startup check/notice and UI remain pending. There is no automatic helper
+installation. Explicit
 authenticated setup is described above; it preserves custom policies. Existing
 manual and normal AppImage installation paths remain available.
 
@@ -210,7 +213,18 @@ with a read-only installed source and `PolicyUpdateBackend`. Its `Check` must
 return only authenticated T3a candidates. Its `Apply` must independently validate
 the signed payload and installed policy under the installed helper lock; the
 coordinator's pre-apply inspection is not a replacement for that security check.
-No production backend is installed by this library slice.
+Production startup calls the trusted-Go `ConfigureAuthenticatedPolicyUpdates(service)`
+after the final `ConfigureUpdater` and before Wails service registration. It pairs
+the updater's exact concrete GitHub transport with `InstalledSource()` and
+`ApplyInstalledPolicy`; none of these capabilities are Service methods.
+
+An available AppImage uses its `VerifiedUpdate.Manifest()` for policy authentication,
+without selecting a second release. Only the no-newer sentinel permits a
+`CheckPolicyRelease` lookup for same-version policy availability. Failed app
+selection/authentication cannot independently authorize policy. Each recheck clears
+previous policy/wire authority. Apply compares the complete detached candidate,
+including history, revalidates the retained signature and passes the exact signed
+wire to the helper. Legacy AppImage checks do not fetch policy artifacts.
 
 `CheckUnifiedUpdates` returns display-only AppImage and policy availability and
 individual errors; it never authorizes or applies. `ApplyUnifiedUpdate` is the
@@ -233,8 +247,9 @@ policy write, AppImage replacement or relaunch. If cancellation follows a write,
 callers must not discard that result. This does not change legacy updater errors
 or relaunch behavior.
 The UI must display these individual outcomes rather than claim combined success.
-AppImage replacement remains user-local. Startup wiring and frontend bindings
-are subsequent integration work, not working features here.
+AppImage replacement remains user-local. Automatic startup checks, notices and
+frontend bindings are subsequent T4 lifecycle work. Merely constructing the
+backend does not prove a graphical authorization agent is available.
 
 ### Fixed desktop executor (trusted Go only)
 
@@ -271,8 +286,8 @@ directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when abs
 including after reboot. Concurrent creators validate the resulting objects;
 unsafe pre-existing objects are rejected, never repaired or followed. No boot
 service or tmpfiles configuration is required. Explicit bootstrap is available
-through the release installer; production desktop integration and the combined
-update UI are not implemented yet.
+through the release installer; production desktop composition is installed, but
+the combined update UI is not implemented yet.
 Do not execute the repository template with administrator privileges.
 
 ### Release staging
