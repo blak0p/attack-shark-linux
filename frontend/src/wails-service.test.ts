@@ -5,6 +5,8 @@ const bindings = vi.hoisted(() => ({
   StageMacroAssignmentWithMode: vi.fn(), StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearButtonMacroAssignment: vi.fn(),
   ClearMacroAssignment: vi.fn(), DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
   GetApplicationVersion: vi.fn(),
+  CheckUnifiedUpdates: vi.fn(),
+  ApplyUnifiedUpdate: vi.fn(),
   CheckForUpdate: vi.fn(),
   ApplyVerifiedUpdate: vi.fn(),
   GetSnapshot: vi.fn(),
@@ -61,6 +63,39 @@ it.each([CanonicalMacro, EmbeddedMacro])("binding models preserve keyboard keys 
 beforeEach(() => Object.values(bindings).forEach((binding) => binding.mockReset()));
 
 describe("desktopService", () => {
+  it("does not check or apply updates merely by constructing the adapter", () => {
+    for (const name of ["CheckUnifiedUpdates", "ApplyUnifiedUpdate", "CheckForUpdate", "ApplyVerifiedUpdate"] as const) {
+      expect(bindings[name]).not.toHaveBeenCalled();
+    }
+  });
+  it.each(["CheckUnifiedUpdates", "ApplyUnifiedUpdate"] as const)("delegates %s without inputs and preserves null, partial fields and rejections", async (name) => {
+    const result = { Version: "2.0.0", AppAvailable: true, AppInstalled: true,
+      AppError: "app error", PolicyState: "outdated", PolicyInstalled: false,
+      PolicyError: "policy denied", RelaunchError: "relaunch failed" };
+    bindings[name].mockResolvedValueOnce(null).mockResolvedValueOnce(result);
+    expect(await desktopService[name]!()).toBeNull();
+    expect(await desktopService[name]!()).toEqual(result);
+    expect(bindings[name].mock.calls).toEqual([[], []]);
+    expect(bindings.ApplyVerifiedUpdate).not.toHaveBeenCalled();
+    const failure = new Error("native failure");
+    bindings[name].mockRejectedValueOnce(failure);
+    await expect(desktopService[name]!()).rejects.toBe(failure);
+    expect(bindings[name].mock.calls).toEqual([[], [], []]);
+  });
+  it("preserves legacy update return values, zero arguments and rejections", async () => {
+    bindings.CheckForUpdate.mockResolvedValueOnce(null).mockResolvedValueOnce({ Version: "2.0.0" });
+    expect(await desktopService.CheckForUpdate!()).toBeNull();
+    expect(await desktopService.CheckForUpdate!()).toEqual({ Version: "2.0.0" });
+    bindings.ApplyVerifiedUpdate.mockResolvedValueOnce(undefined);
+    expect(await desktopService.ApplyVerifiedUpdate!()).toBeUndefined();
+    for (const name of ["CheckForUpdate", "ApplyVerifiedUpdate"] as const) {
+      const failure = new Error(name);
+      bindings[name].mockRejectedValueOnce(failure);
+      await expect(desktopService[name]!()).rejects.toBe(failure);
+      expect(bindings[name].mock.calls.every((args) => args.length === 0)).toBe(true);
+    }
+    expect(bindings.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+  });
   it("preserves opaque keyboard identity through all local CRUD boundaries with independent copies", async () => {
     const events = [{ type: "keyboard", action: "down", delay_ms: 123, key_code: " UnknownPhysicalKey " },
       { type: "keyboard", action: "up", delay_ms: 0, key_code: "KeyA" }];

@@ -724,6 +724,58 @@ export class Snapshot {
 export type StatusListener = any;
 
 /**
+ * UnifiedUpdateInfo contains display values only, not privileged inputs.
+ */
+export class UnifiedUpdateInfo {
+    "Version": string;
+    "AppAvailable": boolean;
+    "AppInstalled": boolean;
+    "AppError": string;
+    "PolicyState": string;
+    "PolicyInstalled": boolean;
+    "PolicyError": string;
+    "RelaunchError": string;
+
+    /** Creates a new UnifiedUpdateInfo instance. */
+    constructor($$source: Partial<UnifiedUpdateInfo> = {}) {
+        if (!("Version" in $$source)) {
+            this["Version"] = "";
+        }
+        if (!("AppAvailable" in $$source)) {
+            this["AppAvailable"] = false;
+        }
+        if (!("AppInstalled" in $$source)) {
+            this["AppInstalled"] = false;
+        }
+        if (!("AppError" in $$source)) {
+            this["AppError"] = "";
+        }
+        if (!("PolicyState" in $$source)) {
+            this["PolicyState"] = "";
+        }
+        if (!("PolicyInstalled" in $$source)) {
+            this["PolicyInstalled"] = false;
+        }
+        if (!("PolicyError" in $$source)) {
+            this["PolicyError"] = "";
+        }
+        if (!("RelaunchError" in $$source)) {
+            this["RelaunchError"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UnifiedUpdateInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UnifiedUpdateInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UnifiedUpdateInfo($$parsedSource as Partial<UnifiedUpdateInfo>);
+    }
+}
+
+/**
  * UpdateInfo is the display-only update contract exported to Wails bindings.
  */
 export class UpdateInfo {

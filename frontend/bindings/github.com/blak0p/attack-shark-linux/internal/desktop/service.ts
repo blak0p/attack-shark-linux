@@ -69,6 +69,16 @@ export function ApplyRemap(config: x6$0.RemapConfig): $CancellablePromise<$model
 }
 
 /**
+ * ApplyUnifiedUpdate is the single explicit approval action. Writes are not
+ * atomic: each completed operation is retained across failure and retry.
+ */
+export function ApplyUnifiedUpdate(): $CancellablePromise<$models.UnifiedUpdateInfo | null> {
+    return $Call.ByID(800862757).then(($result: any) => {
+        return $$createType7($result);
+    });
+}
+
+/**
  * ApplyVerifiedUpdate requires the prior explicit frontend approval action.
  */
 export function ApplyVerifiedUpdate(): $CancellablePromise<void> {
@@ -77,7 +87,7 @@ export function ApplyVerifiedUpdate(): $CancellablePromise<void> {
 
 export function AttachDebouncePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3627225259, load, save).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -86,7 +96,7 @@ export function AttachDebouncePersistence(load: any, save: any): $CancellablePro
  */
 export function AttachDevicePersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3887596840, load, save).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -95,7 +105,7 @@ export function AttachDevicePersistence(load: any, save: any): $CancellablePromi
  */
 export function AttachInventory(inventory: mouse$0.TargetedService | null): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3655060073, inventory).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -105,7 +115,7 @@ export function AttachInventory(inventory: mouse$0.TargetedService | null): $Can
  */
 export function AttachListener(listener: $models.StatusListener, events: $models.EventSink): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(3795100807, listener, events).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -114,7 +124,7 @@ export function AttachListener(listener: $models.StatusListener, events: $models
  */
 export function AttachMigrator(migrate: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(1213464496, migrate).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -124,13 +134,13 @@ export function AttachMigrator(migrate: any): $CancellablePromise<$models.Servic
  */
 export function AttachNormalSleepPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(789849878, load, save).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
 export function AttachPollingPersistence(load: any, save: any): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(46337553, load, save).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -139,7 +149,7 @@ export function AttachPollingPersistence(load: any, save: any): $CancellableProm
  */
 export function AttachResetRunner(runner: $models.resetRunner): $CancellablePromise<$models.Service | null> {
     return $Call.ByID(2710634656, runner).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -148,7 +158,17 @@ export function AttachResetRunner(runner: $models.resetRunner): $CancellableProm
  */
 export function CheckForUpdate(): $CancellablePromise<$models.UpdateInfo | null> {
     return $Call.ByID(3339219796).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType11($result);
+    });
+}
+
+/**
+ * CheckUnifiedUpdates only inspects; no authorization or apply callback runs.
+ * Checks and both old/new applies serialize on the same AppImage state lock.
+ */
+export function CheckUnifiedUpdates(): $CancellablePromise<$models.UnifiedUpdateInfo | null> {
+    return $Call.ByID(376062138).then(($result: any) => {
+        return $$createType7($result);
     });
 }
 
@@ -172,7 +192,7 @@ export function ClearMacroAssignment(): $CancellablePromise<$models.RemapSnapsho
 
 export function CreateMacro(name: string, events: macros$0.Event[]): $CancellablePromise<macros$0.Macro> {
     return $Call.ByID(4248872902, name, events).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -256,7 +276,7 @@ export function GetSnapshot(): $CancellablePromise<$models.Snapshot> {
  */
 export function ListMacros(): $CancellablePromise<macros$0.Macro[]> {
     return $Call.ByID(3745963423).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType13($result);
     });
 }
 
@@ -270,7 +290,7 @@ export function Quiesce(binding: $models.Binding): $CancellablePromise<void> {
 
 export function ReadMacro(id: string): $CancellablePromise<macros$0.Macro> {
     return $Call.ByID(3360424442, id).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -279,7 +299,7 @@ export function ReadMacro(id: string): $CancellablePromise<macros$0.Macro> {
  */
 export function RefreshInventory(): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(2420989727).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType14($result);
     });
 }
 
@@ -294,7 +314,7 @@ export function RefreshStatus(): $CancellablePromise<$models.Snapshot> {
  */
 export function ResetToFactory(): $CancellablePromise<$models.ResetResult> {
     return $Call.ByID(2708725118).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType15($result);
     });
 }
 
@@ -333,7 +353,7 @@ export function RetryRemapPersistence(): $CancellablePromise<$models.RemapSnapsh
  */
 export function SelectDevice(id: $models.DeviceID): $CancellablePromise<$models.Inventory> {
     return $Call.ByID(236647672, id).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType14($result);
     });
 }
 
@@ -410,7 +430,7 @@ export function StartListener(): $CancellablePromise<void> {
 
 export function UpdateMacro(id: string, name: string, events: macros$0.Event[]): $CancellablePromise<macros$0.Macro> {
     return $Call.ByID(3402186437, id, name, events).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -421,11 +441,13 @@ const $$createType2 = $models.LightingSnapshot.createFrom;
 const $$createType3 = $models.NormalSleepSnapshot.createFrom;
 const $$createType4 = $models.PollingSnapshot.createFrom;
 const $$createType5 = $models.RemapSnapshot.createFrom;
-const $$createType6 = $models.Service.createFrom;
+const $$createType6 = $models.UnifiedUpdateInfo.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = $models.UpdateInfo.createFrom;
+const $$createType8 = $models.Service.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = macros$0.Macro.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = $models.Inventory.createFrom;
-const $$createType13 = $models.ResetResult.createFrom;
+const $$createType10 = $models.UpdateInfo.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);
+const $$createType12 = macros$0.Macro.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = $models.Inventory.createFrom;
+const $$createType15 = $models.ResetResult.createFrom;
