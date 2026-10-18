@@ -111,8 +111,8 @@ normal AppImage installation remains supported. Setup never changes the
 AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
-The desktop coordinator is available as a backend library; installed-helper
-invocation, production composition and the combined update UI remain pending.
+The desktop coordinator and fixed installed-helper executor are backend libraries;
+production composition and the combined update UI remain pending.
 
 ## Read-only policy library foundation
 
@@ -233,8 +233,33 @@ policy write, AppImage replacement or relaunch. If cancellation follows a write,
 callers must not discard that result. This does not change legacy updater errors
 or relaunch behavior.
 The UI must display these individual outcomes rather than claim combined success.
-AppImage replacement remains user-local. OS authorization, startup wiring and
-frontend bindings are subsequent integration work, not working features here.
+AppImage replacement remains user-local. Startup wiring and frontend bindings
+are subsequent integration work, not working features here.
+
+### Fixed desktop executor (trusted Go only)
+
+`ApplyInstalledPolicy(ctx, authenticatedPolicy, exactSignedWire)` accepts only
+backend-authenticated candidates and bounded signed envelopes. It is not exposed
+on the Wails Service and does not select release keys. On Linux it validates
+root ownership, non-writable ancestors and regular executable leaves, then runs
+exactly `/usr/bin/pkexec --disable-internal-agent
+/usr/local/libexec/attack-shark-linux-udev-helper VERSION`, with the signed wire
+on stdin. A system graphical polkit agent must be available; there is no internal
+terminal password agent, sudo fallback, password collection or automatic retry.
+Missing/unsafe components require trusted `--setup-usb-permissions` setup and a
+distro-provided pkexec/polkit authentication agent; the app installs neither.
+
+There is at most one authorization invocation per call, a two-minute deadline,
+and 4 KiB retained per output stream. Child output is drained with bounded
+storage; inherited output pipes have a one-second wait bound after process exit.
+`current` succeeds without claiming a write; `installed` records a completed
+write even when reload/trigger fails, cancellation follows, or output overflows.
+Cancellation cannot prove nothing changed if the child died before reporting its
+write. Callers must preserve returned results alongside errors and inspect an
+uncertain outcome before any explicit retry. Non-Linux calls are unavailable
+without process or filesystem operations. The existing trusted-admin concurrency
+assumption still applies; these checks do not protect against arbitrary root
+writers replacing the executable.
 
 `packaging/udev-helper/helper.sh` is an **unconfigured release template**, not a
 bootstrap installer. Its public-key placeholder fails closed. The release
@@ -246,8 +271,8 @@ directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when abs
 including after reboot. Concurrent creators validate the resulting objects;
 unsafe pre-existing objects are rejected, never repaired or followed. No boot
 service or tmpfiles configuration is required. Explicit bootstrap is available
-through the release installer; desktop integration and its authorization UI
-are not implemented yet.
+through the release installer; production desktop integration and the combined
+update UI are not implemented yet.
 Do not execute the repository template with administrator privileges.
 
 ### Release staging
