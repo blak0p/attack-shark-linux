@@ -65,7 +65,24 @@ const readMacro = (id: string) => {
   if (!macro) throw new Error("Macro not found");
   return structuredClone(macro);
 };
+const updateScenario = new URLSearchParams(window.location.search).get("updates");
+const updateCalls: Array<{ operation: string; args: unknown[] }> = [];
+let updateAttempts = 0;
+const updateInfo = { Version: "2.0.0", AppAvailable: true, AppInstalled: false, AppError: "",
+  PolicyState: "outdated", PolicyInstalled: false, PolicyError: "", RelaunchError: "" };
 const service = {
+  CheckUnifiedUpdates: updateScenario ? async (...args: unknown[]) => {
+    updateCalls.push({ operation: "check", args });
+    return { ...updateInfo };
+  } : undefined,
+  ApplyUnifiedUpdate: updateScenario ? async (...args: unknown[]) => {
+    updateCalls.push({ operation: "apply", args });
+    updateAttempts++;
+    await new Promise(resolve => setTimeout(resolve, 150));
+    if (updateScenario === "denial" && updateAttempts === 1) return { ...updateInfo, PolicyError: "authorization denied", AppError: "download failed" };
+    if (updateScenario === "partial") return { ...updateInfo, AppInstalled: true, PolicyInstalled: true, PolicyError: "reload failed", RelaunchError: "launch failed" };
+    return { ...updateInfo, AppInstalled: true, PolicyInstalled: true };
+  } : undefined,
   ListMacros: async () => [...macros.values()].map((macro) => structuredClone(macro)),
   ReadMacro: async (id: string) => readMacro(id),
   CreateMacro: async (name: string, events: MacroEvent[]) => {
@@ -220,7 +237,7 @@ const guarded = new Proxy(service, {
     return operation;
   },
 }) as unknown as DesktopService;
-Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {
+Object.assign(window, { __updatesTest: { calls: updateCalls }, __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
   dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });

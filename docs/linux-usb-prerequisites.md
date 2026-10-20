@@ -111,9 +111,11 @@ normal AppImage installation remains supported. Setup never changes the
 AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
-The desktop now composes the authenticated coordinator and fixed installed-helper
-executor. The combined update UI and automatic startup check/notice remain T4 work;
-construction alone does not fetch releases, inspect installed files or authorize.
+The desktop checks automatically at startup and shows one combined AppImage/USB
+notice. **Review updates** opens **Device → Updates** without applying anything;
+**Apply updates** is the single explicit approval action. Construction alone does
+not fetch releases or authorize. The UI never bootstraps this helper or collects
+a password; initial trusted setup above remains separate.
 
 ## Read-only policy library foundation
 
@@ -130,9 +132,8 @@ This stage is a read-only library foundation: on Linux,
 no-follow, nonblocking open and a descriptor regular-file check. It rejects
 final-component symlink/nonregular replacements independently of the initial
 inspection. No caller-selected installed path or environment override is exposed.
-Startup now wires this fixed read-only source for explicit unified checks; the
-automatic startup check/notice and UI remain pending. There is no automatic helper
-installation. Explicit
+Startup wires this fixed read-only source for automatic unified inspection and
+explicit rechecks in Device → Updates. There is no automatic helper installation. Explicit
 authenticated setup is described above; it preserves custom policies. Existing
 manual and normal AppImage installation paths remain available.
 
@@ -247,9 +248,14 @@ policy write, AppImage replacement or relaunch. If cancellation follows a write,
 callers must not discard that result. This does not change legacy updater errors
 or relaunch behavior.
 The UI must display these individual outcomes rather than claim combined success.
-AppImage replacement remains user-local. Automatic startup checks, notices and
-frontend bindings are subsequent T4 lifecycle work. Merely constructing the
-backend does not prove a graphical authorization agent is available.
+AppImage replacement remains user-local. Device → Updates displays independent
+app, policy and relaunch errors. A policy write is not proof of successful reload,
+and AppImage replacement is not proof of relaunch. Only missing/outdated official
+policies are eligible; current, custom, error and unavailable states never solicit
+a policy overwrite. Merely constructing the backend does not prove a graphical
+authorization agent is available. For read-only user-led validation, open the panel,
+record its states, and use Check for updates without approving Apply updates or
+running setup. Any host-changing validation requires separate explicit approval.
 
 ### Fixed desktop executor (trusted Go only)
 
@@ -286,8 +292,8 @@ directory (root-owned 0700) and regular `helper.lock` (root-owned 0600) when abs
 including after reboot. Concurrent creators validate the resulting objects;
 unsafe pre-existing objects are rejected, never repaired or followed. No boot
 service or tmpfiles configuration is required. Explicit bootstrap is available
-through the release installer; production desktop composition is installed, but
-the combined update UI is not implemented yet.
+through the release installer; the combined desktop update UI uses only the
+already-installed helper and links to this separate trusted setup guidance.
 Do not execute the repository template with administrator privileges.
 
 ### Release staging

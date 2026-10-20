@@ -64,7 +64,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 
 @media (max-width: 480px) {
-  .update-banner {
+  .unified-updates { min-width: 0; overflow-wrap: anywhere; }
+ .update-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+ .unified-updates h3 { margin-top: 16px; }
+
+ .update-banner {
     left: 12px;
     width: auto;
   }

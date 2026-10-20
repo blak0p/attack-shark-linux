@@ -102,15 +102,21 @@ leaves the rule untouched and prints manual instructions. The installer selects
 the newest valid signed release in the chosen channel; no version needs to be
 hardcoded. Obtain `install.sh` only from a trusted release asset. The AppImage
 and absolute desktop entry are installed under the current OS account's
-user-local data directories. Once the rule is installed, later AppImage updates
-do not ask again or change udev; repeat installs may omit `--install-udev`.
+user-local data directories. This legacy/manual rule installation does not install
+the authenticated update helper; repeat installs may omit `--install-udev`.
 
 The installed AppImage checks for a newer signed release and requires explicit
 user approval before replacement. An RC installation updates only to a newer
 signed RC; a stable installation updates only to a newer signed stable release.
-Updates are confined to
-`~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage`; the updater
-never elevates and never changes udev rules. The signed RC.4-to-RC.5 rehearsal
+AppImage replacement is confined to
+`~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage` and never elevates.
+Startup checks produce one combined notice for AppImage and USB permissions.
+Review **Device → Updates**, then explicitly **Apply updates**. Only missing or
+recognized outdated official rules are eligible; custom rules are preserved.
+USB policy updates use one system authorization through a separately installed,
+authenticated helper; the app never collects a password or bootstraps the helper.
+See [trusted initial setup](docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup)
+and [update outcomes](docs/user-guide.md#4-updates). The signed RC.4-to-RC.5 rehearsal
 verified AppImage replacement in an isolated account; the maintainer observed
 the in-app update card and relaunch. Real-device installation requires its own
 udev authorization and validation.
