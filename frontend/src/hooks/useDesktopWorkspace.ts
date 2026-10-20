@@ -19,6 +19,41 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const [update, setUpdate] = useState<WorkspaceModel["update"]>();
   const [updateApplying, setUpdateApplying] = useState(false);
   const [updateError, setUpdateError] = useState("");
+  const [unifiedUpdate, setUnifiedUpdate] = useState<WorkspaceModel["unifiedUpdate"]>();
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const updateScope = useRef({ service, active: false, busy: false });
+  const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
+
+  // App-scoped: device selection and ordinary workspace renders do not invalidate approval.
+  const runUpdate = (kind: "check" | "apply") => {
+    const scope = updateScope.current;
+    if (!scope.active || scope.service !== service || scope.busy) return;
+    const request = kind === "check"
+      ? unifiedUpdates ? () => service.CheckUnifiedUpdates!() : service.CheckForUpdate ? () => service.CheckForUpdate!() : undefined
+      : unifiedUpdates ? () => service.ApplyUnifiedUpdate!() : service.ApplyVerifiedUpdate ? () => service.ApplyVerifiedUpdate!() : undefined;
+    if (!request) return;
+    scope.busy = true;
+    const current = () => scope.active && updateScope.current === scope && scope.service === service;
+    if (kind === "check") setUpdateChecking(true);
+    else setUpdateApplying(true);
+    setUpdateError("");
+    void (async () => current() ? request() : undefined)().then((info) => {
+      if (!current()) return;
+      if (unifiedUpdates) {
+        if (info) setUnifiedUpdate(info as NonNullable<WorkspaceModel["unifiedUpdate"]>);
+        else setUpdateError("No update result returned.");
+      } else if (kind === "check" && info) setUpdate(info);
+    }).catch((error: unknown) => {
+      if (!current()) return;
+      // A rejected apply does not establish whether a write occurred; retain known facts.
+      if (unifiedUpdates || kind === "apply") setUpdateError(error instanceof Error ? error.message : kind === "apply" ? "Unable to restart" : "Unable to check updates.");
+    }).finally(() => {
+      if (!current()) return;
+      scope.busy = false;
+      setUpdateChecking(false);
+      setUpdateApplying(false);
+    });
+  };
   const selected = useRef<Binding | null>(null);
   const [remapBusy, setRemapBusy] = useState(false);
   const [remapError, setRemapError] = useState("");
@@ -118,9 +153,15 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     return () => { cancelled = true; };
   }, [service]);
   useEffect(() => {
-    let cancelled = false;
-    if (service.CheckForUpdate) void service.CheckForUpdate().then((available) => { if (!cancelled && available) setUpdate(available); }).catch(() => {});
-    return () => { cancelled = true; };
+    const scope = { service, active: true, busy: false };
+    updateScope.current = scope;
+    setUnifiedUpdate(undefined);
+    setUpdate(undefined);
+    setUpdateError("");
+    setUpdateApplying(false);
+    setUpdateChecking(false);
+    runUpdate("check");
+    return () => { scope.active = false; };
   }, [service]);
   useEffect(() => service.OnStatusEvent((event) => {
     setSnapshot((current) => current && receivesEvent(selected.current, event) ? applyStatusEvent(current, event) : current);
@@ -159,11 +200,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     });
   }));
   const actions: WorkspaceActions = {
-    applyUpdate: () => {
-      setUpdateApplying(true); setUpdateError("");
-      if (!service.ApplyVerifiedUpdate) { setUpdateApplying(false); return; }
-      void service.ApplyVerifiedUpdate().catch((error: unknown) => setUpdateError(error instanceof Error ? error.message : "Unable to restart")).finally(() => setUpdateApplying(false));
-    },
+    checkUpdates: () => runUpdate("check"),
+    applyUpdate: () => runUpdate("apply"),
     selectDevice: (serial) => {
       const device = inventory?.Devices.find((candidate) => candidate.ID.Serial === serial);
       if (device) {
@@ -296,7 +334,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     retryPersistence: () => void runAutomaticApply(() => service.RetryPersistence().then(setSnapshot)),
     retryPollingPersistence: () => void runAutomaticApply(() => service.RetryPollingPersistence().then(setPolling)),
   };
-		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, update, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0, remapBusy, remapError }, actions };
+		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, update, unifiedUpdate, updateChecking, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0, remapBusy, remapError }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {
