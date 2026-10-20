@@ -5,11 +5,68 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/udevauth"
 )
+
+func TestStageCLIParseErrors(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "release")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build release: %v\n%s", err, output)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"unknown flag", []string{"-unknown"}},
+		{"missing tag value", []string{"-tag"}},
+		{"short help", []string{"-h"}},
+		{"long help", []string{"--help"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			out := filepath.Join(cwd, "output")
+			if err := os.Mkdir(out, 0700); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{filepath.Join(cwd, "sentinel"), filepath.Join(out, "sentinel")} {
+				if err := os.WriteFile(path, []byte("unchanged"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := append([]string{"stage", "-output-dir", out}, tc.args...)
+			command := exec.Command(binary, args...)
+			command.Dir = cwd
+			var stdout, stderr bytes.Buffer
+			command.Stdout, command.Stderr = &stdout, &stderr
+			err := command.Run()
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+				t.Errorf("exit = %v, want 1", err)
+			}
+			if stdout.String() != "" || stderr.String() != "release: invalid stage arguments\n" {
+				t.Errorf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
+			}
+			for _, dir := range []string{cwd, out} {
+				entries, err := os.ReadDir(dir)
+				wantCount := 1
+				if dir == cwd {
+					wantCount = 2
+				}
+				if err != nil || len(entries) != wantCount {
+					t.Errorf("entries in %s = %v, %v", dir, entries, err)
+				}
+				got, err := os.ReadFile(filepath.Join(dir, "sentinel"))
+				if err != nil || string(got) != "unchanged" {
+					t.Errorf("sentinel = %q, %v", got, err)
+				}
+			}
+		})
+	}
+}
 
 func TestStageAuthenticatedArtifacts(t *testing.T) {
 	template, err := os.ReadFile("../../packaging/udev-helper/helper.sh")

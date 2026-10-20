@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,16 +41,13 @@ func main() {
 		fmt.Println(publicKey)
 	case "stage":
 		flags := flag.NewFlagSet("stage", flag.ContinueOnError)
-		flags.SetOutput(os.Stderr)
+		flags.SetOutput(io.Discard)
 		tag := flags.String("tag", "", "annotated release tag")
 		appImage := flags.String("appimage", "", "canonical AppImage path")
 		outputDir := flags.String("output-dir", "", "release artifact directory")
 		url := flags.String("url", "", "HTTPS release URL")
 		helper := flags.String("helper-template", "", "optional helper template: stage key-pinned helper and separately signed helper/policy artifacts")
 		if err := flags.Parse(os.Args[2:]); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return
-			}
 			fatal(errors.New("invalid stage arguments"))
 		}
 		if err := validateAnnotatedTag(*tag, "."); err != nil {
