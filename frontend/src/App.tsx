@@ -19,7 +19,7 @@ import { ResetPanel } from "./components/panels/ResetPanel";
 import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
 import { WorkspaceFeedback } from "./components/WorkspaceFeedback";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { UnifiedUpdateNotice, UnifiedUpdates } from "./components/UnifiedUpdates";
+import { UnifiedUpdates } from "./components/UnifiedUpdates";
 export type {
   ConfigurationEvent,
   DesktopService,
@@ -102,10 +102,6 @@ export function App({ service }: { service: DesktopService }) {
 
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
   const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
-  const reviewUpdates = () => {
-    setActiveView("device");
-    requestAnimationFrame(() => document.getElementById("updates-title")?.focus());
-  };
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
   const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
     snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
@@ -215,7 +211,10 @@ export function App({ service }: { service: DesktopService }) {
     >
       {macroWorkspace}
       {unifiedUpdates
-        ? <UnifiedUpdateNotice info={model.unifiedUpdate} error={updateError} onReview={reviewUpdates} />
+        ? <section className="update-window" aria-label="Updates">
+            <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
+              applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />
+          </section>
         : update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
@@ -468,9 +467,6 @@ export function App({ service }: { service: DesktopService }) {
               Receiver detected, configuration unavailable.
             </p>
           )}
-
-          {unifiedUpdates && <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
-            applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />}
 
           <ResetPanel
             confirmation={resetConfirmation}

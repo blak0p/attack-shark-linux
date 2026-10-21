@@ -1214,16 +1214,19 @@ const unifiedInfo = (overrides: Partial<import("./desktop-contract").UnifiedUpda
   PolicyState: "outdated", PolicyInstalled: false, PolicyError: "", RelaunchError: "", ...overrides,
 });
 
-it("reviews one combined startup notice in Device before explicit approval", async () => {
+it("applies directly in one update window without navigating and retains progress and partial outcomes", async () => {
   const pending = deferred<ReturnType<typeof unifiedInfo>>();
   const service = serviceFor(snapshot(), {
     CheckUnifiedUpdates: vi.fn().mockResolvedValue(unifiedInfo()),
     ApplyUnifiedUpdate: vi.fn().mockReturnValue(pending.promise), CheckForUpdate: vi.fn(),
   });
   render(<App service={service} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Review updates" }));
-  expect(screen.getByRole("region", { name: "Device" })).toHaveAttribute("data-active", "true");
-  expect(document.querySelectorAll(".update-banner")).toHaveLength(1);
+  const window = await screen.findByRole("region", { name: "Updates" });
+  expect(within(window).getByRole("button", { name: "Apply updates" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Review updates" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
+  expect(within(screen.getByRole("region", { name: "Device" })).queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+  expect(document.querySelectorAll(".update-window")).toHaveLength(1);
   expect(service.CheckUnifiedUpdates).toHaveBeenCalledExactlyOnceWith();
   expect(service.CheckForUpdate).not.toHaveBeenCalled();
   expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
@@ -1232,11 +1235,18 @@ it("reviews one combined startup notice in Device before explicit approval", asy
   expect(screen.getByRole("button", { name: "Apply updates" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Check for updates" })).toBeDisabled();
   expect(document.querySelectorAll(".pending-spinner")).toHaveLength(1);
+  expect(within(window).getByRole("status")).toHaveTextContent("Applying updates…");
+  fireEvent.click(within(window).getByRole("button", { name: "Apply updates" }));
+  expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(1);
   await act(async () => pending.resolve(unifiedInfo({ AppInstalled: true, PolicyInstalled: true, PolicyError: "reload failed", RelaunchError: "launch failed" })));
   expect(screen.getByText("USB policy written; reload or activation failed.")).toBeInTheDocument();
   expect(screen.getByText("AppImage replaced; relaunch failed.")).toBeInTheDocument();
   expect(screen.getByText("USB permissions: reload failed")).toBeInTheDocument();
-  expect(screen.getByText("Relaunch: launch failed")).toBeInTheDocument();
+  expect(within(window).getByText("Relaunch: launch failed")).toBeInTheDocument();
+  expect(within(window).getByRole("button", { name: "Relaunch app" })).toBeEnabled();
+  fireEvent.click(within(window).getByRole("button", { name: "Relaunch app" }));
+  await waitFor(() => expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
 });
 
 it.each([
@@ -1274,8 +1284,9 @@ it("retains denial and independent errors until an explicit retry", async () => 
   });
   render(<App service={service} />);
   fireEvent.click(await screen.findByRole("button", { name: "Apply updates" }));
-  expect(await screen.findByText("AppImage: download failed")).toBeInTheDocument();
-  expect(screen.getByText("USB permissions: authorization denied; run --setup-usb-permissions")).toBeInTheDocument();
+  const window = screen.getByRole("region", { name: "Updates" });
+  expect(await within(window).findByText("AppImage: download failed")).toBeInTheDocument();
+  expect(within(window).getByText("USB permissions: authorization denied; run --setup-usb-permissions")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Trusted USB permissions setup guidance" })).toHaveAttribute("href", "https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup");
   expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Apply updates" }));

@@ -14,23 +14,15 @@ const policyEligible = (info: UnifiedUpdateInfo) => !info.PolicyInstalled &&
 const actionable = (info: UnifiedUpdateInfo) => policyEligible(info) ||
   (info.AppAvailable && !info.AppInstalled) || info.AppInstalled;
 
-export function UnifiedUpdateNotice({ info, error, onReview }: {
-  info?: UnifiedUpdateInfo; error: string; onReview(): void;
-}) {
-  if (!error && (!info || (!actionable(info) && !info.AppError && !info.PolicyError && !info.RelaunchError))) return null;
-  return <aside className="update-banner" role="status" aria-live="polite">
-    <span>AppImage and USB permissions: review update status.</span>
-    <button type="button" className="button" onClick={onReview}>Review updates</button>
-  </aside>;
-}
-
 export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApply }: {
   info?: UnifiedUpdateInfo; checking: boolean; applying: boolean; error: string;
   onCheck(): void; onApply(): void;
 }) {
   return <article className="card unified-updates" aria-labelledby="updates-title">
     <h2 id="updates-title" tabIndex={-1}>Updates</h2>
+    <p>AppImage and USB permissions</p>
     {checking && <p role="status">Checking for updates…</p>}
+    {applying && <p role="status">Applying updates…</p>}
     {!info && !checking && <p>Update status is unknown. Check before applying.</p>}
     {error && <p role="alert">Update request failed: {error}</p>}
     {info && <>

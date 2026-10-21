@@ -112,7 +112,9 @@ AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
 The desktop checks automatically at startup and shows one combined AppImage/USB
-notice. **Review updates** opens **Device → Updates** without applying anything;
+Updates window in the upper right. Check, apply, progress, individual errors and
+explicit **Relaunch app** are all available there without Device navigation. The
+window scrolls when needed; **Check for updates** never applies anything.
 **Apply updates** is the single explicit approval action. Construction alone does
 not fetch releases or authorize. The UI never bootstraps this helper or collects
 a password; initial trusted setup above remains separate.
@@ -133,7 +135,7 @@ no-follow, nonblocking open and a descriptor regular-file check. It rejects
 final-component symlink/nonregular replacements independently of the initial
 inspection. No caller-selected installed path or environment override is exposed.
 Startup wires this fixed read-only source for automatic unified inspection and
-explicit rechecks in Device → Updates. There is no automatic helper installation. Explicit
+explicit rechecks in the upper-right Updates window. There is no automatic helper installation. Explicit
 authenticated setup is described above; it preserves custom policies. Existing
 manual and normal AppImage installation paths remain available.
 
@@ -248,7 +250,7 @@ policy write, AppImage replacement or relaunch. If cancellation follows a write,
 callers must not discard that result. This does not change legacy updater errors
 or relaunch behavior.
 The UI must display these individual outcomes rather than claim combined success.
-AppImage replacement remains user-local. Device → Updates displays independent
+AppImage replacement remains user-local. The upper-right Updates window displays independent
 app, policy and relaunch errors. A policy write is not proof of successful reload,
 and AppImage replacement is not proof of relaunch. Only missing/outdated official
 policies are eligible; current, custom, error and unavailable states never solicit
