@@ -1109,7 +1109,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
     await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Apply lighting" })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied");
+    await waitFor(() => expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied"));
   });
 
   it.each([
