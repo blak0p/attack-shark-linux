@@ -25,6 +25,7 @@ type updateState struct {
 	apply               func(context.Context, *update.VerifiedUpdate, bool) error
 	relaunch            func() error
 	replacementComplete bool
+	unified             *unifiedUpdateState
 }
 
 // ConfigureUpdater composes private updater state into a desktop service before
@@ -52,7 +53,15 @@ func (s *Service) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	s.mu.Lock()
 	state := s.update
 	s.mu.Unlock()
-	if state == nil || state.check == nil {
+	if state == nil {
+		return nil, nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.unified != nil {
+		state.unified.checked = false
+	}
+	if state.check == nil {
 		return nil, nil
 	}
 	bounded, cancel := context.WithTimeout(ctx, updateOperationTimeout)
@@ -64,9 +73,7 @@ func (s *Service) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	state.mu.Lock()
 	state.verified = verified
-	state.mu.Unlock()
 	return &UpdateInfo{Version: verified.Release.Version}, nil
 }
 
@@ -80,6 +87,9 @@ func (s *Service) ApplyVerifiedUpdate(ctx context.Context) error {
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	if state.unified != nil {
+		state.unified.checked = false
+	}
 	if !state.replacementComplete {
 		if state.apply == nil {
 			return errors.New("updates are unavailable")

@@ -73,6 +73,9 @@ func TestReleaseWorkflowEnforcesCanonicalReleasePolicy(t *testing.T) {
 		"cmd/x6configurator/build/release/update-manifest.json",
 		"cmd/x6configurator/build/release/install.sh",
 		"packaging/udev/60-attack-shark-x6-hidraw.rules",
+		"cmd/x6configurator/build/release/attack-shark-linux-udev-helper",
+		"cmd/x6configurator/build/release/udev-helper-manifest.txt",
+		"cmd/x6configurator/build/release/udev-policy.txt",
 	}
 	assets := releaseAssetArguments(release)
 	if !hasExactReleaseAssets(assets, expectedAssets) {

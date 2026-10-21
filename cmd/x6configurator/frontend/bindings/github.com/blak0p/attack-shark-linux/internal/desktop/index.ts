@@ -24,6 +24,7 @@ export {
     ResetResult,
     Service,
     Snapshot,
+    UnifiedUpdateInfo,
     UpdateInfo
 } from "./models.js";
 

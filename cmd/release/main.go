@@ -46,13 +46,14 @@ func main() {
 		appImage := flags.String("appimage", "", "canonical AppImage path")
 		outputDir := flags.String("output-dir", "", "release artifact directory")
 		url := flags.String("url", "", "HTTPS release URL")
+		helper := flags.String("helper-template", "", "optional helper template: stage key-pinned helper and separately signed helper/policy artifacts")
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			fatal(errors.New("invalid stage arguments"))
 		}
 		if err := validateAnnotatedTag(*tag, "."); err != nil {
 			fatal(err)
 		}
-		if err := stage(*tag, *appImage, *outputDir, *url, os.Getenv(signingSeedEnv)); err != nil {
+		if err := stageWithHelper(*tag, *appImage, *outputDir, *url, os.Getenv(signingSeedEnv), *helper); err != nil {
 			fatal(err)
 		}
 	default:

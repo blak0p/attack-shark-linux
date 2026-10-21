@@ -126,8 +126,23 @@ func startWails() error {
 			return err
 		}
 	}
+	// The relaunch closure is invoked only by explicit apply, after app exists.
+	// Complete both configurations before NewService can expose the service.
+	var app *application.App
+	if updater != nil {
+		desktop.ConfigureUpdater(service, updater, func() error {
+			if err := launchInstalledAppImage(); err != nil {
+				return err
+			}
+			app.Quit()
+			return nil
+		})
+		if err := desktop.ConfigureAuthenticatedPolicyUpdates(service); err != nil {
+			return err
+		}
+	}
 	listenCtx, stopListening := context.WithCancel(context.Background())
-	app := application.New(application.Options{
+	app = application.New(application.Options{
 		Name: "Attack Shark X6 Configurator",
 		OnShutdown: func() {
 			stopListening()
@@ -140,15 +155,6 @@ func startWails() error {
 		},
 	})
 
-	if updater != nil {
-		desktop.ConfigureUpdater(service, updater, func() error {
-			if err := launchInstalledAppImage(); err != nil {
-				return err
-			}
-			app.Quit()
-			return nil
-		})
-	}
 	service.AttachListener(passive, wailsEventSink{app: app})
 	service.StartListener(listenCtx)
 

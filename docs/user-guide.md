@@ -216,6 +216,37 @@ Only after all four lanes acknowledge are stale local profiles cleared and the d
 
 ---
 
+### 4. Updates
+
+Startup checks AppImage and USB permissions together. The upper-right **Updates**
+window contains the complete flow: **Check for updates**, **Apply updates**, progress,
+individual errors, and **Relaunch app**. No Device navigation is needed. The window
+scrolls on smaller screens to keep its controls reachable. Checking never applies
+anything; **Check for updates** retries inspection explicitly. Pending, unavailable
+and failed checks are not proof that USB permissions are current.
+
+**Apply updates** approves the unfinished eligible operations together. Missing or
+recognized official outdated USB rules use one system authorization dialog; custom
+rules are preserved and current rules are not overwritten. The app never collects
+a password. AppImage replacement remains user-local. Older backends retain the
+legacy **Update and restart** banner.
+
+Outcomes are independent: a written policy can still have a reload/activation
+error, and a replaced AppImage does not prove it relaunched. Inspect each displayed
+error before retrying. Explicit retries do not repeat completed writes; **Relaunch
+app** requests restart while keeping any policy error visible. Reconnect the mouse
+if needed. Missing helper or authorization-agent errors require the separate
+[trusted setup procedure](linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup),
+not running the app as root. The UI does not run that procedure.
+
+**Safe user-led validation before installation:** use the upper-right Updates window, record the
+app version and policy status, and check that reviewing/checking causes no system
+authorization or apply. Do not click Apply updates or run setup until you choose to
+authorize host changes. After a separately authorized update, record individual
+outcomes and reconnect/test the mouse; do not treat a reload error as success.
+
+---
+
 ## Emergency Recovery
 
 If an applied button remapping disables left-click or renders the mouse unnavigable in graphical environments, you do not need the GUI to recover. Attack Shark Linux includes a headless, command-line recovery tool.

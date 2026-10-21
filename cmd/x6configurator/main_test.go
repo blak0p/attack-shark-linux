@@ -117,6 +117,34 @@ func TestReleaseUpdaterRequiresInstallerManagedRuntimeAppImageIdentity(t *testin
 	}
 }
 
+// Structural startup proof avoids starting Wails, device discovery or polkit.
+func TestAuthenticatedStartupConfigurationOrder(t *testing.T) {
+	contents, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, startup, ok := strings.Cut(string(contents), "func startWails() error {")
+	if !ok {
+		t.Fatal("missing startup")
+	}
+	startup, _, _ = strings.Cut(startup, "\nvar (")
+	lastUpdater := strings.LastIndex(startup, "desktop.ConfigureUpdater(")
+	unified := strings.Index(startup, "desktop.ConfigureAuthenticatedPolicyUpdates(service)")
+	registration := strings.Index(startup, "application.NewService(service)")
+	run := strings.Index(startup, "app.Run()")
+	if lastUpdater < 0 || unified <= lastUpdater || registration <= unified || run <= registration {
+		t.Fatal("unified configuration must survive final updater replacement and precede exposure")
+	}
+	for _, forbidden := range []string{"CheckUnifiedUpdates(", "ApplyInstalledPolicy(", "go func("} {
+		if strings.Contains(startup, forbidden) {
+			t.Fatalf("startup must not fetch or authorize: %s", forbidden)
+		}
+	}
+	if strings.Count(startup, "launchInstalledAppImage()") != 1 {
+		t.Fatal("preserve the sole explicit relaunch callback")
+	}
+}
+
 func TestEmbeddedFrontendServesBuiltRuntimeEntry(t *testing.T) {
 	index, err := fs.ReadFile(assets, "frontend/dist/index.html")
 	if err != nil {

@@ -71,6 +71,8 @@ export const desktopService: DesktopService = {
   UpdateMacro: async (id, name, events) => localMacro(await bindings.UpdateMacro(id, name, bindingEvents(events))),
   DeleteMacro: bindings.DeleteMacro,
   GetApplicationVersion: bindings.GetApplicationVersion,
+  CheckUnifiedUpdates: bindings.CheckUnifiedUpdates,
+  ApplyUnifiedUpdate: bindings.ApplyUnifiedUpdate,
   CheckForUpdate: bindings.CheckForUpdate as DesktopService["CheckForUpdate"],
   ApplyVerifiedUpdate: bindings.ApplyVerifiedUpdate as DesktopService["ApplyVerifiedUpdate"],
   GetSnapshot: bindings.GetSnapshot,

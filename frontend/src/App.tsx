@@ -19,6 +19,7 @@ import { ResetPanel } from "./components/panels/ResetPanel";
 import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
 import { WorkspaceFeedback } from "./components/WorkspaceFeedback";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { UnifiedUpdates } from "./components/UnifiedUpdates";
 export type {
   ConfigurationEvent,
   DesktopService,
@@ -100,6 +101,7 @@ export function App({ service }: { service: DesktopService }) {
   } = model;
 
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
+  const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
   const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
     snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
@@ -208,7 +210,12 @@ export function App({ service }: { service: DesktopService }) {
       connectionStatus={connectionStatusElement}
     >
       {macroWorkspace}
-      {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
+      {unifiedUpdates
+        ? <section className="update-window" aria-label="Updates">
+            <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
+              applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />
+          </section>
+        : update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
         id="performance"
