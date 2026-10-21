@@ -169,10 +169,12 @@ def verify(data, version, work):
         reject()
     envelope(data['udev-policy.txt'], b'attack-shark-udev-policy-v1', version, work)
 
-def safe(path, directory=False):
-    meta = os.lstat(path)
+def safe_meta(meta, directory=False):
     expected = stat.S_ISDIR if directory else stat.S_ISREG
     return expected(meta.st_mode) and meta.st_uid == ROOT_UID and not meta.st_mode & 0o022
+
+def safe(path, directory=False):
+    return safe_meta(os.lstat(path), directory)
 
 def parents(paths, create=False):
     for path in paths:
@@ -181,6 +183,19 @@ def parents(paths, create=False):
                 os.mkdir(path, 0o755)
             except FileExistsError:
                 pass
+            else:
+                # Only our successful mkdir permits a mode change. Keep the
+                # private umask; existing paths and race winners stay untouched.
+                fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                try:
+                    if not safe_meta(os.fstat(fd), True):
+                        reject('unsafe parent')
+                    os.fchmod(fd, 0o755)
+                    meta = os.fstat(fd)
+                    if not safe_meta(meta, True) or stat.S_IMODE(meta.st_mode) != 0o755:
+                        reject('unsafe parent')
+                finally:
+                    os.close(fd)
         if not safe(path, True):
             reject('unsafe parent')
 

@@ -103,8 +103,11 @@ Setup verifies the selected release and helper/policy signatures before asking
 for authorization. The fixed bootstrap program then copies bounded regular files
 without following final symlinks, verifies that root-private copy again, and
 installs only the authenticated helper at its canonical root-owned path. The
-helper validates and applies the signed policy independently. Custom and
-static-group rules are preserved, not overwritten. There is no daemon.
+helper validates and applies the signed policy independently. Newly created
+root-owned public helper parent directories are set to `0755`, even under the
+bootstrap's private `077` umask. Existing directory modes are never changed;
+private staging and runtime directories remain private. Custom and static-group
+rules are preserved, not overwritten. There is no daemon.
 
 Older releases without the three authentication assets cannot perform setup;
 normal AppImage installation remains supported. Setup never changes the

@@ -337,7 +337,7 @@ func runUSBSetup(t *testing.T, f usbSetupFixture, args ...string) (string, strin
 }
 
 func TestInstallerUSBSetup(t *testing.T) {
-	for _, name := range []string{"valid", "beta", "denied", "missing-python", "old-release", "wrong-key", "wrong-version", "wrong-digest", "policy-key", "policy-digest", "domain", "extra-field", "oversize", "root-tamper", "root-symlink", "root-fifo", "root-policy", "unsafe-parent", "unsafe-helper", "custom", "rule-symlink", "reload-failure"} {
+	for _, name := range []string{"valid", "beta", "existing-private-parents", "denied", "missing-python", "old-release", "wrong-key", "wrong-version", "wrong-digest", "policy-key", "policy-digest", "domain", "extra-field", "oversize", "root-tamper", "root-symlink", "root-fifo", "root-policy", "unsafe-parent", "unsafe-helper", "custom", "rule-symlink", "reload-failure"} {
 		t.Run(name, func(t *testing.T) {
 			tag := "v1.2.3"
 			args := []string{"--setup-usb-permissions"}
@@ -349,7 +349,12 @@ func TestInstallerUSBSetup(t *testing.T) {
 			wantOut, wantErr, wantCode := "", setupPreFailure, 1
 			authorized, installed, policyInstalled := false, false, false
 			switch name {
-			case "valid", "beta":
+			case "valid", "beta", "existing-private-parents":
+				if name == "existing-private-parents" {
+					if err := os.MkdirAll(filepath.Dir(f.helper), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
 				authorized, installed, policyInstalled = true, true, true
 				wantOut = "helper-installed\ninstalled\nUSB permissions setup complete.\n"
 				wantErr = setupApproval
@@ -495,6 +500,29 @@ func TestInstallerUSBSetup(t *testing.T) {
 			}
 			if string(downloads) != expectedDownloads {
 				t.Errorf("downloads=%q want %q", downloads, expectedDownloads)
+			}
+			if name == "valid" || name == "beta" || name == "existing-private-parents" {
+				// Setup internally uses umask 077 regardless of the caller's umask.
+				// Only newly created public helper ancestors become traversable.
+				wantMode := os.FileMode(0755)
+				if name == "existing-private-parents" {
+					wantMode = 0700
+				}
+				for _, relative := range []string{"usr", "usr/local", "usr/local/libexec"} {
+					info, err := os.Lstat(filepath.Join(f.root, relative))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !info.IsDir() || info.Mode().Perm() != wantMode || info.Sys().(*syscall.Stat_t).Uid != uint32(os.Getuid()) {
+						t.Errorf("%s ownership/mode: %v; want directory %04o", relative, info, wantMode)
+					}
+				}
+				for _, relative := range []string{"run", "home"} {
+					info, err := os.Stat(filepath.Join(f.root, relative))
+					if err != nil || info.Mode().Perm() != 0700 {
+						t.Errorf("private %s permissions changed: %v / %v", relative, info, err)
+					}
+				}
 			}
 			entries, _ := os.ReadDir(f.root + "/run")
 			for _, entry := range entries {
