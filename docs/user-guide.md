@@ -234,6 +234,10 @@ rules are preserved and current rules are not overwritten. The app never collect
 a password. AppImage replacement remains user-local. Older backends retain the
 legacy **Update and restart** banner.
 
+A confirmed USB-only success shows **USB permissions updated.** for three seconds,
+then hides the finished notice. Errors and still-needed AppImage installation or
+restart/relaunch actions remain visible.
+
 Outcomes are independent: a written policy can still have a reload/activation
 error, and a replaced AppImage does not prove it relaunched. Inspect each displayed
 error before retrying. Explicit retries do not repeat completed writes; **Relaunch

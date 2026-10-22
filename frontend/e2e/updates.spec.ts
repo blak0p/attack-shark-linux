@@ -1,6 +1,28 @@
 import { test, expect } from "@playwright/test";
 
 for (const width of [1280, 620]) {
+  test(`USB-only completion disappears after three seconds at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+    await page.goto("/e2e.html?updates=usb-only");
+    const panel = page.getByRole("region", { name: "Updates", exact: true });
+    await expect(panel.getByRole("button", { name: "Apply updates" })).toBeVisible();
+    await page.clock.pauseAt(new Date("2026-01-01T00:01:00Z"));
+    await panel.getByRole("button", { name: "Apply updates" }).click();
+    await expect(panel.getByText("Applying updates…")).toBeVisible();
+    await page.clock.runFor(150);
+    await expect(panel.getByText("USB permissions updated.")).toBeVisible();
+    const bounds = await panel.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await page.clock.runFor(2999);
+    await expect(panel).toBeVisible();
+    await page.clock.runFor(1);
+    await expect(panel).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).__updatesTest.calls)).toEqual([
+      { operation: "check", args: [] }, { operation: "apply", args: [] },
+    ]);
+  });
   test(`combined updates are explicit and bounded at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
