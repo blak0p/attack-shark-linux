@@ -1259,7 +1259,12 @@ it.each([
 ])("renders honest %s policy status and eligibility", async (PolicyState, message, eligible) => {
   const service = serviceFor(snapshot(), { CheckUnifiedUpdates: vi.fn().mockResolvedValue(unifiedInfo({ PolicyState, AppAvailable: false })), ApplyUnifiedUpdate: vi.fn() });
   render(<App service={service} />);
-  expect(await screen.findByText(message)).toBeInTheDocument();
+  await waitFor(() => expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1));
+  if (eligible) {
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByText("Update details").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("USB permissions (udev)")).toBeInTheDocument();
+  } else expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply updates" }) !== null).toBe(eligible);
   expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
 });
@@ -1268,11 +1273,13 @@ it("shows pending check and rejection without implying current, with explicit re
   const pending = deferred<ReturnType<typeof unifiedInfo>>();
   const service = serviceFor(snapshot(), { CheckUnifiedUpdates: vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(unifiedInfo({ AppAvailable: false, PolicyState: "current" })), ApplyUnifiedUpdate: vi.fn() });
   render(<App service={service} />);
-  expect(await screen.findByText("Checking for updates…")).toBeInTheDocument();
+  await waitFor(() => expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument();
+  expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
   await act(async () => pending.resolve(null as never));
   expect(await screen.findByText("Update request failed: No update result returned.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-  expect(await screen.findByText("USB permissions are current.")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument());
   expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(2);
   expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
 });

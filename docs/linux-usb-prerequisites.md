@@ -114,10 +114,13 @@ normal AppImage installation remains supported. Setup never changes the
 AppImage. If helper installation succeeds but policy application or udev reload
 fails, the output reports that partial result. Inspect it before retrying;
 no automatic retry is performed. Reconnecting the mouse may still be necessary.
-The desktop checks automatically at startup and shows one combined AppImage/USB
-Updates window in the upper right. Check, apply, progress, individual errors and
-explicit **Relaunch app** are all available there without Device navigation. The
-window scrolls when needed; **Check for updates** never applies anything.
+The desktop checks silently at startup. An upper-right Updates notice labels only
+the available targets: AppImage, USB permissions (udev), or both. No loading or
+up-to-date panel appears. Expand **Update details** for explanations. Policy
+eligibility uses backend-verified contents, not a changed release version or raw
+manifest. Apply, progress, individual errors and explicit **Relaunch app** remain
+available without Device navigation. Failures stay visible. The notice scrolls
+when needed; **Check for updates** never applies anything.
 **Apply updates** is the single explicit approval action. Construction alone does
 not fetch releases or authorize. The UI never bootstraps this helper or collects
 a password; initial trusted setup above remains separate.
@@ -258,8 +261,8 @@ app, policy and relaunch errors. A policy write is not proof of successful reloa
 and AppImage replacement is not proof of relaunch. Only missing/outdated official
 policies are eligible; current, custom, error and unavailable states never solicit
 a policy overwrite. Merely constructing the backend does not prove a graphical
-authorization agent is available. For read-only user-led validation, open the panel,
-record its states, and use Check for updates without approving Apply updates or
+authorization agent is available. For read-only user-led validation, inspect any
+startup notice, expand Update details, and use Check for updates without approving Apply updates or
 running setup. Any host-changing validation requires separate explicit approval.
 
 ### Fixed desktop executor (trusted Go only)

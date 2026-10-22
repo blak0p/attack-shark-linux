@@ -211,10 +211,8 @@ export function App({ service }: { service: DesktopService }) {
     >
       {macroWorkspace}
       {unifiedUpdates
-        ? <section className="update-window" aria-label="Updates">
-            <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
-              applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />
-          </section>
+        ? <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
+            applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />
         : update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView

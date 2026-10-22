@@ -18,37 +18,43 @@ export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApp
   info?: UnifiedUpdateInfo; checking: boolean; applying: boolean; error: string;
   onCheck(): void; onApply(): void;
 }) {
-  return <article className="card unified-updates" aria-labelledby="updates-title">
-    <h2 id="updates-title" tabIndex={-1}>Updates</h2>
-    <p>AppImage and USB permissions</p>
-    {checking && <p role="status">Checking for updates…</p>}
-    {applying && <p role="status">Applying updates…</p>}
-    {!info && !checking && <p>Update status is unknown. Check before applying.</p>}
-    {error && <p role="alert">Update request failed: {error}</p>}
-    {info && <>
-      <h3>AppImage</h3>
-      <p>{info.AppInstalled
-        ? info.RelaunchError ? "AppImage replaced; relaunch failed." : info.PolicyError
+  const failed = !!(error || info?.AppError || info?.PolicyError || info?.RelaunchError);
+  if (!failed && !applying && (!info || (!actionable(info) && !info.PolicyInstalled))) return null;
+  const appTarget = !!info && (info.AppAvailable || info.AppInstalled || !!info.AppError);
+  const policyTarget = !!info && (policyEligible(info) || info.PolicyInstalled || !!info.PolicyError);
+  return <section className="update-window" aria-label="Updates">
+    <article className="card unified-updates" aria-labelledby="updates-title">
+      <h2 id="updates-title" tabIndex={-1}>Updates</h2>
+      <p>{appTarget && policyTarget ? "AppImage and USB permissions (udev)" : appTarget ? "AppImage" : policyTarget ? "USB permissions (udev)" : "Update check failed"}</p>
+      {checking && <p role="status">Checking for updates…</p>}
+      {applying && <p role="status">Applying updates…</p>}
+      {error && <p role="alert">Update request failed: {error}</p>}
+      {info && <>
+        {info.AppInstalled && <p>{info.RelaunchError ? "AppImage replaced; relaunch failed." : info.PolicyError
           ? "AppImage replaced; restart may be deferred. Use Relaunch app explicitly."
-          : "AppImage replaced; restart requested, not confirmed."
-        : info.AppAvailable ? `Version ${info.Version} is available.`
-          : info.AppError ? "AppImage update status could not be confirmed." : "No newer AppImage available."}</p>
-      {info.AppError && <p role="alert">AppImage: {info.AppError}</p>}
-      <h3>USB permissions</h3>
-      <p>{info.PolicyInstalled
-        ? info.PolicyError ? "USB policy written; reload or activation failed." : "USB policy written and reload completed; reconnect the mouse if needed."
-        : policyMessages[info.PolicyState] ?? "USB permissions status is unknown."}</p>
-      {info.PolicyError && <p role="alert">USB permissions: {info.PolicyError}</p>}
-      {info.RelaunchError && <p role="alert">Relaunch: {info.RelaunchError}</p>}
-      {info.PolicyError && <p><a href="https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup" target="_blank" rel="noreferrer">Trusted USB permissions setup guidance</a>. Setup is separate and user-led; the app never installs the helper.</p>}
-    </>}
-    <p>Only missing or recognized official outdated USB policies are eligible. Custom rules are preserved. USB changes use one system authorization dialog; this app never collects a password. AppImage replacement stays user-local.</p>
-    <div className="update-actions">
-      <button type="button" className="button" disabled={checking || applying} onClick={onCheck}>Check for updates</button>
-      {info && actionable(info) && <button type="button" className="button primary" disabled={checking || applying} onClick={onApply}>
-        {info.AppInstalled && !policyEligible(info) ? "Relaunch app" : "Apply updates"}
-      </button>}
-    </div>
-    {info && actionable(info) && <p>Apply updates retries unfinished eligible operations only. A written policy is not written again; a reload error still needs inspection. Relaunch app requests a restart, not a second installation.</p>}
-  </article>;
+          : "AppImage replaced; restart requested, not confirmed."}</p>}
+        {info.AppError && <p role="alert">AppImage: {info.AppError}</p>}
+        {info.PolicyInstalled && <p>{info.PolicyError ? "USB policy written; reload or activation failed."
+          : "USB policy written and reload completed; reconnect the mouse if needed."}</p>}
+        {info.PolicyError && <p role="alert">USB permissions: {info.PolicyError}</p>}
+        {info.RelaunchError && <p role="alert">Relaunch: {info.RelaunchError}</p>}
+        {info.PolicyError && <p><a href="https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup" target="_blank" rel="noreferrer">Trusted USB permissions setup guidance</a></p>}
+      </>}
+      <details>
+        <summary>Update details</summary>
+        {info && <>
+          {info.AppAvailable && !info.AppInstalled && <p>AppImage version {info.Version} is available.</p>}
+          <p>{policyMessages[info.PolicyState] ?? "USB permissions status is unknown."}</p>
+        </>}
+        <p>Only missing or recognized official outdated USB policies are eligible. Custom rules are preserved. USB changes use one system authorization dialog; this app never collects a password. AppImage replacement stays user-local. Setup is separate and user-led; the app never installs the helper.</p>
+        {info && actionable(info) && <p>Apply updates retries unfinished eligible operations only. A written policy is not written again; a reload error still needs inspection. Relaunch app requests a restart, not a second installation.</p>}
+      </details>
+      <div className="update-actions">
+        {info && actionable(info) && <button type="button" className="button primary" disabled={checking || applying} onClick={onApply}>
+          {info.AppInstalled && !policyEligible(info) ? "Relaunch app" : "Apply updates"}
+        </button>}
+        <button type="button" className="button" disabled={checking || applying} onClick={onCheck}>Check for updates</button>
+      </div>
+    </article>
+  </section>;
 }
