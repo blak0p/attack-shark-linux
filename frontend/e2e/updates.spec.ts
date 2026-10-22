@@ -43,6 +43,22 @@ for (const width of [1280, 620]) {
   });
 }
 
+for (const [scenario, label] of [["app-only", "AppImage"], ["usb-only", "USB permissions (udev)"], ["current", ""]]) {
+  test(`startup notice: ${scenario}`, async ({ page }) => {
+    await page.goto(`/e2e.html?updates=${scenario}`);
+    await expect.poll(() => page.evaluate(() => (window as any).__updatesTest.calls.length)).toBe(1);
+    const panel = page.getByRole("region", { name: "Updates", exact: true });
+    if (label) {
+      await expect(panel.getByText(label, { exact: true })).toBeVisible();
+      await expect(panel.locator("details")).not.toHaveAttribute("open");
+      await expect(panel.getByRole("button", { name: "Apply updates" })).toBeVisible();
+      await panel.getByText("Update details", { exact: true }).click();
+      await expect(panel.locator("details")).toHaveAttribute("open");
+    } else await expect(panel).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).__updatesTest.calls)).toEqual([{ operation: "check", args: [] }]);
+  });
+}
+
 test("denial remains visible until an explicit combined retry", async ({ page }) => {
   await page.goto("/e2e.html?updates=denial");
   const panel = page.getByRole("region", { name: "Updates", exact: true });

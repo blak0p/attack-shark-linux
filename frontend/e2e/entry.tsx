@@ -73,7 +73,8 @@ const updateInfo = { Version: "2.0.0", AppAvailable: true, AppInstalled: false, 
 const service = {
   CheckUnifiedUpdates: updateScenario ? async (...args: unknown[]) => {
     updateCalls.push({ operation: "check", args });
-    return { ...updateInfo };
+    return { ...updateInfo, AppAvailable: updateScenario !== "usb-only" && updateScenario !== "current",
+      PolicyState: updateScenario === "app-only" || updateScenario === "current" ? "current" : "outdated" };
   } : undefined,
   ApplyUnifiedUpdate: updateScenario ? async (...args: unknown[]) => {
     updateCalls.push({ operation: "apply", args });
