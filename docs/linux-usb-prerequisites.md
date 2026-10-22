@@ -121,6 +121,9 @@ eligibility uses backend-verified contents, not a changed release version or raw
 manifest. Apply, progress, individual errors and explicit **Relaunch app** remain
 available without Device navigation. Failures stay visible. The notice scrolls
 when needed; **Check for updates** never applies anything.
+Confirmed USB-only success shows **USB permissions updated.** for three seconds,
+then hides the finished notice. Errors and unfinished AppImage installation or
+required restart/relaunch actions remain visible.
 **Apply updates** is the single explicit approval action. Construction alone does
 not fetch releases or authorize. The UI never bootstraps this helper or collects
 a password; initial trusted setup above remains separate.

@@ -82,7 +82,7 @@ const service = {
     await new Promise(resolve => setTimeout(resolve, 150));
     if (updateScenario === "denial" && updateAttempts === 1) return { ...updateInfo, PolicyError: "authorization denied", AppError: "download failed" };
     if (updateScenario === "partial") return { ...updateInfo, AppInstalled: true, PolicyInstalled: true, PolicyError: "reload failed", RelaunchError: "launch failed" };
-    return { ...updateInfo, AppInstalled: true, PolicyInstalled: true };
+    return { ...updateInfo, AppAvailable: updateScenario !== "usb-only", AppInstalled: updateScenario !== "usb-only", PolicyInstalled: true };
   } : undefined,
   ListMacros: async () => [...macros.values()].map((macro) => structuredClone(macro)),
   ReadMacro: async (id: string) => readMacro(id),

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { UnifiedUpdateInfo } from "../desktop-contract";
 
 const policyMessages: Record<string, string> = {
@@ -19,7 +20,23 @@ export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApp
   onCheck(): void; onApply(): void;
 }) {
   const failed = !!(error || info?.AppError || info?.PolicyError || info?.RelaunchError);
-  if (!failed && !applying && (!info || (!actionable(info) && !info.PolicyInstalled))) return null;
+  const unfinished = !!info && actionable(info);
+  const completed = !!info?.PolicyInstalled && !failed && !unfinished && !applying;
+  const [dismissed, setDismissed] = useState(false);
+  const deadline = useRef<number | null>(null);
+  useEffect(() => {
+    // Only genuinely unfinished work resets a completed notice, not fresh check objects.
+    if (unfinished || failed || applying) {
+      deadline.current = null;
+      setDismissed(false);
+      return;
+    }
+    if (!completed || checking || dismissed) return;
+    deadline.current ??= Date.now() + 3000;
+    const timer = setTimeout(() => setDismissed(true), Math.max(0, deadline.current - Date.now()));
+    return () => clearTimeout(timer);
+  }, [unfinished, failed, applying, completed, checking, dismissed]);
+  if (!failed && !applying && (!info || (!unfinished && !info.PolicyInstalled) || (completed && dismissed && !checking))) return null;
   const appTarget = !!info && (info.AppAvailable || info.AppInstalled || !!info.AppError);
   const policyTarget = !!info && (policyEligible(info) || info.PolicyInstalled || !!info.PolicyError);
   return <section className="update-window" aria-label="Updates">
@@ -34,7 +51,7 @@ export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApp
           ? "AppImage replaced; restart may be deferred. Use Relaunch app explicitly."
           : "AppImage replaced; restart requested, not confirmed."}</p>}
         {info.AppError && <p role="alert">AppImage: {info.AppError}</p>}
-        {info.PolicyInstalled && <p>{info.PolicyError ? "USB policy written; reload or activation failed."
+        {info.PolicyInstalled && <p>{completed ? "USB permissions updated." : info.PolicyError ? "USB policy written; reload or activation failed."
           : "USB policy written and reload completed; reconnect the mouse if needed."}</p>}
         {info.PolicyError && <p role="alert">USB permissions: {info.PolicyError}</p>}
         {info.RelaunchError && <p role="alert">Relaunch: {info.RelaunchError}</p>}
