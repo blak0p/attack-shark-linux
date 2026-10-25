@@ -103,6 +103,11 @@ func (c *lightingComponent) apply() LightingSnapshot {
 	state.applied = &applied
 	state.firmware = "success"
 	state.err = Error{}
+	if err := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+		p.Lighting = &selection
+	}); err != nil {
+		state.err = Error{Code: PersistenceFailed}
+	}
 	return lightingSnapshotLocked(state)
 }
 

@@ -110,6 +110,8 @@ func (c *dpiComponent) stage(config DPIConfig) Snapshot {
 
 func (c *dpiComponent) retryPersistence() Snapshot {
 	s := c.service
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	binding, ok := s.selectedBinding()
 	if !ok || binding.SessionOnly {
 		return s.GetSnapshot()
@@ -124,7 +126,7 @@ func (c *dpiComponent) retryPersistence() Snapshot {
 	s.mu.Lock()
 	persistence := s.devicePersistence
 	s.mu.Unlock()
-	if persistence == nil || persistence.Save(binding, *retry) != nil {
+	if (persistence != nil && persistence.Save(binding, *retry) != nil) || s.saveActiveProfile(binding, func(p *profileConfiguration) { p.Device.DPIConfig = *retry }) != nil {
 		state.mu.Lock()
 		state.persistence = "failed"
 		state.err = Error{Code: PersistenceFailed}
@@ -171,6 +173,16 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 					return snapshot
 				}
 			}
+			if err := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+				p.Device.DPIConfig = pending
+			}); err != nil {
+				state.mu.Lock()
+				retry := pending
+				state.applied, state.firmware, state.persistence, state.retry, state.err = pending, "success", "failed", &retry, Error{Code: PersistenceFailed}
+				snapshot := snapshotLocked(state)
+				state.mu.Unlock()
+				return snapshot
+			}
 			s.cancelSync(binding)
 		}
 	} else if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
@@ -194,10 +206,14 @@ func (c *dpiComponent) applyFailure(err error) Snapshot {
 
 func (c *dpiComponent) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
 	s := c.service
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	if !s.bindingCurrent(binding) {
 		return mouse.ErrStaleBinding
 	}
 	state := s.currentState()
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
 	defer s.emitConfiguration(binding, state)
 	state.mu.Lock()
 	if state.revision != revision {
@@ -221,10 +237,20 @@ func (c *dpiComponent) applyBound(binding Binding, revision uint64, config x6.DP
 	}
 	state.applied, state.firmware, state.err = config, "success", Error{}
 	state.mu.Unlock()
-	if !pollingPersistenceAllowed(binding) || persistence == nil {
+	if !pollingPersistenceAllowed(binding) {
 		return nil
 	}
-	if err := persistence.Save(binding, config); err != nil {
+	if persistence != nil {
+		if err := persistence.Save(binding, config); err != nil {
+			state.mu.Lock()
+			state.persistence, state.retry, state.err = "failed", &config, Error{Code: PersistenceFailed}
+			state.mu.Unlock()
+			return nil
+		}
+	}
+	if err := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+		p.Device.DPIConfig = config
+	}); err != nil {
 		state.mu.Lock()
 		state.persistence, state.retry, state.err = "failed", &config, Error{Code: PersistenceFailed}
 		state.mu.Unlock()

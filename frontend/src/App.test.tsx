@@ -868,8 +868,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("group", { name: "Click type" })).toBeInTheDocument();
     expect(screen.queryByText("Advanced events and recording")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Mouse recording zone" })).not.toBeInTheDocument();
-    // Local file exchange and click composer are implemented; hardware playback/profiles are not.
-    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
+    // Local profiles are visible even when an older service does not support them.
+    expect(screen.getByLabelText('Profile')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Manage profiles' })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });

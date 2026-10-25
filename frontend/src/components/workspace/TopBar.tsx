@@ -5,18 +5,21 @@ export function TopBar({
   title = "Mouse configuration",
   subtitle = "Attack Shark X6",
   children,
+  center,
 }: {
   title?: string;
   subtitle?: string;
   children?: ReactNode;
+  center?: ReactNode;
 }) {
   return (
-    <header className="titlebar top-bar">
+    <header className={`titlebar top-bar${center ? ' top-bar-centered' : ''}`}>
       <div className="appname brand">
         <span className="app-icon" aria-hidden="true">✦</span>
-        {title}
+        <span className="brand-title">{title}</span>
         {subtitle && <small>{subtitle}</small>}
       </div>
+      {center && <div className="top-bar-center">{center}</div>}
       <div className="top-bar-actions">
         <div className="top-bar-children">{children}</div>
         <div className="window-controls" aria-label="Window controls">

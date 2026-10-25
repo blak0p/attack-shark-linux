@@ -35,8 +35,13 @@ func (s *settingsState) reset() {
 	s.mu.Unlock()
 }
 func (s *settingsState) replace(c x6.DeviceConfig) {
-	next := newSettingsStateFromConfig(c)
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replaceLocked(c)
+}
+
+func (s *settingsState) replaceLocked(c x6.DeviceConfig) {
+	next := newSettingsStateFromConfig(c)
 	s.normalSleep, s.responseTimeMs = next.normalSleep, next.responseTimeMs
 	s.persistedNormal, s.persistedResponse = next.persistedNormal, next.persistedResponse
 	s.retryNormal, s.retryResponse = nil, nil
@@ -44,7 +49,6 @@ func (s *settingsState) replace(c x6.DeviceConfig) {
 	s.normalFirmware, s.responseFirmware = next.normalFirmware, next.responseFirmware
 	s.normalPersistence, s.responsePersistence = next.normalPersistence, next.responsePersistence
 	s.normalError, s.responseError = Error{}, Error{}
-	s.mu.Unlock()
 }
 func (s *Service) currentSettingsState() *settingsState {
 	b, ok := s.selectedBinding()
@@ -225,7 +229,7 @@ func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, ret
 	s.mu.Lock()
 	p := s.settingsPersistence
 	s.mu.Unlock()
-	if p == nil {
+	if p == nil && (s.profiles == nil || s.profiles.store == nil) {
 		return normalSleepSnapshotLocked(st)
 	}
 	st.mu.Lock()
@@ -253,13 +257,24 @@ func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, ret
 		}
 	}
 	st.mu.Unlock()
-	if err := s.saveDeviceConfig(b, p, func(config *x6.DeviceConfig) {
+	deviceErr := error(nil)
+	if p != nil {
+		deviceErr = s.saveDeviceConfig(b, p, func(config *x6.DeviceConfig) {
+			if normal {
+				config.NormalSleepMinutes = c.NormalSleepMinutes
+			} else {
+				config.ResponseTimeMs = c.ResponseTimeMs
+			}
+		})
+	}
+	profileErr := s.saveActiveProfile(b, func(prof *profileConfiguration) {
 		if normal {
-			config.NormalSleepMinutes = c.NormalSleepMinutes
+			prof.Device.NormalSleepMinutes = c.NormalSleepMinutes
 		} else {
-			config.ResponseTimeMs = c.ResponseTimeMs
+			prof.Device.ResponseTimeMs = c.ResponseTimeMs
 		}
-	}); err != nil {
+	})
+	if (p != nil && deviceErr != nil) || profileErr != nil {
 		st.mu.Lock()
 		if normal {
 			v := c.NormalSleepMinutes

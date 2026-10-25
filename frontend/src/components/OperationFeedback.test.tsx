@@ -54,7 +54,7 @@ it("distinguishes local Saved from device Applied without replaying the other so
   expect(screen.getByRole("status")).toHaveTextContent("Applied");
 });
 
-it("retains all errors and retry actions indefinitely and never claims success on failure", () => {
+it("shows errors and retries initially then dismisses them without replay on unchanged rerender", () => {
   vi.useFakeTimers();
   const retry = vi.fn();
   const view = render(<OperationFeedback scope="a" results={[result("1")]} />);
@@ -62,7 +62,7 @@ it("retains all errors and retry actions indefinitely and never claims success o
     result("2", { error: "Applied to mouse; local save failed.", retry }),
     result("3", { id: "lighting", label: "Lighting", error: "Reconnect the mouse." }),
   ]} />);
-  act(() => vi.advanceTimersByTime(20000));
+  act(() => vi.advanceTimersByTime(7999));
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getAllByRole("alert")).toHaveLength(2);
   const error = screen.getAllByRole("alert")[0];
@@ -70,6 +70,14 @@ it("retains all errors and retry actions indefinitely and never claims success o
   fireEvent.click(within(error).getByRole("button", { name: "Retry" }));
   expect(retry).toHaveBeenCalledTimes(1);
   expect(screen.getAllByRole("alert")[1]).toHaveTextContent("Reconnect the mouse.");
+  act(() => vi.advanceTimersByTime(1));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result('2', { error: 'Applied to mouse; local save failed.', retry }), result('3', { id: 'lighting', label: 'Lighting', error: 'Reconnect the mouse.' })]} />);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result('4', { error: 'Reconnect the mouse.' })]} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Reconnect the mouse.');
+  view.unmount();
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 

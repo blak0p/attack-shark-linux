@@ -115,6 +115,9 @@ func (c *inventoryComponent) refresh(ctx context.Context, s *Service) (outcome I
 		}
 	}
 	s.mu.Unlock()
+	if result.Selected != nil && result.Error.Code == "" {
+		result.Error.Code = s.restoreSavedProfile(*result.Selected)
+	}
 	return result
 }
 
@@ -138,15 +141,21 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 	persistence := s.devicePersistence
 	state := s.states[selected.ID]
 	s.mu.Unlock()
-	if !selected.SessionOnly && persistence != nil && state != nil {
+	// Once hydrated, cached profile state is authoritative for this session.
+	// Reloading legacy records here would discard lighting/macros and truthful
+	// partial hardware progress from an interrupted profile switch.
+	loaded := s.profileLoaded(selected)
+	if !loaded && !selected.SessionOnly && persistence != nil && state != nil {
 		if applied, err := persistence.Load(selected); err == nil {
 			state.mu.Lock()
 			state.applied, state.pending = applied, applied
 			state.mu.Unlock()
 		}
 	}
-	s.pollingComponent.selectDevice(selected)
-	if !selected.SessionOnly {
+	if !loaded {
+		s.pollingComponent.selectDevice(selected)
+	}
+	if !loaded && !selected.SessionOnly {
 		s.mu.Lock()
 		settingsPersistence, settings := s.settingsPersistence, s.settingsStates[selected.ID]
 		s.mu.Unlock()
@@ -163,5 +172,5 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 	if !selected.SessionOnly && migrate != nil && migrate(selected) != nil {
 		return Inventory{Devices: devices, Selected: &selected, Error: Error{Code: MigrationFailed}}
 	}
-	return Inventory{Devices: devices, Selected: &selected}
+	return Inventory{Devices: devices, Selected: &selected, Error: Error{Code: s.restoreSavedProfile(selected)}}
 }

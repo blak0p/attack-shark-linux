@@ -28,16 +28,29 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - **⌁ Controls**: Sensor enhancements (Angle snap, Ripple control, Lift-off distance) and key response debounce.
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
-- **Top Bar**: Displays the active mouse profile name (**Attack Shark X6**) and a device selector when multiple eligible receivers are available.
-- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors remain visible with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
+- **Top Bar**: Centers the **Profile** selector in the window, with a compact **⋯** button (accessible name and tooltip: **Manage profiles**), plus a device selector when multiple eligible receivers are available. On very narrow windows the profile block moves to a second top-bar row to keep every control reachable. There is no separate profiles tab.
+- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors appear for eight seconds with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
 - **Connection & Battery Card (Bottom Left)**: Live indicator showing device availability (`Device available` / `Device unavailable`) and current battery level percentage (`Battery 100%`). Hardware battery heartbeats and physical DPI button presses are pushed live from the mouse dongle to the UI.
 - **Auto-Sync vs. Draft Confirmation**:
   - Sliders and toggles in **Performance**, **Lighting**, and **Controls** are debounced and automatically applied to the hardware after one second of user inactivity.
   - **Button Remapping** uses an explicit draft workflow requiring confirmation before sending new bindings to the hardware, preventing accidental lockouts.
 
+### Local profiles
+
+Profiles are local files belonging to the selected mouse, not onboard mouse profiles. The first automatic profile uses previously saved local settings. A notice in the shared bottom-right notification stack explains when it was created and that creating it made no mouse changes. It disappears after eight seconds without changing stored notice data; explicit dismissal still acknowledges it. Profile successes disappear after three seconds and profile errors after eight seconds. Inline form validation remains visible. Invalid local data is reported rather than silently treated as a successful migration.
+
+Use **Manage profiles** to open the management panel centered horizontally and vertically below the top bar. Each profile has compact rename, duplicate, and delete actions; the **Active** badge identifies the current profile. Use the close button to return to settings. Actions open a separate confirmation form:
+
+- **Create** clones the active saved configuration and activates the identical local copy without sending settings to the mouse.
+- **Duplicate** creates an inactive copy; **Rename** changes its local name.
+- **Delete** cannot remove the active or last profile. Switch to another profile first.
+- Selecting another profile sends its configuration to the selected mouse and refreshes the displayed settings. Only a fully acknowledged switch reports **Profile applied**. A failed or partial switch displays an error and reloads actual settings; do not assume the entire profile reached the mouse.
+
+Acknowledged setting edits update the active local profile without a manual Save button. Profiles include lighting and button/macro assignments; the macro library itself remains shared across mice. Selecting a different mouse loads its independent profile list and active profile. Controls are unavailable while an operation is pending or no mouse is selected.
+
 ### Local macro feedback
 
-Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors remain visible, including device errors that do not prevent a successful local save.
+Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors appear for eight seconds, including device errors that do not prevent a successful local save.
 
 ---
 

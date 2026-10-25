@@ -37,7 +37,7 @@ const bindings = vi.hoisted(() => ({
   SelectDevice: vi.fn(),
 }));
 
-const runtime = vi.hoisted(() => ({ Events: { On: vi.fn().mockReturnValue(() => {}) } }));
+const runtime = vi.hoisted(() => ({ Call: { ByName: vi.fn() }, Events: { On: vi.fn().mockReturnValue(() => {}) } }));
 
 vi.mock("../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service", () => bindings);
 vi.mock("@wailsio/runtime", async (importOriginal) => ({
@@ -63,6 +63,18 @@ it.each([CanonicalMacro, EmbeddedMacro])("binding models preserve keyboard keys 
 beforeEach(() => Object.values(bindings).forEach((binding) => binding.mockReset()));
 
 describe("desktopService", () => {
+  it.each([
+    ['GetProfiles', []], ['CreateProfile', ['Work']], ['RenameProfile', ['a', 'Work']],
+    ['DuplicateProfile', ['a', 'Copy']], ['DeleteProfile', ['b']], ['SwitchProfile', ['b']], ['DismissProfileNotice', []],
+  ] as const)('forwards profile method %s and preserves outcomes and rejections', async (method, args) => {
+    const outcome = { Profiles: [], ActiveID: 'a', Notice: '', Error: { Code: 'partial' }, Applied: false };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    const invoke = desktopService[method] as (...values: string[]) => Promise<unknown>;
+    expect(await invoke(...args)).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(invoke(...args)).rejects.toBe(failure);
+  });
   it("does not check or apply updates merely by constructing the adapter", () => {
     for (const name of ["CheckUnifiedUpdates", "ApplyUnifiedUpdate", "CheckForUpdate", "ApplyVerifiedUpdate"] as const) {
       expect(bindings[name]).not.toHaveBeenCalled();
