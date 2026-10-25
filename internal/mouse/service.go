@@ -402,6 +402,19 @@ func (s *TargetedService) Selection() (Binding, bool) {
 	return *s.selection, true
 }
 
+// CompleteBound commits local completion only while the captured selection is
+// current. The callback runs under the inventory selection mutex: it must not
+// call TargetedService, invoke transport, emit events, or acquire an operation
+// lock. Hardware ACK callbacks must finish before entering this boundary.
+func (s *TargetedService) CompleteBound(binding Binding, commit func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.selection == nil || *s.selection != binding {
+		return ErrStaleBinding
+	}
+	return commit()
+}
+
 func (s *TargetedService) Select(id DeviceID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
