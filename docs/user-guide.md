@@ -29,7 +29,7 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
 - **Top Bar**: Displays an always-visible **Local profile** selector and **Manage profiles** control, plus a device selector when multiple eligible receivers are available. There is no separate profiles tab.
-- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors remain visible with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
+- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors appear for eight seconds with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
 - **Connection & Battery Card (Bottom Left)**: Live indicator showing device availability (`Device available` / `Device unavailable`) and current battery level percentage (`Battery 100%`). Hardware battery heartbeats and physical DPI button presses are pushed live from the mouse dongle to the UI.
 - **Auto-Sync vs. Draft Confirmation**:
   - Sliders and toggles in **Performance**, **Lighting**, and **Controls** are debounced and automatically applied to the hardware after one second of user inactivity.
@@ -50,7 +50,7 @@ Acknowledged setting edits update the active local profile without a manual Save
 
 ### Local macro feedback
 
-Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors remain visible, including device errors that do not prevent a successful local save.
+Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors appear for eight seconds, including device errors that do not prevent a successful local save.
 
 ---
 
