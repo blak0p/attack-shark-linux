@@ -125,13 +125,23 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     });
   };
 
-  const refreshSelectedDeviceSnapshots = (assignment = false) => {
-    void service.RefreshStatus().then(setSnapshot);
-    void service.GetPollingSnapshot().then(setPolling);
-    void service.GetDebounceSnapshot().then(setDebounce);
-    void service.GetLightingSnapshot().then(setLighting);
-    void service.GetNormalSleepSnapshot().then(setNormalSleep);
-    refreshRemap(assignment);
+  const refreshSelectedDeviceSnapshots = async (assignment = false) => {
+    const scope = remapScope.current;
+    const selectionEpoch = scope.selectionEpoch;
+    const binding = selected.current;
+    const current = () => scope.active && scope.service === service && scope.selectionEpoch === selectionEpoch && selected.current === binding;
+    const refresh = <T,>(request: Promise<T>, update: (next: T) => void) =>
+      request.then(next => { if (current()) update(next); });
+    const results = await Promise.allSettled([
+      refresh(service.RefreshStatus(), setSnapshot),
+      refresh(service.GetPollingSnapshot(), setPolling),
+      refresh(service.GetDebounceSnapshot(), setDebounce),
+      refresh(service.GetLightingSnapshot(), setLighting),
+      refresh(service.GetNormalSleepSnapshot(), setNormalSleep),
+      refreshRemap(assignment),
+    ]);
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
   };
 
   useEffect(() => { refreshSelectedDeviceSnapshots(); }, [service]);
@@ -200,6 +210,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     });
   }));
   const actions: WorkspaceActions = {
+    refreshProfilesWorkspace: () => refreshSelectedDeviceSnapshots(),
     checkUpdates: () => runUpdate("check"),
     applyUpdate: () => runUpdate("apply"),
     selectDevice: (serial) => {

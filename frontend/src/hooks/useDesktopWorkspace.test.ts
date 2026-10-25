@@ -76,6 +76,41 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+it('reloads authoritative settings after a profile switch without applying settings again', async () => {
+  const h = serviceFor();
+  const { result } = renderHook(() => useDesktopWorkspace(h.service));
+  await waitFor(() => expect(result.current.model.ready).toBe(true));
+  vi.mocked(h.service.RefreshStatus).mockResolvedValue(snapshot({ Battery: 31 }));
+  vi.mocked(h.service.GetPollingSnapshot).mockResolvedValue(polling({ Desired: 500, Error: { Code: '' } }));
+  vi.mocked(h.service.GetDebounceSnapshot).mockResolvedValue(debounce({ Desired: 4 }));
+  vi.mocked(h.service.GetLightingSnapshot).mockResolvedValue(lighting({ Revision: 2 }));
+  vi.mocked(h.service.GetNormalSleepSnapshot).mockResolvedValue(normalSleep({ Pending: 5 }));
+  vi.mocked(h.service.GetRemapSnapshot).mockResolvedValue(remap({ Revision: 2 }));
+  await act(async () => { await result.current.actions.refreshProfilesWorkspace(); });
+  expect(result.current.model.snapshot?.Battery).toBe(31);
+  expect(result.current.model.polling?.Desired).toBe(500);
+  expect(result.current.model.debounce?.Desired).toBe(4);
+  expect(result.current.model.lighting?.Revision).toBe(2);
+  expect(result.current.model.normalSleep?.Pending).toBe(5);
+  expect(result.current.model.remap?.Revision).toBe(2);
+  expect(h.service.ApplyDPI).not.toHaveBeenCalled();
+  expect(h.service.ApplyRemap).not.toHaveBeenCalled();
+});
+
+it('refreshes all profile lanes and ignores reads after device selection changes', async () => {
+  const h = serviceFor();
+  const { result } = renderHook(() => useDesktopWorkspace(h.service));
+  await waitFor(() => expect(result.current.model.ready).toBe(true));
+  const pending = deferred<ReturnType<typeof snapshot>>();
+  vi.mocked(h.service.RefreshStatus).mockReturnValueOnce(pending.promise);
+  let refresh!: Promise<void>;
+  act(() => { refresh = result.current.actions.refreshProfilesWorkspace(); });
+  act(() => result.current.actions.selectDevice('alpha'));
+  await act(async () => { pending.resolve(snapshot({ Battery: 1 })); await refresh; });
+  expect(result.current.model.snapshot?.Battery).toBe(84);
+  for (const method of ['GetPollingSnapshot', 'GetDebounceSnapshot', 'GetLightingSnapshot', 'GetNormalSleepSnapshot', 'GetRemapSnapshot'] as const) expect(h.service[method]).toHaveBeenCalled();
+});
+
 const macro = { ID: "click", Name: "Click", Button: 6, Repeat: 2, Events: [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_left" as const, action: "up" as const, delay_ms: 0 }] };
 const macro7 = { ID: "click7", Name: "Click7", Button: 7, Repeat: 3, Events: [{ type: "mouse_right" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_right" as const, action: "up" as const, delay_ms: 0 }] };
 

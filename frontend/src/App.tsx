@@ -5,6 +5,7 @@ import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
 import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
 import { WorkspaceView } from "./components/workspace/WorkspaceView";
+import { ProfileControls } from "./components/profiles/ProfileControls";
 import { TopBar } from "./components/workspace/TopBar";
 import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
@@ -100,6 +101,7 @@ export function App({ service }: { service: DesktopService }) {
     updateError,
   } = model;
 
+  const [profileBusy, setProfileBusy] = useState(false);
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
   const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
@@ -120,7 +122,7 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return (
     <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
-      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
+      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6"><ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} /></TopBar>}
       connectionStatus={<p className="connection offline">Connecting…</p>}>
       {macroWorkspace}
       <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
@@ -160,6 +162,7 @@ export function App({ service }: { service: DesktopService }) {
 
   const titlebarElement = (
     <TopBar title="Mouse configuration" subtitle="Attack Shark X6">
+      <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />
       {eligibleDevices.length > 1 && (
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
           <span>Mouse device</span>
@@ -202,7 +205,7 @@ export function App({ service }: { service: DesktopService }) {
     <WorkspaceShell
       activeView={activeView}
       onNavigate={setActiveView}
-      busy={automaticApplyBusy}
+      busy={automaticApplyBusy || profileBusy}
       feedback={feedback}
       deviceName="Attack Shark X6"
       deviceSubtitle="Wireless Gaming Mouse"
