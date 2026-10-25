@@ -24,6 +24,14 @@ describe("TopBar window controls", () => {
     expect(screen.getByRole("button", { name: "Close window" })).toBeInTheDocument();
   });
 
+  it("keeps the optional center separate from trailing children and native controls", () => {
+    render(<TopBar center={<span>Profiles</span>}><span>Device selector</span></TopBar>);
+    expect(screen.getByText('Profiles').parentElement).toHaveClass('top-bar-center');
+    expect(screen.getByText('Device selector').parentElement).toHaveClass('top-bar-children');
+    expect(screen.getByRole('banner')).toHaveClass('top-bar-centered');
+    expect(screen.getByRole('button', { name: 'Close window' })).toBeVisible();
+  });
+
   it("routes each click only to its native window action", () => {
     render(<TopBar />);
     fireEvent.click(screen.getByRole("button", { name: "Minimise window" }));

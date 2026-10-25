@@ -869,7 +869,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.queryByText("Advanced events and recording")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Mouse recording zone" })).not.toBeInTheDocument();
     // Local profiles are visible even when an older service does not support them.
-    expect(screen.getByLabelText('Local profile')).toBeDisabled();
+    expect(screen.getByLabelText('Profile')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Manage profiles' })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
