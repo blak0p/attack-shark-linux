@@ -1,4 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from 'react-dom';
+
+let feedbackHost: HTMLDivElement | undefined;
+let feedbackUsers = 0;
+// Both workspace and profile notifications share one bottom-right stack.
+export function FeedbackPortal({ children }: { children: ReactNode }) {
+  const [host, setHost] = useState<HTMLDivElement>();
+  useEffect(() => {
+    if (!feedbackHost) {
+      feedbackHost = document.createElement('div');
+      feedbackHost.className = 'operation-feedback';
+      feedbackHost.setAttribute('role', 'region');
+      feedbackHost.setAttribute('aria-label', 'Operation feedback');
+      feedbackHost.setAttribute('aria-live', 'polite');
+      document.body.appendChild(feedbackHost);
+    }
+    feedbackUsers++;
+    setHost(feedbackHost);
+    return () => {
+      if (--feedbackUsers === 0) { feedbackHost?.remove(); feedbackHost = undefined; }
+    };
+  }, []);
+  return host ? createPortal(children, host) : null;
+}
 
 export type FeedbackResult = {
   id: string;
@@ -25,7 +49,17 @@ export function OperationFeedback({ scope, busy = false, results }: {
   const serial = useRef(0);
   const [confirmation, setConfirmation] = useState<{ id: number; scope: string; message: string }>();
   const signature = JSON.stringify(results.map(({ id, version, success, error, initialized }) => [id, version, success, error, initialized]));
-  const failures = results.filter(result => result.error);
+  const [expiredFailures, setExpiredFailures] = useState<Set<string>>(new Set());
+  const failureKey = (result: FeedbackResult) => JSON.stringify([scope, result.id, result.version, result.error]);
+  const failures = results.filter(result => result.error && !expiredFailures.has(failureKey(result)));
+  const failureSignature = JSON.stringify(results.filter(result => result.error).map(failureKey));
+  useEffect(() => {
+    const timers = results.filter(result => result.error && !expiredFailures.has(failureKey(result))).map(result => {
+      const key = failureKey(result);
+      return window.setTimeout(() => setExpiredFailures(current => new Set([...current, key])), 8000);
+    });
+    return () => timers.forEach(window.clearTimeout);
+  }, [scope, failureSignature]);
   const wasBusy = useRef(false);
   useEffect(() => {
     if (busy && !wasBusy.current) setConfirmation(undefined);
@@ -51,7 +85,7 @@ export function OperationFeedback({ scope, busy = false, results }: {
   }, [confirmation, busy]);
 
   const message = confirmation?.scope === scope ? confirmation.message : undefined;
-  return <div className="operation-feedback" role="region" aria-label="Operation feedback" aria-live="polite">
+  return <FeedbackPortal>
     {(busy || message) && <div key={busy ? "pending" : confirmation?.id} className="feedback-message" role="status" aria-live="polite" aria-label="Operation status">
       {busy ? <ProgressIndicator /> : <><span aria-hidden="true">✓</span><span>{message}</span></>}
     </div>}
@@ -59,7 +93,7 @@ export function OperationFeedback({ scope, busy = false, results }: {
       <span><b>{result.label}</b>: {result.error}</span>
       {result.retry && <button type="button" className="button" disabled={busy} onClick={result.retry}>Retry</button>}
     </div>)}
-  </div>;
+  </FeedbackPortal>;
 }
 
 export function settingsResult(id: string, label: string, snapshot: {
