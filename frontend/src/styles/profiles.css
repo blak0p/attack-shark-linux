@@ -1,0 +1,10 @@
+.profile-controls { position: relative; display: flex; align-items: center; gap: .5rem; font-size: .8rem; -webkit-app-region: no-drag; }
+.profile-controls select { max-width: 12rem; }
+/* Escape the titlebar's horizontally scrolling (and vertically clipping) container. */
+.profile-overlays { font-size: .8rem; -webkit-app-region: no-drag; }
+.profile-management, .profile-overlays form { position: fixed; z-index: 30; top: 60px; right: 12px; max-height: calc(100dvh - 72px); overflow-y: auto; white-space: normal; width: min(30rem, 90vw); padding: 1rem; background: var(--bg, #202127); border: 1px solid #666; border-radius: .5rem; box-shadow: 0 4px 18px #0008; }
+.profile-overlays form { z-index: 31; }
+.profile-management > div { display: flex; gap: .4rem; flex-wrap: wrap; margin: .7rem 0; }
+.profile-overlays > [role=alert], .profile-overlays > [role=status] { position: fixed; top: 60px; right: 12px; width: min(30rem, 90vw); padding: .8rem; background: #202127; border: 1px solid #888; z-index: 32; }
+.profile-controls button, .profile-controls input, .profile-controls select,
+.profile-overlays button, .profile-overlays input { font: inherit; }
