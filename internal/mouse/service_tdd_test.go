@@ -15,6 +15,56 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
+func TestCompleteBoundRejectsStaleAndSerializesSelection(t *testing.T) {
+	command := &commandFake{}
+	svc, binding := localServiceFixture(t, command)
+	before, _ := svc.State(binding.ID)
+	calls := 0
+	sentinel := errors.New("local save failed")
+	if err := svc.CompleteBound(binding, func() error { calls++; return sentinel }); err != sentinel || calls != 1 {
+		t.Fatalf("completion error=%v calls=%d", err, calls)
+	}
+	stale := binding
+	stale.InventoryRevision++
+	if err := svc.CompleteBound(stale, func() error { calls++; return nil }); !errors.Is(err, ErrStaleBinding) || calls != 1 {
+		t.Fatalf("stale error=%v calls=%d", err, calls)
+	}
+	entered, release, attempted, selected := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	done := make(chan error, 1)
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	go func() {
+		done <- svc.CompleteBound(binding, func() error { close(entered); <-release; calls++; return nil })
+	}()
+	<-entered
+	go func() { close(attempted); selected <- svc.Select(binding.ID) }()
+	<-attempted
+	// Completion owns the selection boundary until the local commit returns.
+	select {
+	case err := <-selected:
+		t.Fatalf("selection overtook completion: %v", err)
+	default:
+	}
+	unblock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-selected; err != nil {
+		t.Fatal(err)
+	}
+	after, _ := svc.State(binding.ID)
+	if !reflect.DeepEqual(before, after) || calls != 2 || command.calls != 0 {
+		t.Fatalf("state/callback effects: before=%+v after=%+v calls=%d writes=%d", before, after, calls, command.calls)
+	}
+	if _, err := svc.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteBound(binding, func() error { calls++; return nil }); !errors.Is(err, ErrStaleBinding) || calls != 2 || command.calls != 0 {
+		t.Fatalf("refreshed binding accepted: error=%v calls=%d writes=%d", err, calls, command.calls)
+	}
+}
+
 type compositeCommandFake struct {
 	commandFake
 	calls int
