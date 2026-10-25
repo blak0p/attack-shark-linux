@@ -275,12 +275,18 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
 		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
 	}
+	loadProfileSeed := func(binding mouse.Binding) (x6.DeviceConfig, error) {
+		var config x6.DeviceConfig
+		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
+		return config, err
+	}
 	service := desktop.Compose(status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
 		AttachPollingPersistence(loadPolling, savePolling).
-		AttachNormalSleepPersistence(loadPolling, savePolling)
+		AttachNormalSleepPersistence(loadPolling, savePolling).
+		AttachProfiles(configstore.NewProfileStore(filepath.Join(dataDir, "profiles")), loadProfileSeed)
 	return service.AttachResetRunner(composeEmergencyReset(dataDir, inventory, service))
 }
 
