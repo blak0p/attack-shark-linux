@@ -101,7 +101,7 @@ for (const width of [1280, 620]) {
     await page.keyboard.press("KeyS");
     await expect(surface).toHaveText("Recording · 2 presses");
     await page.getByRole("button", { name: "Stop recording", exact: true }).click();
-    await expect(page.getByRole("status")).toHaveText("2 presses");
+    await expect(page.getByRole("region", { name: "Local recording", exact: true }).getByRole("status")).toHaveText("2 presses");
     const timeline = page.getByRole("list", { name: "Ordered timeline", exact: true });
     await expect(timeline.locator("strong")).toHaveText(["Key E", "Key S"]);
     await expect(timeline.locator("small")).toHaveText(["↓ 10 ms / ↑ 10 ms", "↓ 10 ms / ↑ 10 ms"]);
