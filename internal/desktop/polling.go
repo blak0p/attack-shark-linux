@@ -103,6 +103,8 @@ func (c *pollingComponent) stage(rate x6.PollingRate) PollingSnapshot {
 }
 func (c *pollingComponent) retryPersistence() PollingSnapshot {
 	s := c.service
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 	binding, ok := s.selectedBinding()
 	if !ok || binding.SessionOnly {
 		return c.snapshot()
@@ -117,16 +119,22 @@ func (c *pollingComponent) retryPersistence() PollingSnapshot {
 	s.mu.Lock()
 	persistence := c.persistence
 	s.mu.Unlock()
-	if persistence == nil || s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = *retry }) != nil {
+	deviceErr := error(nil)
+	if persistence != nil {
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = *retry })
+	}
+	profileErr := s.saveActiveProfile(binding, func(config *profileConfiguration) { config.Device.PollingRate = *retry })
+	if (persistence != nil && deviceErr != nil) || profileErr != nil {
 		state.mu.Lock()
 		state.persistence = "failed"
+		state.err = Error{Code: PersistenceFailed}
 		state.mu.Unlock()
 		snapshot := pollingSnapshotOf(state)
 		c.emitConfiguration(binding, snapshot)
 		return snapshot
 	}
 	state.mu.Lock()
-	state.persisted, state.retry, state.persistence = retry, nil, "success"
+	state.persisted, state.retry, state.persistence, state.err = retry, nil, "success", Error{}
 	state.mu.Unlock()
 	snapshot := pollingSnapshotOf(state)
 	c.emitConfiguration(binding, snapshot)
@@ -152,6 +160,8 @@ func (c *pollingComponent) apply(ctx context.Context) PollingSnapshot {
 	return pollingSnapshotOf(state)
 }
 func (c *pollingComponent) applyPollingBound(binding Binding, revision uint64, rate x6.PollingRate) error {
+	c.service.operationMu.Lock()
+	defer c.service.operationMu.Unlock()
 	return c.applyBound(context.Background(), binding, revision, rate)
 }
 func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revision uint64, rate x6.PollingRate) error {
@@ -194,13 +204,23 @@ func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revi
 	}
 	state.applied, state.firmware = rate, "success"
 	state.mu.Unlock()
-	if binding.SessionOnly || persistence == nil {
+	if binding.SessionOnly || (persistence == nil && (s.profiles == nil || s.profiles.store == nil)) {
 		completed = true
 		return nil
 	}
-	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = rate }); err != nil {
+	deviceErr := error(nil)
+	if persistence != nil {
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = rate })
+	}
+	profileErr := s.saveActiveProfile(binding, func(config *profileConfiguration) { config.Device.PollingRate = rate })
+	if (persistence != nil && deviceErr != nil) || profileErr != nil {
 		state.mu.Lock()
 		state.retry, state.persistence = &rate, "failed"
+		// Preserve the legacy no-profile snapshot contract. Profile-enabled edits
+		// additionally expose the local profile persistence error.
+		if s.profiles != nil && s.profiles.store != nil {
+			state.err = Error{Code: PersistenceFailed}
+		}
 		state.mu.Unlock()
 		completed = true
 		return nil

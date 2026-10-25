@@ -214,6 +214,7 @@ type lightingState struct {
 }
 
 type Service struct {
+	profiles          *profileComponent
 	macroLibrary      *macros.Library
 	macroLibraryError error
 	status            StatusReader
