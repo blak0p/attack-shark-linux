@@ -122,7 +122,7 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return (
     <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
-      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6"><ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} /></TopBar>}
+      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
       connectionStatus={<p className="connection offline">Connecting…</p>}>
       {macroWorkspace}
       <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
@@ -161,10 +161,10 @@ export function App({ service }: { service: DesktopService }) {
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
   const titlebarElement = (
-    <TopBar title="Mouse configuration" subtitle="Attack Shark X6">
-      <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />
+    <TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={
+      <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />}>
       {eligibleDevices.length > 1 && (
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <label className="titlebar-device">
           <span>Mouse device</span>
           <select
             className="select"

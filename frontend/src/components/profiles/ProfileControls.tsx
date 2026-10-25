@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ProfileSnapshot, ProfilesService } from '../../desktop-contract';
 import '../../styles/profiles.css';
+import { GnomeSelect } from '../panels/GnomeSelect';
+import { FeedbackPortal } from '../OperationFeedback';
 
 type Operation = 'Create' | 'Rename' | 'Duplicate' | 'Delete';
 export function ProfileControls({ service, scope, disabled, refresh, onBusy }: {
@@ -15,6 +17,29 @@ export function ProfileControls({ service, scope, disabled, refresh, onBusy }: {
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<{ operation: Operation; id: string }>();
   const [name, setName] = useState('');
+  const [hiddenNotice, setHiddenNotice] = useState('');
+  const [hiddenError, setHiddenError] = useState('');
+  const [hiddenMessage, setHiddenMessage] = useState('');
+  useEffect(() => {
+    setHiddenNotice(''); setHiddenError(''); setHiddenMessage('');
+  }, [scope, service, disabled]);
+  useEffect(() => {
+    if (!snapshot?.Notice) return;
+    const timer = window.setTimeout(() => setHiddenNotice(snapshot.Notice), 8000);
+    return () => window.clearTimeout(timer);
+  }, [snapshot?.Notice, scope]);
+  useEffect(() => {
+    setHiddenError('');
+    if (!error) return;
+    const timer = window.setTimeout(() => setHiddenError(error), 8000);
+    return () => window.clearTimeout(timer);
+  }, [error, scope]);
+  useEffect(() => {
+    setHiddenMessage('');
+    if (!message) return;
+    const timer = window.setTimeout(() => setHiddenMessage(message), 3000);
+    return () => window.clearTimeout(timer);
+  }, [message, scope]);
   const epoch = useRef(0);
   const lock = useRef(false);
   useEffect(() => {
@@ -68,36 +93,42 @@ export function ProfileControls({ service, scope, disabled, refresh, onBusy }: {
     void run(request);
   };
   return <section className="profile-controls" aria-label="Local profiles" aria-busy={busy}>
-    <label>Local profile <select aria-label="Local profile" value={snapshot?.ActiveID ?? ''} disabled={unavailable}
-      onChange={event => void run(() => service.SwitchProfile!(event.target.value), true)}>
-      {!snapshot && <option value="">Profiles unavailable</option>}
-      {snapshot?.Profiles.map(profile => <option key={profile.ID} value={profile.ID}>{profile.Name}</option>)}
-    </select></label>
-    <button type="button" aria-expanded={open} disabled={unavailable} onClick={() => setOpen(!open)}>Manage profiles</button>
-    {createPortal(<div className="profile-overlays">
-    {open && <div className="profile-management" aria-label="Profile management">
-      <button disabled={busy} onClick={() => begin('Create')}>Create profile</button>
-      <p>Create clones the active local settings and activates the copy without changing the mouse. Duplicate stays inactive.</p>
-      {snapshot?.Profiles.map(profile => <div key={profile.ID}>
-        <span>{profile.Name}</span>
-        <button disabled={busy} onClick={() => begin('Rename', profile.ID, profile.Name)}>Rename {profile.Name}</button>
-        <button disabled={busy} onClick={() => begin('Duplicate', profile.ID, `${profile.Name} copy`)}>Duplicate {profile.Name}</button>
-        <button disabled={busy || profile.ID === snapshot.ActiveID || snapshot.Profiles.length === 1}
-          aria-describedby="profile-delete-help" onClick={() => begin('Delete', profile.ID)}>Delete {profile.Name}</button>
+    <span className="profile-selector-label">Profile</span>
+    <GnomeSelect aria-label="Profile" value={snapshot?.ActiveID ?? ''} disabled={unavailable}
+      placeholder="Profiles unavailable"
+      options={snapshot?.Profiles.map(profile => ({ value: profile.ID, label: profile.Name, direct: true })) ?? []}
+      onChange={value => void run(() => service.SwitchProfile!(value), true)} />
+    <button type="button" className="profile-manage" aria-label="Manage profiles" title="Manage profiles" aria-expanded={open} disabled={unavailable} onClick={() => setOpen(!open)}><span aria-hidden="true">⋯</span></button>
+    {createPortal(<div className={`profile-overlays${open || dialog ? ' profile-overlays-open' : ''}`}>
+    {open && <section className="profile-management" aria-label="Profile management">
+      <header className="profile-panel-header"><div><h2>Mouse profiles</h2><p>Local settings for this mouse</p></div>
+        <button type="button" aria-label="Close profile management" disabled={busy} onClick={() => setOpen(false)}>×</button></header>
+      <div className="profile-toolbar">
+      <button className="profile-primary" disabled={busy} onClick={() => begin('Create')}>Create profile</button></div>
+      <p className="profile-description">Create from your current settings. Your mouse stays unchanged.</p>
+      {snapshot?.Profiles.map(profile => <div className="profile-row" key={profile.ID}>
+        <div className="profile-identity"><strong>{profile.Name}</strong>{profile.ID === snapshot.ActiveID && <span className="profile-badge">Active</span>}</div>
+        <div className="profile-row-actions">
+        <button aria-label={`Rename ${profile.Name}`} disabled={busy} onClick={() => begin('Rename', profile.ID, profile.Name)}>Rename</button>
+        <button aria-label={`Duplicate ${profile.Name}`} disabled={busy} onClick={() => begin('Duplicate', profile.ID, `${profile.Name} copy`)}>Duplicate</button>
+        <button className="profile-danger" aria-label={`Delete ${profile.Name}`} disabled={busy || profile.ID === snapshot.ActiveID || snapshot.Profiles.length === 1}
+          aria-describedby="profile-delete-help" onClick={() => begin('Delete', profile.ID)}>Delete</button></div>
       </div>)}
       <p id="profile-delete-help">The active or last profile cannot be deleted. Switch to another profile first.</p>
-    </div>}
+    </section>}
     {dialog && <form role="dialog" aria-modal="false" aria-label={`${dialog.operation} profile`} onSubmit={event => { event.preventDefault(); submit(); }}>
       <h2>{dialog.operation} profile</h2>
       {error && <p role="alert">{error}</p>}
       {dialog.operation === 'Delete' ? <p>Delete this local profile? This cannot be undone.</p> :
         <label>Profile name <input autoFocus value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>}
-      <button type="submit" disabled={busy || (dialog.operation !== 'Delete' && !name.trim())}>Confirm profile action</button>
-      <button type="button" disabled={busy} onClick={() => setDialog(undefined)}>Cancel profile action</button>
+      <div className="profile-form-actions"><button className="profile-primary" aria-label="Confirm profile action" type="submit" disabled={busy || (dialog.operation !== 'Delete' && !name.trim())}>{dialog.operation === 'Delete' ? 'Delete profile' : 'Save profile'}</button>
+      <button type="button" aria-label="Cancel profile action" disabled={busy} onClick={() => setDialog(undefined)}>Cancel</button></div>
     </form>}
-    {!open && !dialog && snapshot?.Notice && <div role="status">{snapshot.Notice} <button disabled={busy} onClick={() => void run(() => service.DismissProfileNotice!())}>Dismiss profile notice</button></div>}
-    {!open && !dialog && error && <p role="alert">{error}</p>}
-    {!open && !dialog && message && <p role="status">{message}</p>}
     </div>, document.body)}
+    <FeedbackPortal><div className="profile-toasts">
+    {!open && !dialog && snapshot?.Notice && snapshot.Notice !== hiddenNotice && <div role="status">{snapshot.Notice} <button disabled={busy} onClick={() => void run(() => service.DismissProfileNotice!())}>Dismiss profile notice</button></div>}
+    {!open && !dialog && error && error !== hiddenError && <p role="alert">{error}</p>}
+    {!open && !dialog && message && message !== hiddenMessage && <p role="status">{message}</p>}
+    </div></FeedbackPortal>
   </section>;
 }

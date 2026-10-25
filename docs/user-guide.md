@@ -28,7 +28,7 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - **⌁ Controls**: Sensor enhancements (Angle snap, Ripple control, Lift-off distance) and key response debounce.
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
-- **Top Bar**: Displays an always-visible **Local profile** selector and **Manage profiles** control, plus a device selector when multiple eligible receivers are available. There is no separate profiles tab.
+- **Top Bar**: Centers the **Profile** selector in the window, with a compact **⋯** button (accessible name and tooltip: **Manage profiles**), plus a device selector when multiple eligible receivers are available. On very narrow windows the profile block moves to a second top-bar row to keep every control reachable. There is no separate profiles tab.
 - **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors appear for eight seconds with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
 - **Connection & Battery Card (Bottom Left)**: Live indicator showing device availability (`Device available` / `Device unavailable`) and current battery level percentage (`Battery 100%`). Hardware battery heartbeats and physical DPI button presses are pushed live from the mouse dongle to the UI.
 - **Auto-Sync vs. Draft Confirmation**:
@@ -37,9 +37,9 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
 
 ### Local profiles
 
-Profiles are local files belonging to the selected mouse, not onboard mouse profiles. The first automatic profile uses previously saved local settings. A dismissible notice explains when it was created and that creating it made no mouse changes. Invalid local data is reported rather than silently treated as a successful migration.
+Profiles are local files belonging to the selected mouse, not onboard mouse profiles. The first automatic profile uses previously saved local settings. A notice in the shared bottom-right notification stack explains when it was created and that creating it made no mouse changes. It disappears after eight seconds without changing stored notice data; explicit dismissal still acknowledges it. Profile successes disappear after three seconds and profile errors after eight seconds. Inline form validation remains visible. Invalid local data is reported rather than silently treated as a successful migration.
 
-Use **Manage profiles** to create, rename, duplicate, or delete profiles using inline forms:
+Use **Manage profiles** to open the management panel centered horizontally and vertically below the top bar. Each profile has compact rename, duplicate, and delete actions; the **Active** badge identifies the current profile. Use the close button to return to settings. Actions open a separate confirmation form:
 
 - **Create** clones the active saved configuration and activates the identical local copy without sending settings to the mouse.
 - **Duplicate** creates an inactive copy; **Rename** changes its local name.

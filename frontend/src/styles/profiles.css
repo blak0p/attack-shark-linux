@@ -1,10 +1,37 @@
-.profile-controls { position: relative; display: flex; align-items: center; gap: .5rem; font-size: .8rem; -webkit-app-region: no-drag; }
-.profile-controls select { max-width: 12rem; }
-/* Escape the titlebar's horizontally scrolling (and vertically clipping) container. */
-.profile-overlays { font-size: .8rem; -webkit-app-region: no-drag; }
-.profile-management, .profile-overlays form { position: fixed; z-index: 30; top: 60px; right: 12px; max-height: calc(100dvh - 72px); overflow-y: auto; white-space: normal; width: min(30rem, 90vw); padding: 1rem; background: var(--bg, #202127); border: 1px solid #666; border-radius: .5rem; box-shadow: 0 4px 18px #0008; }
-.profile-overlays form { z-index: 31; }
-.profile-management > div { display: flex; gap: .4rem; flex-wrap: wrap; margin: .7rem 0; }
-.profile-overlays > [role=alert], .profile-overlays > [role=status] { position: fixed; top: 60px; right: 12px; width: min(30rem, 90vw); padding: .8rem; background: #202127; border: 1px solid #888; z-index: 32; }
-.profile-controls button, .profile-controls input, .profile-controls select,
-.profile-overlays button, .profile-overlays input { font: inherit; }
+.profile-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; -webkit-app-region: no-drag; }
+.profile-selector-label { color: var(--muted); }
+.profile-controls .profile-manage { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 22px; line-height: 1; background: transparent; border-color: transparent; }
+.profile-controls .gnome-select-trigger { height: 32px; padding-block: 4px; }
+.profile-controls .gnome-select-wrapper { width: 180px; }
+.profile-controls .gnome-select-trigger { width: 100%; }
+.profile-controls button, .profile-controls select, .profile-overlays button, .profile-overlays input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.profile-controls button, .profile-overlays button { cursor: pointer; }
+.profile-controls button:hover:not(:disabled), .profile-overlays button:hover:not(:disabled) { border-color: var(--accent); background: var(--raised); }
+.profile-controls :disabled, .profile-overlays :disabled { opacity: .45; cursor: not-allowed; }
+.profile-overlays { color: var(--text); font-size: 13px; -webkit-app-region: no-drag; }
+.profile-overlays-open { position: fixed; inset: 64px 0 0; z-index: 100; display: grid; place-items: center; padding: 16px; box-sizing: border-box; background: #0009; overflow-y: auto; }
+.profile-management, .profile-overlays form { box-sizing: border-box; width: min(560px, 100%); padding: 24px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 16px; box-shadow: 0 24px 80px #0008; white-space: normal; max-height: 100%; overflow-y: auto; }
+.profile-panel-header { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 24px; }
+.profile-overlays h2 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+.profile-panel-header p, .profile-description, #profile-delete-help { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+.profile-panel-header > button { font-size: 20px; line-height: 1; padding: 6px 10px; background: transparent; }
+.profile-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.profile-description { margin-bottom: 20px; }
+.profile-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.profile-identity { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.profile-identity strong { overflow-wrap: anywhere; font-weight: 500; }
+.profile-badge { background: var(--accent-subtle); color: var(--text); border-radius: 20px; padding: 3px 8px; font-size: 10px; }
+.profile-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.profile-row-actions button { font-size: 11px; padding: 6px 9px; background: transparent; }
+.profile-overlays .profile-primary { background: var(--accent); color: var(--accent-on-primary); border-color: var(--accent); font-weight: 600; }
+.profile-overlays .profile-danger:not(:disabled) { color: #f4a5a5; }
+#profile-delete-help { border-top: 1px solid var(--line); padding-top: 16px; }
+.profile-overlays form { position: fixed; z-index: 102; top: calc(50% + 32px); left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); box-shadow: 0 0 0 100vmax #0009, 0 24px 80px #0008; max-height: calc(100dvh - 96px); overflow-y: auto; }
+.profile-overlays form label { display: grid; gap: 8px; margin: 24px 0; color: var(--muted); }
+.profile-overlays input { box-sizing: border-box; width: 100%; }
+.profile-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.profile-toasts { display: grid; gap: 8px; pointer-events: auto; }
+.profile-toasts:empty { display: none; }
+.profile-toasts > [role=alert], .profile-toasts > [role=status] { box-sizing: border-box; margin: 0; padding: 16px; background: var(--bg); color: var(--text); border: 1px solid var(--accent); border-radius: 12px; box-shadow: 0 8px 32px #0006; line-height: 1.6; overflow-wrap: anywhere; }
+.profile-overlays :focus-visible, .profile-controls :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) { .profile-selector-label { display: none; } .profile-controls .gnome-select-wrapper { width: 140px; } .profile-management { padding: 18px; } .profile-overlays-open { padding: 16px 10px; } }
