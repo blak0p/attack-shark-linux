@@ -200,15 +200,40 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     setAutomaticApplyRequests((count) => count + 1);
     return request().finally(() => setAutomaticApplyRequests((count) => Math.max(0, count - 1)));
   };
-  const stageConfig = (next: DPIConfig) => void runAutomaticApply(() => service.StageDPI(next).then((staged) => {
-    setSnapshot(staged);
-    if (staged.Error.Code) return;
-    return service.ApplyDPI().then((updated) => {
-      setSnapshot(updated);
-      setNotice(updated.Firmware === "failed" ? "DPI application failed." : dpiAppliedNotice);
-      return updated;
+  // Each automatic setting keeps at most one write in flight. Edits made meanwhile
+  // replace each other, so a slider drag sends the current write plus only its final
+  // value instead of queueing one hardware write per input event.
+  const applyLanes = useRef(new Map<string, { running: boolean; next?: (superseded: () => boolean) => Promise<unknown> }>());
+  const runLatestAutomaticApply = (key: string, request: (superseded: () => boolean) => Promise<unknown>) => {
+    let lane = applyLanes.current.get(key);
+    if (!lane) applyLanes.current.set(key, lane = { running: false });
+    const current = lane;
+    if (current.running) {
+      current.next = request;
+      return;
+    }
+    current.running = true;
+    const run = (next: (superseded: () => boolean) => Promise<unknown>) => void runAutomaticApply(() => next(() => current.next !== undefined)).finally(() => {
+      const queued = current.next;
+      current.next = undefined;
+      if (queued) run(queued);
+      else current.running = false;
     });
-  }));
+    run(request);
+  };
+  const stageConfig = (next: DPIConfig) => {
+    setSnapshot((value) => value && { ...value, Pending: next });
+    runLatestAutomaticApply("dpi", (superseded) => service.StageDPI(next).then((staged) => {
+      if (!superseded()) setSnapshot(staged);
+      if (staged.Error.Code) return;
+      return service.ApplyDPI().then((updated) => {
+        if (superseded()) return updated;
+        setSnapshot(updated);
+        setNotice(updated.Firmware === "failed" ? "DPI application failed." : dpiAppliedNotice);
+        return updated;
+      });
+    }));
+  };
   const actions: WorkspaceActions = {
     refreshProfilesWorkspace: () => refreshSelectedDeviceSnapshots(),
     checkUpdates: () => runUpdate("check"),
@@ -241,36 +266,44 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     stageDPI: (index, value) => snapshot && stageConfig({ ...snapshot.Pending, DPI: snapshot.Pending.DPI.map((dpi, current) => current === index ? value : dpi) }),
     selectStage: (index) => snapshot && stageConfig({ ...snapshot.Pending, ActiveStage: index + 1 }),
     stageFeature: (patch) => snapshot && stageConfig({ ...snapshot.Pending, ...patch }),
-    stagePollingRate: (rate) => void runAutomaticApply(() => service.StagePollingRate(rate).then((staged) => {
-      setPolling(staged);
+    stagePollingRate: (rate) => runLatestAutomaticApply("polling", (superseded) => service.StagePollingRate(rate).then((staged) => {
+      if (!superseded()) setPolling(staged);
       if (staged.Error?.Code) return staged;
       return service.ApplyPollingRate().then((updated) => {
+        if (superseded()) return updated;
         setPolling(updated);
         setNotice(updated.Firmware === "failed" ? "Polling application failed." : pollingAppliedNotice);
         return updated;
       });
     })),
-    stageDebounce: (responseTimeMs) => void runAutomaticApply(() => service.StageDebounce(responseTimeMs).then((staged) => {
-      setDebounce(staged);
+    stageDebounce: (responseTimeMs) => {
+      setDebounce((value) => value && { ...value, Desired: responseTimeMs });
+      runLatestAutomaticApply("debounce", (superseded) => service.StageDebounce(responseTimeMs).then((staged) => {
+      if (!superseded()) setDebounce(staged);
       if (staged.Error.Code) return staged;
       return service.ApplyDebounce().then((updated) => {
+        if (superseded()) return updated;
         setDebounce(updated);
         setNotice(updated.Firmware === "failed" ? "Key response time application failed." : "Key response time applied.");
         return updated;
       });
-    })),
+      }));
+    },
     retryDebouncePersistence: () => void runAutomaticApply(() => service.RetryDebouncePersistence().then(setDebounce)),
-    stageNormalSleep: (minutes) => void runAutomaticApply(() => service.StageNormalSleep(minutes).then((staged) => {
-      setNormalSleep(staged);
-      if (staged.Error.Code) return staged;
-      return service.ApplyNormalSleep().then((updated) => { setNormalSleep(updated); return updated; });
-    })),
+    stageNormalSleep: (minutes) => {
+      setNormalSleep((value) => value && { ...value, Pending: minutes });
+      runLatestAutomaticApply("sleep", (superseded) => service.StageNormalSleep(minutes).then((staged) => {
+        if (!superseded()) setNormalSleep(staged);
+        if (staged.Error.Code) return staged;
+        return service.ApplyNormalSleep().then((updated) => { if (!superseded()) setNormalSleep(updated); return updated; });
+      }));
+    },
     retryNormalSleepPersistence: () => void runAutomaticApply(() => service.RetryNormalSleepPersistence().then(setNormalSleep)),
-		stageLighting: (selection) => void runAutomaticApply(() => service.StageLighting(selection).then((staged) => {
-      setLighting(staged);
+		stageLighting: (selection) => runLatestAutomaticApply("lighting", (superseded) => service.StageLighting(selection).then((staged) => {
+      if (!superseded()) setLighting(staged);
       if (staged.Error?.Code) return staged;
       return service.ApplyLighting().then((updated) => {
-        setLighting(updated);
+        if (!superseded()) setLighting(updated);
         return updated;
       });
 		})),
