@@ -85,6 +85,9 @@ type HidrawBackend struct {
 	sysRoot        string
 	devRoot        string
 	readTimeout    time.Duration
+	resendDelay    time.Duration
+	maxAttempts    int
+	silenceDelay   time.Duration
 	opener         hidrawNodeOpener
 	ioOnce         sync.Once
 	ioMu           sync.Mutex
@@ -98,11 +101,14 @@ type HidrawBackend struct {
 
 func NewHidrawBackend() *HidrawBackend {
 	return &HidrawBackend{
-		sources:     make(map[string]Candidate),
-		sysRoot:     "/sys",
-		devRoot:     "/dev",
-		readTimeout: statusReadDeadline,
-		opener:      osHidrawNodeOpener{},
+		sources:      make(map[string]Candidate),
+		sysRoot:      "/sys",
+		devRoot:      "/dev",
+		readTimeout:  statusReadDeadline,
+		resendDelay:  defaultResendDelay,
+		maxAttempts:  defaultMaxAttempts,
+		silenceDelay: defaultSilenceDelay,
+		opener:       osHidrawNodeOpener{},
 	}
 }
 
@@ -323,7 +329,15 @@ func (b *HidrawBackend) ReadInterruptIN(ctx context.Context, source transport.In
 // write and ACK read; the listener cannot start another read until ownership is
 // released. Reports consumed while Apply owns the node are synchronously sent
 // to the listener callback, so status events are not silently discarded.
-func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, continueReading func([]byte) bool) error {
+func (b *HidrawBackend) SendAndAwait(ctx context.Context, payload []byte, continueReading func([]byte) bool) (err error) {
+	started := time.Now()
+	defer func() {
+		outcome := "ok"
+		if err != nil {
+			outcome = "error"
+		}
+		inventoryDiagnosticf("event=command_unbound report_id=%#02x len=%d operation=%s duration_ms=%d outcome=%s error=%q", payloadID(payload), len(payload), DiagnosticOperation(err), time.Since(started).Milliseconds(), outcome, errorText(err))
+	}()
 	if len(payload) != dpiReportLength {
 		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI feature report length = %d, want %d", len(payload), dpiReportLength)}
 	}

@@ -95,6 +95,7 @@ func (c *lightingComponent) apply() LightingSnapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.revision != revision {
+		logApplyError(ApplyFailed, "lighting_revision_changed_after_write", nil)
 		state.firmware = "failed"
 		state.err = Error{Code: ApplyFailed}
 		return lightingSnapshotLocked(state)

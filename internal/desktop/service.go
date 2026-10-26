@@ -3,7 +3,11 @@ package desktop
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -615,6 +619,24 @@ func fromDTO(config DPIConfig) x6.DPIConfig {
 	return x6.DPIConfig{AngleControl: config.AngleControl, RippleControl: config.RippleControl, StageMask: config.StageMask, LiftDistance: config.LiftDistance, DPI: config.DPI, ActiveStage: config.ActiveStage, Colors: config.Colors}
 }
 func errorCode(err error, status bool) ErrorCode {
+	code := classifyErrorCode(err, status)
+	if !status {
+		logApplyError(code, "error", err)
+	}
+	return code
+}
+
+// logApplyError records why a settings write ended with a user-visible error
+// code, including the caller so each settings domain can be told apart.
+func logApplyError(code ErrorCode, reason string, err error) {
+	caller := "unknown"
+	if _, file, line, ok := runtime.Caller(2); ok {
+		caller = fmt.Sprintf("%s:%d", filepath.Base(file), line)
+	}
+	slog.Warn("x6_apply_error", "code", code, "reason", reason, "classification", applyErrorClassification(err), "caller", caller, "error", err)
+}
+
+func classifyErrorCode(err error, status bool) ErrorCode {
 	if errors.Is(err, mouse.ErrSelectionRequired) {
 		return SelectionRequired
 	}

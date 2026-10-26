@@ -567,6 +567,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 			if remapErr != nil {
 				remState.err = Error{Code: errorCode(remapErr, false)}
 			} else {
+				logApplyError(ApplyFailed, fmt.Sprintf("profile_macro_unconfirmed assignment=%v upload=%v", progress.Assignment, progress.Upload), nil)
 				remState.err = Error{Code: ApplyFailed}
 			}
 			remState.mu.Unlock()
