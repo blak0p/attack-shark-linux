@@ -645,6 +645,54 @@ describe("useDesktopWorkspace", () => {
   expect(result.current.model.automaticApplyBusy).toBe(false);
 });
 
+describe("automatic apply coalescing", () => {
+  it.each([
+    { name: "normal sleep", stage: "StageNormalSleep", apply: "ApplyNormalSleep", values: [1, 2, 3, 4, 17], snap: (value: number) => normalSleep({ Pending: value, Firmware: "success" }), act: (actions: ReturnType<typeof useDesktopWorkspace>["actions"], value: number) => actions.stageNormalSleep(value), shown: (model: ReturnType<typeof useDesktopWorkspace>["model"]) => model.normalSleep?.Pending },
+    { name: "key response time", stage: "StageDebounce", apply: "ApplyDebounce", values: [4, 6, 8, 10, 13], snap: (value: number) => debounce({ Desired: value, Firmware: "success" }), act: (actions: ReturnType<typeof useDesktopWorkspace>["actions"], value: number) => actions.stageDebounce(value), shown: (model: ReturnType<typeof useDesktopWorkspace>["model"]) => model.debounce?.Desired },
+  ] as const)("sends a slider burst for $name as one in-flight write plus only the latest value", async ({ stage, apply, values, snap, act: change, shown }) => {
+    const firstApply = deferred<unknown>();
+    const staged: number[] = [];
+    const applyMock = vi.fn().mockReturnValueOnce(firstApply.promise).mockImplementation(async () => snap(staged[staged.length - 1]));
+    const harness = serviceFor({ [stage]: vi.fn().mockImplementation(async (value: number) => { staged.push(value); return snap(value); }), [apply]: applyMock } as Partial<DesktopService>);
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.normalSleep).toBeDefined());
+    await waitFor(() => expect(result.current.model.debounce).toBeDefined());
+
+    await act(async () => change(result.current.actions, values[0]));
+    await waitFor(() => expect(applyMock).toHaveBeenCalledOnce());
+    for (const value of values.slice(1)) await act(async () => change(result.current.actions, value));
+
+    expect(shown(result.current.model)).toBe(values[values.length - 1]);
+    expect(applyMock).toHaveBeenCalledOnce();
+
+    await act(async () => firstApply.resolve(snap(values[0])));
+    await waitFor(() => expect(applyMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.model.automaticApplyBusy).toBe(false));
+    expect(applyMock).toHaveBeenCalledTimes(2);
+    const stageMock = harness.service[stage] as ReturnType<typeof vi.fn>;
+    expect(stageMock).toHaveBeenCalledTimes(2);
+    expect(stageMock).toHaveBeenLastCalledWith(values[values.length - 1]);
+  });
+
+  it("sends a DPI slider burst as one in-flight write plus only the latest configuration", async () => {
+    const firstApply = deferred<ReturnType<typeof snapshot>>();
+    const harness = serviceFor({ ApplyDPI: vi.fn().mockReturnValueOnce(firstApply.promise).mockResolvedValue(snapshot({ Firmware: "success" })) });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
+
+    await act(async () => result.current.actions.stageDPI(0, 900));
+    await waitFor(() => expect(harness.service.ApplyDPI).toHaveBeenCalledOnce());
+    for (const value of [1000, 1100, 1600]) await act(async () => result.current.actions.stageDPI(0, value));
+
+    expect(result.current.model.snapshot?.Pending.DPI[0]).toBe(1600);
+    await act(async () => firstApply.resolve(snapshot({ Firmware: "success" })));
+    await waitFor(() => expect(result.current.model.automaticApplyBusy).toBe(false));
+    expect(harness.service.ApplyDPI).toHaveBeenCalledTimes(2);
+    expect(harness.service.StageDPI).toHaveBeenCalledTimes(2);
+    expect(harness.service.StageDPI).toHaveBeenLastCalledWith({ ...dpi, DPI: [1600, 1200] });
+  });
+});
+
 it("applies DPI edits directly after staging", async () => {
     const harness = serviceFor();
     const { result } = renderHook(() => useDesktopWorkspace(harness.service));
