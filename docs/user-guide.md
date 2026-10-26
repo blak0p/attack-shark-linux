@@ -28,16 +28,29 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
   - **⌁ Controls**: Sensor enhancements (Angle snap, Ripple control, Lift-off distance) and key response debounce.
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
-- **Top Bar**: Displays the active mouse profile name (**Attack Shark X6**) and a device selector when multiple eligible receivers are available.
-- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors remain visible with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
+- **Top Bar**: Centers the **Profile** selector in the window, with a compact **⋯** button (accessible name and tooltip: **Manage profiles**), plus a device selector when multiple eligible receivers are available. On very narrow windows the profile block moves to a second top-bar row to keep every control reachable. There is no separate profiles tab.
+- **Operation Feedback (Bottom Right)**: One shared spinner shows `Working…` during device changes, library operations, reset, and updates. Confirmations disappear after three seconds: `Applied` for acknowledged settings, `Saved` for local library saves or persistence retries, and `Sent` for macro transport. Startup snapshots do not trigger success notices. Errors appear for eight seconds with a `Retry` action when available; a local-save retry does not resend settings to the mouse. Macro transport is not proof of physical playback or device persistence; expand **Device details** for that distinction.
 - **Connection & Battery Card (Bottom Left)**: Live indicator showing device availability (`Device available` / `Device unavailable`) and current battery level percentage (`Battery 100%`). Hardware battery heartbeats and physical DPI button presses are pushed live from the mouse dongle to the UI.
 - **Auto-Sync vs. Draft Confirmation**:
   - Sliders and toggles in **Performance**, **Lighting**, and **Controls** are debounced and automatically applied to the hardware after one second of user inactivity.
   - **Button Remapping** uses an explicit draft workflow requiring confirmation before sending new bindings to the hardware, preventing accidental lockouts.
 
+### Local profiles
+
+Profiles are local files belonging to the selected mouse, not onboard mouse profiles. The first automatic profile uses previously saved local settings. A notice in the shared bottom-right notification stack explains when it was created and that creating it made no mouse changes. It disappears after eight seconds without changing stored notice data; explicit dismissal still acknowledges it. Profile successes disappear after three seconds and profile errors after eight seconds. Inline form validation remains visible. Invalid local data is reported rather than silently treated as a successful migration.
+
+Use **Manage profiles** to open the management panel centered horizontally and vertically below the top bar. Each profile has compact rename, duplicate, and delete actions; the **Active** badge identifies the current profile. Use the close button to return to settings. Actions open a separate confirmation form:
+
+- **Create** clones the active saved configuration and activates the identical local copy without sending settings to the mouse.
+- **Duplicate** creates an inactive copy; **Rename** changes its local name.
+- **Delete** cannot remove the active or last profile. Switch to another profile first.
+- Selecting another profile sends its configuration to the selected mouse and refreshes the displayed settings. Only a fully acknowledged switch reports **Profile applied**. A failed or partial switch displays an error and reloads actual settings; do not assume the entire profile reached the mouse.
+
+Acknowledged setting edits update the active local profile without a manual Save button. Profiles include lighting and button/macro assignments; the macro library itself remains shared across mice. Selecting a different mouse loads its independent profile list and active profile. Controls are unavailable while an operation is pending or no mouse is selected.
+
 ### Local macro feedback
 
-Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors remain visible, including device errors that do not prevent a successful local save.
+Saving, importing, and deleting macros change only the local library. The shared spinner shows work in progress; confirmations disappear after three seconds. Errors appear for eight seconds, including device errors that do not prevent a successful local save.
 
 ---
 
@@ -213,6 +226,44 @@ If custom settings cause unintended behavior, you can restore factory defaults d
 Reset selects **DPI stage 2**, **Static DPI lighting**, **0.5-minute normal sleep**, **4-ms key response time**, **1000-Hz polling**, and the default button layout. DPI values and stage colors retain the documented six-stage baseline. Ordinary application defaults remain stage 4 and 8 ms; reset uses a separate capture-backed baseline.
 
 Only after all four lanes acknowledge are stale local profiles cleared and the displayed DPI, polling, lighting, sleep, debounce, and remapping snapshots refreshed. A failure does not report success or replace the displayed settings with defaults; hardware may be partially changed. This is not a verified complete device-memory/EEPROM erase or onboard macro deletion.
+
+---
+
+### 4. Updates
+
+Startup silently checks AppImage and USB permissions together. An upper-right
+**Updates** notice appears only when an update is available or a request fails;
+there is no loading or up-to-date panel. It labels AppImage, USB permissions (udev),
+or both. Choose **Apply updates** explicitly; expand **Update details** for the
+explanation. USB eligibility comes from backend-verified policy contents, not a
+release version or a changed manifest alone. No Device navigation is needed.
+Failures stay visible, with **Check for updates** for explicit reinspection and
+**Relaunch app** when applicable. The notice scrolls on smaller screens.
+Checking never applies anything; silence is not proof of current USB permissions.
+
+**Apply updates** approves the unfinished eligible operations together. Missing or
+recognized official outdated USB rules use one system authorization dialog; custom
+rules are preserved and current rules are not overwritten. The app never collects
+a password. AppImage replacement remains user-local. Older backends retain the
+legacy **Update and restart** banner.
+
+A confirmed USB-only success shows **USB permissions updated.** for three seconds,
+then hides the finished notice. Errors and still-needed AppImage installation or
+restart/relaunch actions remain visible.
+
+Outcomes are independent: a written policy can still have a reload/activation
+error, and a replaced AppImage does not prove it relaunched. Inspect each displayed
+error before retrying. Explicit retries do not repeat completed writes; **Relaunch
+app** requests restart while keeping any policy error visible. Reconnect the mouse
+if needed. Missing helper or authorization-agent errors require the separate
+[trusted setup procedure](linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup),
+not running the app as root. The UI does not run that procedure.
+
+**Safe user-led validation before installation:** use the upper-right Updates window, record the
+affected targets (if a notice appears), expand Update details, and check that reviewing/checking causes no system
+authorization or apply. Do not click Apply updates or run setup until you choose to
+authorize host changes. After a separately authorized update, record individual
+outcomes and reconnect/test the mouse; do not treat a reload error as success.
 
 ---
 

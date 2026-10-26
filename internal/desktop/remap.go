@@ -165,11 +165,20 @@ func (c *remapComponent) applyBound(binding Binding, state *remapState, revision
 	state.macroApplied = nil
 	state.macroAppliedMap = make(map[uint8]*MacroDraft)
 	state.mu.Unlock()
-	if binding.SessionOnly || persistence == nil {
+	if binding.SessionOnly || (persistence == nil && (s.profiles == nil || s.profiles.store == nil)) {
 		s.emitRemapConfiguration(binding, remapSnapshotOf(state))
 		return
 	}
-	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &pending }); err != nil {
+	deviceErr := error(nil)
+	if persistence != nil {
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &pending })
+	}
+	profileErr := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+		remapPending := cloneRemapConfig(pending)
+		p.Device.Remap = &remapPending
+		p.Macros = nil
+	})
+	if (persistence != nil && deviceErr != nil) || profileErr != nil {
 		state.mu.Lock()
 		retry := cloneRemapConfig(pending)
 		state.retry, state.persistence, state.err = &retry, "failed", Error{Code: PersistenceFailed}
@@ -211,10 +220,34 @@ func (c *remapComponent) retryBound(binding Binding, state *remapState) RemapSna
 	}
 	retry := cloneRemapConfig(*state.retry)
 	state.mu.Unlock()
-	if persistence == nil || binding.SessionOnly {
+	if binding.SessionOnly {
 		return remapSnapshotOf(state)
 	}
-	if err := s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &retry }); err != nil {
+	deviceErr := error(nil)
+	if persistence != nil {
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &retry })
+	}
+	profileErr := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+		remapRetry := cloneRemapConfig(retry)
+		p.Device.Remap = &remapRetry
+		state.mu.Lock()
+		numMacros := len(state.macroAppliedMap)
+		state.mu.Unlock()
+		if numMacros > 0 {
+			state.mu.Lock()
+			var drafts []MacroDraft
+			for b := uint8(1); b <= 7; b++ {
+				if d := state.macroAppliedMap[b]; d != nil {
+					drafts = append(drafts, *cloneMacroDraft(d))
+				}
+			}
+			state.mu.Unlock()
+			p.Macros = drafts
+		} else {
+			p.Macros = nil
+		}
+	})
+	if (persistence != nil && deviceErr != nil) || profileErr != nil {
 		return failRemap(state, PersistenceFailed)
 	}
 	state.mu.Lock()

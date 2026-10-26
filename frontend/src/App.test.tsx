@@ -868,8 +868,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("group", { name: "Click type" })).toBeInTheDocument();
     expect(screen.queryByText("Advanced events and recording")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Mouse recording zone" })).not.toBeInTheDocument();
-    // Local file exchange and click composer are implemented; hardware playback/profiles are not.
-    expect(screen.queryByRole("button", { name: /profile|play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
+    // Local profiles are visible even when an older service does not support them.
+    expect(screen.getByLabelText('Profile')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Manage profiles' })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /play|hardware.*record|record.*hardware|upload/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Save to Device/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Reset to factory/ })).toBeInTheDocument();
   });
@@ -1109,7 +1111,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x60, TemplateID: "breathing-dpi-two" }));
     await waitFor(() => expect(service.ApplyLighting).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Apply lighting" })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied");
+    await waitFor(() => expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Applied"));
   });
 
   it.each([
@@ -1206,4 +1208,118 @@ it.each([
   expect(screen.getByRole("status", { name: "Operation status" })).toHaveTextContent("Saved");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   for (const request of [service.StageDPI, service.ApplyDPI, service.StagePollingRate, service.ApplyPollingRate, service.StageDebounce, service.ApplyDebounce, service.StageNormalSleep, service.ApplyNormalSleep]) expect(request).not.toHaveBeenCalled();
+});
+
+
+const unifiedInfo = (overrides: Partial<import("./desktop-contract").UnifiedUpdateInfo> = {}) => ({
+  Version: "2.0.0", AppAvailable: true, AppInstalled: false, AppError: "",
+  PolicyState: "outdated", PolicyInstalled: false, PolicyError: "", RelaunchError: "", ...overrides,
+});
+
+it("applies directly in one update window without navigating and retains progress and partial outcomes", async () => {
+  const pending = deferred<ReturnType<typeof unifiedInfo>>();
+  const service = serviceFor(snapshot(), {
+    CheckUnifiedUpdates: vi.fn().mockResolvedValue(unifiedInfo()),
+    ApplyUnifiedUpdate: vi.fn().mockReturnValue(pending.promise), CheckForUpdate: vi.fn(),
+  });
+  render(<App service={service} />);
+  const window = await screen.findByRole("region", { name: "Updates" });
+  expect(within(window).getByRole("button", { name: "Apply updates" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Review updates" })).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
+  expect(within(screen.getByRole("region", { name: "Device" })).queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+  expect(document.querySelectorAll(".update-window")).toHaveLength(1);
+  expect(service.CheckUnifiedUpdates).toHaveBeenCalledExactlyOnceWith();
+  expect(service.CheckForUpdate).not.toHaveBeenCalled();
+  expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Apply updates" }));
+  await waitFor(() => expect(service.ApplyUnifiedUpdate).toHaveBeenCalledExactlyOnceWith());
+  expect(screen.getByRole("button", { name: "Apply updates" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+  expect(document.querySelectorAll(".pending-spinner")).toHaveLength(1);
+  expect(within(window).getByRole("status")).toHaveTextContent("Applying updates…");
+  fireEvent.click(within(window).getByRole("button", { name: "Apply updates" }));
+  expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(1);
+  await act(async () => pending.resolve(unifiedInfo({ AppInstalled: true, PolicyInstalled: true, PolicyError: "reload failed", RelaunchError: "launch failed" })));
+  expect(screen.getByText("USB policy written; reload or activation failed.")).toBeInTheDocument();
+  expect(screen.getByText("AppImage replaced; relaunch failed.")).toBeInTheDocument();
+  expect(screen.getByText("USB permissions: reload failed")).toBeInTheDocument();
+  expect(within(window).getByText("Relaunch: launch failed")).toBeInTheDocument();
+  expect(within(window).getByRole("button", { name: "Relaunch app" })).toBeEnabled();
+  fireEvent.click(within(window).getByRole("button", { name: "Relaunch app" }));
+  await waitFor(() => expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole("region", { name: "Performance" })).toHaveAttribute("data-active", "true");
+});
+
+it.each([
+  ["current", "USB permissions are current.", false],
+  ["missing", "USB permissions are missing.", true],
+  ["outdated", "An official USB permissions update is available.", true],
+  ["custom", "Custom USB permissions preserved; no automatic overwrite.", false],
+  ["unavailable", "USB permissions update unavailable for this release.", false],
+  ["error", "USB permissions could not be inspected.", false],
+])("renders honest %s policy status and eligibility", async (PolicyState, message, eligible) => {
+  const service = serviceFor(snapshot(), { CheckUnifiedUpdates: vi.fn().mockResolvedValue(unifiedInfo({ PolicyState, AppAvailable: false })), ApplyUnifiedUpdate: vi.fn() });
+  render(<App service={service} />);
+  await waitFor(() => expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1));
+  if (eligible) {
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByText("Update details").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("USB permissions (udev)")).toBeInTheDocument();
+  } else expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Apply updates" }) !== null).toBe(eligible);
+  expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+});
+
+it("shows pending check and rejection without implying current, with explicit retry", async () => {
+  const pending = deferred<ReturnType<typeof unifiedInfo>>();
+  const service = serviceFor(snapshot(), { CheckUnifiedUpdates: vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(unifiedInfo({ AppAvailable: false, PolicyState: "current" })), ApplyUnifiedUpdate: vi.fn() });
+  render(<App service={service} />);
+  await waitFor(() => expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument();
+  expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+  await act(async () => pending.resolve(null as never));
+  expect(await screen.findByText("Update request failed: No update result returned.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument());
+  expect(service.CheckUnifiedUpdates).toHaveBeenCalledTimes(2);
+  expect(service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+});
+
+it("retains denial and independent errors until an explicit retry", async () => {
+  const service = serviceFor(snapshot(), {
+    CheckUnifiedUpdates: vi.fn().mockResolvedValue(unifiedInfo()),
+    ApplyUnifiedUpdate: vi.fn().mockResolvedValueOnce(unifiedInfo({ AppError: "download failed", PolicyError: "authorization denied; run --setup-usb-permissions" })).mockResolvedValue(unifiedInfo({ AppInstalled: true, PolicyInstalled: true })),
+  });
+  render(<App service={service} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Apply updates" }));
+  const window = screen.getByRole("region", { name: "Updates" });
+  expect(await within(window).findByText("AppImage: download failed")).toBeInTheDocument();
+  expect(within(window).getByText("USB permissions: authorization denied; run --setup-usb-permissions")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Trusted USB permissions setup guidance" })).toHaveAttribute("href", "https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup");
+  expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Apply updates" }));
+  expect(await screen.findByText("USB policy written and reload completed; reconnect the mouse if needed.")).toBeInTheDocument();
+  expect(screen.getByText("AppImage replaced; restart requested, not confirmed.")).toBeInTheDocument();
+  expect(service.ApplyUnifiedUpdate).toHaveBeenCalledTimes(2);
+});
+
+it.each(["absent", "check-only", "apply-only"])("preserves legacy banner approval, busy and errors with %s unified support", async (support) => {
+  const pending = deferred<void>();
+  const service = serviceFor(snapshot(), {
+    CheckForUpdate: vi.fn().mockResolvedValue({ Version: "1.9.0" }), ApplyVerifiedUpdate: vi.fn().mockReturnValueOnce(pending.promise).mockRejectedValueOnce(new Error("restart denied")),
+    ...(support === "check-only" ? { CheckUnifiedUpdates: vi.fn() } : support === "apply-only" ? { ApplyUnifiedUpdate: vi.fn() } : {}),
+  });
+  render(<App service={service} />);
+  expect(await screen.findByText("Version 1.9.0 is ready.")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Updates" })).not.toBeInTheDocument();
+  expect(service.ApplyVerifiedUpdate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Update and restart" }));
+  await waitFor(() => expect(service.ApplyVerifiedUpdate).toHaveBeenCalledExactlyOnceWith());
+  expect(screen.getByRole("button", { name: "Update and restart" })).toBeDisabled();
+  await act(async () => pending.resolve());
+  expect(screen.getByRole("button", { name: "Update and restart" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Update and restart" }));
+  expect(await screen.findByText("Update failed: restart denied")).toBeInTheDocument();
+  expect(service.ApplyVerifiedUpdate).toHaveBeenCalledTimes(2);
 });

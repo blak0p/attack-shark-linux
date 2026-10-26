@@ -102,18 +102,91 @@ leaves the rule untouched and prints manual instructions. The installer selects
 the newest valid signed release in the chosen channel; no version needs to be
 hardcoded. Obtain `install.sh` only from a trusted release asset. The AppImage
 and absolute desktop entry are installed under the current OS account's
-user-local data directories. Once the rule is installed, later AppImage updates
-do not ask again or change udev; repeat installs may omit `--install-udev`.
+user-local data directories. This legacy/manual rule installation does not install
+the authenticated update helper; repeat installs may omit `--install-udev`.
 
 The installed AppImage checks for a newer signed release and requires explicit
 user approval before replacement. An RC installation updates only to a newer
 signed RC; a stable installation updates only to a newer signed stable release.
-Updates are confined to
-`~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage`; the updater
-never elevates and never changes udev rules. The signed RC.4-to-RC.5 rehearsal
+AppImage replacement is confined to
+`~/.local/share/attack-shark-x6/attack-shark-linux-x86_64.AppImage` and never elevates.
+Startup checks produce one combined notice for AppImage and USB permissions.
+Review **Device → Updates**, then explicitly **Apply updates**. Only missing or
+recognized outdated official rules are eligible; custom rules are preserved.
+USB policy updates use one system authorization through a separately installed,
+authenticated helper; the app never collects a password or bootstraps the helper.
+See [trusted initial setup](docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup)
+and [update outcomes](docs/user-guide.md#4-updates). The signed RC.4-to-RC.5 rehearsal
 verified AppImage replacement in an isolated account; the maintainer observed
 the in-app update card and relaunch. Real-device installation requires its own
 udev authorization and validation.
+
+## Optional workaround: fast macro clicks with libinput
+
+If the kernel receives every click but fast macro clicks are merged on the
+desktop, libinput's mechanical debounce may be filtering them. This workaround
+was tested on **CachyOS with libinput 1.32.0-1.1**, with user-confirmed results
+for both the USB receiver and cable. The [upstream report](https://gitlab.freedesktop.org/libinput/libinput/-/work_items/1349)
+tracks the problem; this local workaround is **not an upstream fix**.
+
+> **Optional, temporary local workaround:** this disables mechanical debounce
+> for the matched USB identities, potentially exposing switch bounce. The receiver
+> identity may be shared by other devices. `ModelBouncingKeys` is an internal,
+> version-dependent libinput quirk, not a stable setting or an installer default.
+
+### Apply
+
+1. Run `sudo libinput list-devices` and find the current mouse event node with
+   pointer capability. Replace `/dev/input/eventX` below with that node; it can
+   change after reconnecting or switching between receiver and cable.
+2. If `/etc/libinput` is absent, create it with `sudo mkdir -p /etc/libinput`.
+   If `/etc/libinput/local-overrides.quirks` already exists, back it up to a
+   separate, unused backup path before editing (for example,
+   `sudo cp -n /etc/libinput/local-overrides.quirks /etc/libinput/local-overrides.quirks.before-x6`).
+   Keep that backup for rollback; do not overwrite an older backup.
+3. Open `sudoedit /etc/libinput/local-overrides.quirks` and append these two
+   sections, preserving all existing entries. Do not edit `/usr/share/libinput`.
+
+```ini
+[Attack Shark X6 USB receiver fast clicks]
+MatchUdevType=mouse
+MatchBus=usb
+MatchVendor=0x1D57
+MatchProduct=0xFA60
+ModelBouncingKeys=1
+
+[Attack Shark X6 USB cable fast clicks]
+MatchUdevType=mouse
+MatchBus=usb
+MatchVendor=0x1D57
+MatchProduct=0xFA61
+ModelBouncingKeys=1
+```
+
+### Verify and activate
+
+Check the active connection's event node, then test the same rapid-click macro:
+
+```sh
+sudo libinput quirks list /dev/input/eventX
+sudo libinput debug-events --device /dev/input/eventX
+```
+
+The quirks output should include `ModelBouncingKeys=1`; the event stream should
+show separate button press/release events for each click rather than merged
+clicks. Stop the diagnostic with Ctrl+C. Repeat for the other connection using
+its current event node if you use both receiver and cable.
+
+These diagnostics create a **new libinput context**; success there does not
+reload your running desktop compositor. Save your work, then log out and back
+in to activate the override in the desktop. No reboot is needed.
+
+### Undo
+
+Use `sudoedit /etc/libinput/local-overrides.quirks` to remove **only the two
+sections added above**, preserving all other entries. Alternatively, restore
+your backup if no unrelated edits have been made since it was taken. Do not
+blindly delete the whole file. Save your work and log out and back in again.
 
 ## Emergency recovery
 

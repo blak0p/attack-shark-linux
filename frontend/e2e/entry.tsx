@@ -65,7 +65,51 @@ const readMacro = (id: string) => {
   if (!macro) throw new Error("Macro not found");
   return structuredClone(macro);
 };
+const updateScenario = new URLSearchParams(window.location.search).get("updates");
+const updateCalls: Array<{ operation: string; args: unknown[] }> = [];
+let updateAttempts = 0;
+const updateInfo = { Version: "2.0.0", AppAvailable: true, AppInstalled: false, AppError: "",
+  PolicyState: "outdated", PolicyInstalled: false, PolicyError: "", RelaunchError: "" };
+const profileStates = new Map(ids.map(({ ID }) => [ID.Serial, {
+  Profiles: [{ ID: 'automatic', Name: 'Automatic profile', CreatedAt: '2026-01-01T12:00:00Z' }],
+  ActiveID: 'automatic', Notice: 'Automatic profile created at 2026-01-01T12:00:00Z from saved local settings. No mouse changes.', Error: { Code: '' }, Applied: false,
+}]));
+let profileCounter = 0;
+const profileResult = () => structuredClone(profileStates.get(selected.ID.Serial)!);
+const changeProfiles = (update: (state: ReturnType<typeof profileResult>) => void) => {
+  const state = profileResult(); state.Error.Code = ''; state.Applied = false;
+  update(state); profileStates.set(selected.ID.Serial, state); return profileResult();
+};
 const service = {
+  GetProfiles: async () => profileResult(),
+  CreateProfile: async (name: string) => changeProfiles(state => {
+    const id = `profile-${++profileCounter}`;
+    state.Profiles.push({ ID: id, Name: name, CreatedAt: new Date().toISOString() }); state.ActiveID = id;
+  }),
+  RenameProfile: async (id: string, name: string) => changeProfiles(state => { state.Profiles.find(p => p.ID === id)!.Name = name; }),
+  DuplicateProfile: async (_id: string, name: string) => changeProfiles(state => { state.Profiles.push({ ID: `profile-${++profileCounter}`, Name: name, CreatedAt: new Date().toISOString() }); }),
+  DeleteProfile: async (id: string) => changeProfiles(state => {
+    if (state.ActiveID === id || state.Profiles.length === 1) state.Error.Code = 'profile_delete_refused';
+    else state.Profiles = state.Profiles.filter(p => p.ID !== id);
+  }),
+  SwitchProfile: async (id: string) => changeProfiles(state => {
+    if (failNext) { failNext = false; state.Error.Code = 'partial_failure'; }
+    else { state.ActiveID = id; state.Applied = true; }
+  }),
+  DismissProfileNotice: async () => changeProfiles(state => { state.Notice = ''; }),
+  CheckUnifiedUpdates: updateScenario ? async (...args: unknown[]) => {
+    updateCalls.push({ operation: "check", args });
+    return { ...updateInfo, AppAvailable: updateScenario !== "usb-only" && updateScenario !== "current",
+      PolicyState: updateScenario === "app-only" || updateScenario === "current" ? "current" : "outdated" };
+  } : undefined,
+  ApplyUnifiedUpdate: updateScenario ? async (...args: unknown[]) => {
+    updateCalls.push({ operation: "apply", args });
+    updateAttempts++;
+    await new Promise(resolve => setTimeout(resolve, 150));
+    if (updateScenario === "denial" && updateAttempts === 1) return { ...updateInfo, PolicyError: "authorization denied", AppError: "download failed" };
+    if (updateScenario === "partial") return { ...updateInfo, AppInstalled: true, PolicyInstalled: true, PolicyError: "reload failed", RelaunchError: "launch failed" };
+    return { ...updateInfo, AppAvailable: updateScenario !== "usb-only", AppInstalled: updateScenario !== "usb-only", PolicyInstalled: true };
+  } : undefined,
   ListMacros: async () => [...macros.values()].map((macro) => structuredClone(macro)),
   ReadMacro: async (id: string) => readMacro(id),
   CreateMacro: async (name: string, events: MacroEvent[]) => {
@@ -220,7 +264,7 @@ const guarded = new Proxy(service, {
     return operation;
   },
 }) as unknown as DesktopService;
-Object.assign(window, { __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {
+Object.assign(window, { __updatesTest: { calls: updateCalls }, __macroTest: { calls: macroCalls, library: () => [...macros.values()].map((macro) => structuredClone(macro)), uploads: () => structuredClone(admittedUploads), stage: service.StageMacroAssignmentWithMode }, __routingTest: {
   calls, failNextApply: () => { failNext = true; }, selectDevice: service.SelectDevice,
   dpiSnapshot: () => structuredClone(currentDPI), remapSnapshot: (serial: string) => structuredClone(remaps.get(serial)),
 } });

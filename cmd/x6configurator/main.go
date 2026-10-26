@@ -126,8 +126,23 @@ func startWails() error {
 			return err
 		}
 	}
+	// The relaunch closure is invoked only by explicit apply, after app exists.
+	// Complete both configurations before NewService can expose the service.
+	var app *application.App
+	if updater != nil {
+		desktop.ConfigureUpdater(service, updater, func() error {
+			if err := launchInstalledAppImage(); err != nil {
+				return err
+			}
+			app.Quit()
+			return nil
+		})
+		if err := desktop.ConfigureAuthenticatedPolicyUpdates(service); err != nil {
+			return err
+		}
+	}
 	listenCtx, stopListening := context.WithCancel(context.Background())
-	app := application.New(application.Options{
+	app = application.New(application.Options{
 		Name: "Attack Shark X6 Configurator",
 		OnShutdown: func() {
 			stopListening()
@@ -140,15 +155,6 @@ func startWails() error {
 		},
 	})
 
-	if updater != nil {
-		desktop.ConfigureUpdater(service, updater, func() error {
-			if err := launchInstalledAppImage(); err != nil {
-				return err
-			}
-			app.Quit()
-			return nil
-		})
-	}
 	service.AttachListener(passive, wailsEventSink{app: app})
 	service.StartListener(listenCtx)
 
@@ -269,12 +275,18 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
 		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
 	}
+	loadProfileSeed := func(binding mouse.Binding) (x6.DeviceConfig, error) {
+		var config x6.DeviceConfig
+		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
+		return config, err
+	}
 	service := desktop.Compose(status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
 		AttachPollingPersistence(loadPolling, savePolling).
-		AttachNormalSleepPersistence(loadPolling, savePolling)
+		AttachNormalSleepPersistence(loadPolling, savePolling).
+		AttachProfiles(configstore.NewProfileStore(filepath.Join(dataDir, "profiles")), loadProfileSeed)
 	return service.AttachResetRunner(composeEmergencyReset(dataDir, inventory, service))
 }
 

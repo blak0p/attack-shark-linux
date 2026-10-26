@@ -1,10 +1,10 @@
-import { Events } from "@wailsio/runtime";
+import { Call, Events } from "@wailsio/runtime";
 import { copyMacroEvent } from "./macros/macro-file";
 import * as bindings from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
 import type { Action, EventType, Macro as GeneratedMacro } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
 import type { RemapSnapshot as GeneratedRemapSnapshot } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 import { RemapAction as GeneratedRemapAction, type RemapConfig as GeneratedRemapConfig } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models";
-import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig } from "./desktop-contract";
+import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig, ProfilesService, ProfileSnapshot } from "./desktop-contract";
 
 const bindingRemap = (config: RemapConfig): GeneratedRemapConfig => ({
   Buttons: config.Buttons.map((button) => {
@@ -64,13 +64,25 @@ type ExplicitApplyBindings = {
 };
 const explicitApplyBindings = bindings as typeof bindings & ExplicitApplyBindings;
 
-export const desktopService: DesktopService = {
+const profileCall = (method: keyof ProfilesService, ...args: string[]): Promise<ProfileSnapshot> =>
+  Call.ByName(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
+
+export const desktopService: DesktopService & ProfilesService = {
+  GetProfiles: () => profileCall('GetProfiles'),
+  CreateProfile: name => profileCall('CreateProfile', name),
+  RenameProfile: (id, name) => profileCall('RenameProfile', id, name),
+  DuplicateProfile: (id, name) => profileCall('DuplicateProfile', id, name),
+  DeleteProfile: id => profileCall('DeleteProfile', id),
+  SwitchProfile: id => profileCall('SwitchProfile', id),
+  DismissProfileNotice: () => profileCall('DismissProfileNotice'),
   ListMacros: async () => (await bindings.ListMacros()).map(localMacro),
   CreateMacro: async (name, events) => localMacro(await bindings.CreateMacro(name, bindingEvents(events))),
   ReadMacro: async (id) => localMacro(await bindings.ReadMacro(id)),
   UpdateMacro: async (id, name, events) => localMacro(await bindings.UpdateMacro(id, name, bindingEvents(events))),
   DeleteMacro: bindings.DeleteMacro,
   GetApplicationVersion: bindings.GetApplicationVersion,
+  CheckUnifiedUpdates: bindings.CheckUnifiedUpdates,
+  ApplyUnifiedUpdate: bindings.ApplyUnifiedUpdate,
   CheckForUpdate: bindings.CheckForUpdate as DesktopService["CheckForUpdate"],
   ApplyVerifiedUpdate: bindings.ApplyVerifiedUpdate as DesktopService["ApplyVerifiedUpdate"],
   GetSnapshot: bindings.GetSnapshot,

@@ -5,6 +5,7 @@ import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
 import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
 import { WorkspaceView } from "./components/workspace/WorkspaceView";
+import { ProfileControls } from "./components/profiles/ProfileControls";
 import { TopBar } from "./components/workspace/TopBar";
 import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
@@ -19,6 +20,7 @@ import { ResetPanel } from "./components/panels/ResetPanel";
 import { MacroManagerPanel } from "./components/panels/MacroManagerPanel";
 import { WorkspaceFeedback } from "./components/WorkspaceFeedback";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { UnifiedUpdates } from "./components/UnifiedUpdates";
 export type {
   ConfigurationEvent,
   DesktopService,
@@ -99,7 +101,9 @@ export function App({ service }: { service: DesktopService }) {
     updateError,
   } = model;
 
+  const [profileBusy, setProfileBusy] = useState(false);
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
+  const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
   const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
     snapshot?.Error.Code !== "device_disconnected" && snapshot?.Error.Code !== "permission_denied";
@@ -118,7 +122,7 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return (
     <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
-      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" />}
+      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
       connectionStatus={<p className="connection offline">Connecting…</p>}>
       {macroWorkspace}
       <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
@@ -157,9 +161,10 @@ export function App({ service }: { service: DesktopService }) {
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
   const titlebarElement = (
-    <TopBar title="Mouse configuration" subtitle="Attack Shark X6">
+    <TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={
+      <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />}>
       {eligibleDevices.length > 1 && (
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <label className="titlebar-device">
           <span>Mouse device</span>
           <select
             className="select"
@@ -200,7 +205,7 @@ export function App({ service }: { service: DesktopService }) {
     <WorkspaceShell
       activeView={activeView}
       onNavigate={setActiveView}
-      busy={automaticApplyBusy}
+      busy={automaticApplyBusy || profileBusy}
       feedback={feedback}
       deviceName="Attack Shark X6"
       deviceSubtitle="Wireless Gaming Mouse"
@@ -208,7 +213,10 @@ export function App({ service }: { service: DesktopService }) {
       connectionStatus={connectionStatusElement}
     >
       {macroWorkspace}
-      {update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
+      {unifiedUpdates
+        ? <UnifiedUpdates info={model.unifiedUpdate} checking={!!model.updateChecking}
+            applying={updateApplying} error={updateError} onCheck={() => actions.checkUpdates?.()} onApply={actions.applyUpdate} />
+        : update && <UpdateBanner update={update} applying={updateApplying} error={updateError} onApply={actions.applyUpdate} />}
       {/* 1. Performance View */}
       <WorkspaceView
         id="performance"

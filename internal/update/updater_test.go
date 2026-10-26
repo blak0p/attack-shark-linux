@@ -54,6 +54,73 @@ func updaterManifest(t *testing.T, version string, artifact []byte, privateKey e
 	return signedManifest(t, version, "https://example.com/attack-shark-linux-x86_64.AppImage", hex.EncodeToString(digest[:]), privateKey)
 }
 
+func TestSelectedManifestHandoff(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(nil)
+	m := signedManifest(t, "1.2.0", "https://github.com/blak0p/attack-shark-linux/releases/download/v1.2.0/app.AppImage", strings.Repeat("a", 64), private)
+	u, transport, _ := updaterForTest(t, "1.1.0", []Manifest{m}, nil, public)
+	v, err := u.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := v.Manifest()
+	if got != m {
+		t.Fatalf("manifest=%+v", got)
+	}
+	got.URL = "changed"
+	v.Release.Version = "changed"
+	transport.manifests[0].Signature = "changed"
+	if v.Manifest() != m {
+		t.Fatal("manifest was mutable")
+	}
+	transport.manifests = []Manifest{m}
+	u.CurrentVersion = "1.2.0"
+	if v, err := u.Check(context.Background()); v != nil || err != ErrNoUpdate {
+		t.Fatalf("legacy=%v %v", v, err)
+	}
+	selected, err := u.CheckPolicyRelease(context.Background())
+	if err != nil || selected == nil || *selected != m {
+		t.Fatalf("policy=%v %v", selected, err)
+	}
+	selected.Signature = "changed"
+	again, err := u.CheckPolicyRelease(context.Background())
+	if err != nil || *again != m {
+		t.Fatalf("copy=%v %v", again, err)
+	}
+	for _, version := range []string{"1.1.0", "1.2.0-rc.1", "bad"} {
+		candidate := m
+		candidate.Version = version
+		transport.manifests = []Manifest{candidate}
+		if got, err := u.CheckPolicyRelease(context.Background()); got != nil || err == nil {
+			t.Fatalf("rejection %s: %v %v", version, got, err)
+		}
+	}
+	newest := signedManifest(t, "1.4.0", "https://github.com/blak0p/attack-shark-linux/releases/download/v1.4.0/app.AppImage", m.SHA256, private)
+	middle := signedManifest(t, "1.3.0", "https://github.com/blak0p/attack-shark-linux/releases/download/v1.3.0/app.AppImage", m.SHA256, private)
+	transport.manifests = []Manifest{middle, m, newest}
+	if got, err := u.CheckPolicyRelease(context.Background()); err != nil || got == nil || *got != newest {
+		t.Fatalf("newest policy=%v %v", got, err)
+	}
+	noncanonical := signedManifest(t, "1.4.0", "https://example.com/app.AppImage", m.SHA256, private)
+	transport.manifests = []Manifest{noncanonical}
+	if got, err := u.CheckPolicyRelease(context.Background()); got != nil || err == nil || err.Error() != "policy requires a canonical release AppImage URL" {
+		t.Fatalf("noncanonical policy=%v %v", got, err)
+	}
+	if got, err := u.Check(context.Background()); err != nil || got == nil || got.Manifest() != noncanonical {
+		t.Fatalf("legacy noncanonical app=%v %v", got, err)
+	}
+	if (&VerifiedUpdate{}).Manifest() != (Manifest{}) || (*VerifiedUpdate)(nil).Manifest() != (Manifest{}) {
+		t.Fatal("unverified manifest authority")
+	}
+	m.Signature = "bad"
+	transport.manifests = []Manifest{m}
+	if got, err := u.CheckPolicyRelease(context.Background()); got != nil || err == nil {
+		t.Fatalf("bad signature: %v %v", got, err)
+	}
+	if transport.downloads != 0 {
+		t.Fatal("download during check")
+	}
+}
+
 func TestUpdaterFiltersChannelsAndReportsAbsentRC(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

@@ -53,6 +53,7 @@ type VerifiedUpdate struct {
 	// consumes the private immutable copy below, never caller-modifiable fields.
 	Release  Release
 	release  Release
+	manifest Manifest
 	verified bool
 	applied  bool
 }
@@ -60,6 +61,41 @@ type VerifiedUpdate struct {
 // Check obtains candidates through the injected transport and returns the newest
 // signed update on the installed version's channel.
 func (u *Updater) Check(ctx context.Context) (*VerifiedUpdate, error) {
+	selected, err := u.selectManifest(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := VerifyManifest(*selected, u.CurrentVersion, u.PublicKey); err != nil {
+		return nil, fmt.Errorf("verify selected update: %w", err)
+	}
+	release := Release{Version: selected.Version, URL: selected.URL, SHA256: selected.SHA256}
+	return &VerifiedUpdate{Release: release, release: release, manifest: *selected, verified: true}, nil
+}
+
+// Manifest returns a detached value of the authenticated app release manifest.
+// This trusted-Go handoff does not grant renderer-controlled release authority.
+func (v *VerifiedUpdate) Manifest() Manifest {
+	if v == nil || !v.verified {
+		return Manifest{}
+	}
+	return v.manifest
+}
+
+// CheckPolicyRelease explicitly selects the newest same-channel, non-older
+// release for policy-only checks (including the installed version). It never
+// grants AppImage replacement authority. Absence uses Check's channel sentinel.
+func (u *Updater) CheckPolicyRelease(ctx context.Context) (*Manifest, error) {
+	selected, err := u.selectManifest(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := PolicyVersion(*selected, u.CurrentVersion, u.PublicKey); err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
+func (u *Updater) selectManifest(ctx context.Context, includeCurrent bool) (*Manifest, error) {
 	if u.Transport == nil {
 		return nil, errors.New("update transport is required")
 	}
@@ -86,7 +122,7 @@ func (u *Updater) Check(ctx context.Context) (*VerifiedUpdate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid candidate version: %w", err)
 		}
-		if comparison <= 0 {
+		if comparison < 0 || (comparison == 0 && !includeCurrent) {
 			continue
 		}
 		if selected == nil {
@@ -107,11 +143,8 @@ func (u *Updater) Check(ctx context.Context) (*VerifiedUpdate, error) {
 		}
 		return nil, ErrNoUpdate
 	}
-	if err := VerifyManifest(*selected, u.CurrentVersion, u.PublicKey); err != nil {
-		return nil, fmt.Errorf("verify selected update: %w", err)
-	}
-	release := Release{Version: selected.Version, URL: selected.URL, SHA256: selected.SHA256}
-	return &VerifiedUpdate{Release: release, release: release, verified: true}, nil
+	copy := *selected
+	return &copy, nil
 }
 
 // Apply downloads a previously verified update only after explicit approval and

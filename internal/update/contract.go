@@ -70,6 +70,20 @@ func VerifyManifest(m Manifest, currentVersion, encodedPublicKey string) error {
 	if compareParsed(candidate, current) <= 0 {
 		return errors.New("release version must be newer than current version")
 	}
+	return verifyManifestSignature(m, payload, encodedPublicKey)
+}
+
+// VerifyReleaseManifest authenticates a release without upgrade ordering. Callers
+// must separately enforce channel and version eligibility before using it.
+func VerifyReleaseManifest(m Manifest, encodedPublicKey string) error {
+	payload, err := m.SignedBytes()
+	if err != nil {
+		return err
+	}
+	return verifyManifestSignature(m, payload, encodedPublicKey)
+}
+
+func verifyManifestSignature(m Manifest, payload []byte, encodedPublicKey string) error {
 	publicKey, err := decodePublicKey(encodedPublicKey)
 	if err != nil {
 		return err

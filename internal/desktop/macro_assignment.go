@@ -286,6 +286,24 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		// Ordinary config persistence cannot represent this macro overlay. Do not
 		// persist an ordinary config as though it described the uploaded assignment.
 		state.persistence = "not_supported"
+		if s.profiles != nil && s.profiles.store != nil && !binding.SessionOnly {
+			macroDrafts := make([]MacroDraft, len(drafts))
+			for i, d := range drafts {
+				macroDrafts[i] = *cloneMacroDraft(d)
+			}
+			remapPending := cloneRemapConfig(pending)
+			if err := s.saveActiveProfile(binding, func(p *profileConfiguration) {
+				p.Device.Remap = &remapPending
+				p.Macros = macroDrafts
+			}); err != nil {
+				retry := cloneRemapConfig(pending)
+				state.retry, state.persistence, state.err = &retry, "failed", Error{Code: PersistenceFailed}
+				state.mu.Unlock()
+				s.emitRemapConfiguration(binding, remapSnapshotOf(state))
+				return
+			}
+			state.persistence = "success"
+		}
 	}
 	state.mu.Unlock()
 	s.emitRemapConfiguration(binding, remapSnapshotOf(state))

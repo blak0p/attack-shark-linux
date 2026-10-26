@@ -76,8 +76,139 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+it('reloads authoritative settings after a profile switch without applying settings again', async () => {
+  const h = serviceFor();
+  const { result } = renderHook(() => useDesktopWorkspace(h.service));
+  await waitFor(() => expect(result.current.model.ready).toBe(true));
+  vi.mocked(h.service.RefreshStatus).mockResolvedValue(snapshot({ Battery: 31 }));
+  vi.mocked(h.service.GetPollingSnapshot).mockResolvedValue(polling({ Desired: 500, Error: { Code: '' } }));
+  vi.mocked(h.service.GetDebounceSnapshot).mockResolvedValue(debounce({ Desired: 4 }));
+  vi.mocked(h.service.GetLightingSnapshot).mockResolvedValue(lighting({ Revision: 2 }));
+  vi.mocked(h.service.GetNormalSleepSnapshot).mockResolvedValue(normalSleep({ Pending: 5 }));
+  vi.mocked(h.service.GetRemapSnapshot).mockResolvedValue(remap({ Revision: 2 }));
+  await act(async () => { await result.current.actions.refreshProfilesWorkspace(); });
+  expect(result.current.model.snapshot?.Battery).toBe(31);
+  expect(result.current.model.polling?.Desired).toBe(500);
+  expect(result.current.model.debounce?.Desired).toBe(4);
+  expect(result.current.model.lighting?.Revision).toBe(2);
+  expect(result.current.model.normalSleep?.Pending).toBe(5);
+  expect(result.current.model.remap?.Revision).toBe(2);
+  expect(h.service.ApplyDPI).not.toHaveBeenCalled();
+  expect(h.service.ApplyRemap).not.toHaveBeenCalled();
+});
+
+it('refreshes all profile lanes and ignores reads after device selection changes', async () => {
+  const h = serviceFor();
+  const { result } = renderHook(() => useDesktopWorkspace(h.service));
+  await waitFor(() => expect(result.current.model.ready).toBe(true));
+  const pending = deferred<ReturnType<typeof snapshot>>();
+  vi.mocked(h.service.RefreshStatus).mockReturnValueOnce(pending.promise);
+  let refresh!: Promise<void>;
+  act(() => { refresh = result.current.actions.refreshProfilesWorkspace(); });
+  act(() => result.current.actions.selectDevice('alpha'));
+  await act(async () => { pending.resolve(snapshot({ Battery: 1 })); await refresh; });
+  expect(result.current.model.snapshot?.Battery).toBe(84);
+  for (const method of ['GetPollingSnapshot', 'GetDebounceSnapshot', 'GetLightingSnapshot', 'GetNormalSleepSnapshot', 'GetRemapSnapshot'] as const) expect(h.service[method]).toHaveBeenCalled();
+});
+
 const macro = { ID: "click", Name: "Click", Button: 6, Repeat: 2, Events: [{ type: "mouse_left" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_left" as const, action: "up" as const, delay_ms: 0 }] };
 const macro7 = { ID: "click7", Name: "Click7", Button: 7, Repeat: 3, Events: [{ type: "mouse_right" as const, action: "down" as const, delay_ms: 0 }, { type: "mouse_right" as const, action: "up" as const, delay_ms: 0 }] };
+
+const unified = (patch = {}) => ({ Version: "2.0", AppAvailable: true, AppInstalled: false, AppError: "", PolicyState: "outdated", PolicyInstalled: false, PolicyError: "", RelaunchError: "", ...patch });
+
+describe("unified update lifecycle", () => {
+  it.each([
+    {}, { AppAvailable: false }, { PolicyState: "current" },
+    { AppAvailable: false, PolicyState: "current" },
+    { PolicyState: "custom" }, { PolicyState: "unavailable" },
+    { AppError: "network", PolicyError: "policy unavailable" },
+  ])("checks once without applying and retains exact outcomes %j", async (patch) => {
+    const info = unified(patch);
+    const h = serviceFor({ CheckUnifiedUpdates: vi.fn().mockResolvedValue(info), ApplyUnifiedUpdate: vi.fn(), CheckForUpdate: vi.fn().mockResolvedValue(null), ApplyVerifiedUpdate: vi.fn() });
+    const { result, rerender } = renderHook(() => useDesktopWorkspace(h.service));
+    await waitFor(() => expect(result.current.model.unifiedUpdate).toEqual(info));
+    rerender();
+    await act(async () => result.current.actions.selectStage(0));
+    expect(h.service.CheckUnifiedUpdates).toHaveBeenCalledExactlyOnceWith();
+    expect(h.service.CheckForUpdate).not.toHaveBeenCalled();
+    expect(h.service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+    expect(h.service.ApplyVerifiedUpdate).not.toHaveBeenCalled();
+    expect(result.current.model.updateChecking).toBe(false);
+    expect(result.current.model.updateApplying).toBe(false);
+    expect(result.current.model.update).toBeUndefined();
+  });
+
+  it("serializes check/apply synchronously and retains partial, rejected and null outcomes", async () => {
+    const check = deferred<ReturnType<typeof unified> | null>();
+    const apply = deferred<ReturnType<typeof unified> | null>();
+    const partial = unified({ AppInstalled: true, PolicyError: "denied", RelaunchError: "launch failed" });
+    const h = serviceFor({ CheckUnifiedUpdates: vi.fn().mockReturnValueOnce(check.promise).mockResolvedValue(unified()), ApplyUnifiedUpdate: vi.fn().mockReturnValueOnce(apply.promise).mockRejectedValueOnce(new Error("unknown effects")).mockResolvedValueOnce(null) });
+    const { result } = renderHook(() => useDesktopWorkspace(h.service));
+    act(() => { result.current.actions.checkUpdates!(); result.current.actions.applyUpdate(); });
+    expect(h.service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1);
+    expect(h.service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+    expect(result.current.model.updateChecking).toBe(true);
+    await act(async () => check.resolve(unified()));
+    act(() => { result.current.actions.applyUpdate(); result.current.actions.applyUpdate(); result.current.actions.checkUpdates!(); });
+    expect(h.service.ApplyUnifiedUpdate).toHaveBeenCalledExactlyOnceWith();
+    expect(h.service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1);
+    expect(result.current.model.updateApplying).toBe(true);
+    await act(async () => apply.resolve(partial));
+    expect(result.current.model.unifiedUpdate).toEqual(partial);
+    expect(result.current.model.updateApplying).toBe(false);
+    await act(async () => result.current.actions.applyUpdate());
+    expect(result.current.model.unifiedUpdate).toEqual(partial);
+    expect(result.current.model.updateError).toBe("unknown effects");
+    await act(async () => result.current.actions.applyUpdate());
+    expect(result.current.model.unifiedUpdate).toEqual(partial);
+    expect(result.current.model.updateError).toBe("No update result returned.");
+    await act(async () => { result.current.actions.checkUpdates!(); result.current.actions.checkUpdates!(); });
+    expect(h.service.CheckUnifiedUpdates).toHaveBeenCalledTimes(2);
+    expect(result.current.model.updateError).toBe("");
+  });
+
+  it.each(["check", "apply"])("ignores stale %s completion after replacement and unmount", async (kind) => {
+    const pending = deferred<ReturnType<typeof unified>>();
+    const old = serviceFor({ CheckUnifiedUpdates: vi.fn().mockReturnValue(kind === "check" ? pending.promise : Promise.resolve(unified())), ApplyUnifiedUpdate: vi.fn().mockReturnValue(pending.promise) });
+    const next = serviceFor({ CheckUnifiedUpdates: vi.fn().mockResolvedValue(unified({ Version: "3" })), ApplyUnifiedUpdate: vi.fn() });
+    const { result, rerender, unmount } = renderHook(({ service }) => useDesktopWorkspace(service), { initialProps: { service: old.service } });
+    if (kind === "apply") { await waitFor(() => expect(result.current.model.unifiedUpdate).toBeDefined()); act(() => result.current.actions.applyUpdate()); }
+    rerender({ service: next.service });
+    await waitFor(() => expect(result.current.model.unifiedUpdate?.Version).toBe("3"));
+    await act(async () => pending.resolve(unified({ Version: "obsolete" })));
+    expect(result.current.model.unifiedUpdate?.Version).toBe("3");
+    expect(result.current.model.updateApplying).toBe(false);
+    const late = deferred<ReturnType<typeof unified>>();
+    vi.mocked(next.service.ApplyUnifiedUpdate!).mockReturnValue(late.promise);
+    act(() => result.current.actions.applyUpdate());
+    unmount();
+    await act(async () => late.reject(new Error("unmounted")));
+  });
+
+  it("reports check rejection/null without erasing known outcomes and retries", async () => {
+    const h = serviceFor({ CheckUnifiedUpdates: vi.fn().mockResolvedValueOnce(unified()).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(null), ApplyUnifiedUpdate: vi.fn() });
+    const { result } = renderHook(() => useDesktopWorkspace(h.service));
+    await waitFor(() => expect(result.current.model.unifiedUpdate).toEqual(unified()));
+    await act(async () => result.current.actions.checkUpdates!());
+    expect(result.current.model.updateError).toBe("offline");
+    expect(result.current.model.unifiedUpdate).toEqual(unified());
+    await act(async () => result.current.actions.checkUpdates!());
+    expect(result.current.model.updateError).toBe("No update result returned.");
+    expect(result.current.model.unifiedUpdate).toEqual(unified());
+    expect(h.service.ApplyUnifiedUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(["check", "apply"])("falls back for a partial %s capability", async (method) => {
+    const h = serviceFor({ CheckUnifiedUpdates: method === "check" ? vi.fn() : undefined, ApplyUnifiedUpdate: method === "apply" ? vi.fn() : undefined, CheckForUpdate: vi.fn().mockResolvedValue({ Version: "legacy" }), ApplyVerifiedUpdate: vi.fn().mockResolvedValue(undefined) });
+    const { result } = renderHook(() => useDesktopWorkspace(h.service));
+    await waitFor(() => expect(result.current.model.update?.Version).toBe("legacy"));
+    await act(async () => result.current.actions.applyUpdate());
+    expect(h.service.ApplyVerifiedUpdate).toHaveBeenCalledExactlyOnceWith();
+    expect(result.current.model.unifiedUpdate).toBeUndefined();
+    const optional = method === "check" ? h.service.CheckUnifiedUpdates : h.service.ApplyUnifiedUpdate;
+    expect(optional).not.toHaveBeenCalled();
+  });
+});
 
 describe("remap lifecycle", () => {
   it.each([0, 1, 2] as const)("stages mode %s locally via the additive action", async (mode) => {
@@ -512,6 +643,54 @@ describe("useDesktopWorkspace", () => {
 
   await act(async () => dpiApply.resolve(snapshot({ Firmware: "success" })));
   expect(result.current.model.automaticApplyBusy).toBe(false);
+});
+
+describe("automatic apply coalescing", () => {
+  it.each([
+    { name: "normal sleep", stage: "StageNormalSleep", apply: "ApplyNormalSleep", values: [1, 2, 3, 4, 17], snap: (value: number) => normalSleep({ Pending: value, Firmware: "success" }), act: (actions: ReturnType<typeof useDesktopWorkspace>["actions"], value: number) => actions.stageNormalSleep(value), shown: (model: ReturnType<typeof useDesktopWorkspace>["model"]) => model.normalSleep?.Pending },
+    { name: "key response time", stage: "StageDebounce", apply: "ApplyDebounce", values: [4, 6, 8, 10, 13], snap: (value: number) => debounce({ Desired: value, Firmware: "success" }), act: (actions: ReturnType<typeof useDesktopWorkspace>["actions"], value: number) => actions.stageDebounce(value), shown: (model: ReturnType<typeof useDesktopWorkspace>["model"]) => model.debounce?.Desired },
+  ] as const)("sends a slider burst for $name as one in-flight write plus only the latest value", async ({ stage, apply, values, snap, act: change, shown }) => {
+    const firstApply = deferred<unknown>();
+    const staged: number[] = [];
+    const applyMock = vi.fn().mockReturnValueOnce(firstApply.promise).mockImplementation(async () => snap(staged[staged.length - 1]));
+    const harness = serviceFor({ [stage]: vi.fn().mockImplementation(async (value: number) => { staged.push(value); return snap(value); }), [apply]: applyMock } as Partial<DesktopService>);
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.normalSleep).toBeDefined());
+    await waitFor(() => expect(result.current.model.debounce).toBeDefined());
+
+    await act(async () => change(result.current.actions, values[0]));
+    await waitFor(() => expect(applyMock).toHaveBeenCalledOnce());
+    for (const value of values.slice(1)) await act(async () => change(result.current.actions, value));
+
+    expect(shown(result.current.model)).toBe(values[values.length - 1]);
+    expect(applyMock).toHaveBeenCalledOnce();
+
+    await act(async () => firstApply.resolve(snap(values[0])));
+    await waitFor(() => expect(applyMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.model.automaticApplyBusy).toBe(false));
+    expect(applyMock).toHaveBeenCalledTimes(2);
+    const stageMock = harness.service[stage] as ReturnType<typeof vi.fn>;
+    expect(stageMock).toHaveBeenCalledTimes(2);
+    expect(stageMock).toHaveBeenLastCalledWith(values[values.length - 1]);
+  });
+
+  it("sends a DPI slider burst as one in-flight write plus only the latest configuration", async () => {
+    const firstApply = deferred<ReturnType<typeof snapshot>>();
+    const harness = serviceFor({ ApplyDPI: vi.fn().mockReturnValueOnce(firstApply.promise).mockResolvedValue(snapshot({ Firmware: "success" })) });
+    const { result } = renderHook(() => useDesktopWorkspace(harness.service));
+    await waitFor(() => expect(result.current.model.snapshot).toBeDefined());
+
+    await act(async () => result.current.actions.stageDPI(0, 900));
+    await waitFor(() => expect(harness.service.ApplyDPI).toHaveBeenCalledOnce());
+    for (const value of [1000, 1100, 1600]) await act(async () => result.current.actions.stageDPI(0, value));
+
+    expect(result.current.model.snapshot?.Pending.DPI[0]).toBe(1600);
+    await act(async () => firstApply.resolve(snapshot({ Firmware: "success" })));
+    await waitFor(() => expect(result.current.model.automaticApplyBusy).toBe(false));
+    expect(harness.service.ApplyDPI).toHaveBeenCalledTimes(2);
+    expect(harness.service.StageDPI).toHaveBeenCalledTimes(2);
+    expect(harness.service.StageDPI).toHaveBeenLastCalledWith({ ...dpi, DPI: [1600, 1200] });
+  });
 });
 
 it("applies DPI edits directly after staging", async () => {
