@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"github.com/blak0p/attack-shark-linux/internal/macros"
@@ -204,6 +205,7 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 		return StaleBinding
 	}
 	if (legacy && !inventory.MacroSequenceAssignmentsAvailable()) || (!legacy && !inventory.MacroLocalAssignmentsAvailable()) {
+		logApplyError(ApplyFailed, "macro_assignments_unavailable", nil)
 		return ApplyFailed
 	}
 	return ""
@@ -268,6 +270,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 	} else if err != nil {
 		state.firmware, state.err = "failed", Error{Code: errorCode(err, false)}
 	} else if progress.Assignment != mouse.MacroAssignmentACKConfirmed || progress.Upload != mouse.MacroUploadConfirmed {
+		logApplyError(ApplyFailed, fmt.Sprintf("macro_unconfirmed assignment=%v upload=%v", progress.Assignment, progress.Upload), nil)
 		state.firmware, state.err = "failed", Error{Code: ApplyFailed}
 	} else {
 		state.applied = cloneRemapConfig(pending)
