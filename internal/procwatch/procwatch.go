@@ -108,8 +108,11 @@ func (w *Watcher) Tick(running map[string]bool) error {
 			w.exe, w.setID = r.Executable, r.ProfileID
 			return nil
 		} else {
-			if err := w.sw.Switch(w.previous); err != nil {
-				return err
+			// An unknown previous profile (it could not be read) cannot be restored.
+			if w.previous != "" {
+				if err := w.sw.Switch(w.previous); err != nil {
+					return err
+				}
 			}
 			w.active = false
 			return nil

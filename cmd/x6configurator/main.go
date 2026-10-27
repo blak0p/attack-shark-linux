@@ -160,6 +160,7 @@ func startWails() error {
 
 	backend := hidlinux.NewHidrawBackend()
 	service, passive := composeDesktopService(dataDir, backend)
+	defer startProcessWatcher(service, configstore.NewWatcherStore(filepath.Join(dataDir, "watcher-v1.json")))()
 	updater := releaseUpdater()
 	if updater != nil {
 		desktop.ConfigureUpdater(service, updater, nil)

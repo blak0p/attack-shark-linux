@@ -185,3 +185,14 @@ func TestNoMatchNoApply(t *testing.T) {
 		t.Fatalf("calls %v", sw.calls)
 	}
 }
+
+func TestUnknownPreviousProfileIsNotRestored(t *testing.T) {
+	sw := &fakeSwitcher{active: ""}
+	w := NewWatcher(sw, rules)
+	mustTick(t, w, run("a.exe"))
+	mustTick(t, w, run())
+	mustTick(t, w, run())
+	if !reflect.DeepEqual(sw.calls, []string{"A"}) {
+		t.Fatalf("calls %v, want only the apply: there is nothing known to restore", sw.calls)
+	}
+}
