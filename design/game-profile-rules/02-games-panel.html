@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dedicated Games panel</title>
+<style>:root{--accent:#1d9e75;--bg:#1e1e1c;--rail:#292a27;--surface:#30312e;--raised:#393a36;--line:#4a4b46;--text:#f2f1ed;--muted:#b6b7b1;--dim:#8b8c86;--ok:#55c590;--danger:#e05f65;--accent-subtle:#244b3e;--accent-on-primary:#09261d;--border-strong:#55564f;--focus-ring:#77dabe;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--radius-md:9px}
+*{box-sizing:border-box}html,body{margin:0}body{width:1024px;height:768px;overflow:hidden;background:var(--surface);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Cantarell","Segoe UI",sans-serif}
+button,input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--accent);background:var(--raised)}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-on-primary);border-color:var(--accent);font-weight:600}
+.small{font-size:11px;padding:6px 9px;background:transparent}.danger{color:#f4a5a5}
+.muted{color:var(--muted)}.help{color:var(--muted);font-size:12px;line-height:1.6;margin:0}
+.badge{background:var(--accent-subtle);border-radius:20px;padding:3px 8px;font-size:10px}
+.switch{appearance:none;-webkit-appearance:none;width:38px;height:22px;margin:0;padding:0;border:0;border-radius:20px;background:#676862;position:relative;transition:.18s;cursor:pointer;flex-shrink:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.18s}
+.switch:checked{background:var(--accent)}.switch:checked::after{transform:translateX(16px)}
+header.top{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--space-6);background:var(--bg);border-bottom:1px solid var(--line)}
+header.top h1{font-size:15px;font-weight:600;margin:0}.sel{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.sel select{width:180px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.shell{display:grid;grid-template-columns:200px 1fr;height:704px}
+nav{background:var(--rail);border-right:1px solid var(--line);padding:var(--space-4) var(--space-3)}
+nav a{display:block;padding:9px 12px;border-radius:9px;color:var(--muted);text-decoration:none;margin-bottom:2px}
+nav a[aria-current=page]{background:var(--raised);color:var(--text)}
+.page{padding:var(--space-6);overflow:auto}.page h2{font-size:20px;font-weight:600;margin:0 0 4px}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:13px;margin-top:var(--space-5)}
+.cardrow{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:var(--space-4) var(--space-5)}
+.cardrow strong{font-weight:500;display:block}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;padding:10px var(--space-5);border-bottom:1px solid var(--line)}
+td{padding:10px var(--space-5);border-top:1px solid var(--line);vertical-align:middle}tbody tr:first-child td{border-top:0}
+td.n{width:48px;color:var(--dim)}td code{font-size:13px;font-weight:500}
+td select{width:100%;max-width:210px}td.a{text-align:right;white-space:nowrap}
+.order button{padding:4px 8px;font-size:11px;background:transparent}
+.addbar{display:flex;gap:8px;padding:var(--space-4) var(--space-5);border-top:1px solid var(--line)}.addbar input{flex:1}
+.empty{padding:40px var(--space-5);text-align:center;color:var(--muted)}.empty strong{display:block;color:var(--text);font-size:15px;margin-bottom:4px}
+.off{opacity:.5}.note{margin-top:var(--space-4)}
+</style></head><body><header class="top"><h1>Attack Shark X6 Configurator</h1><div class="sel"><span>Profile</span><select aria-label="Active profile"><option>Automatic profile</option><option>FPS 800 DPI</option><option>macro</option></select></div></header><div class="shell"><nav aria-label="Sections"><a href="#">Performance</a><a href="#">Buttons</a><a href="#">Lighting</a><a href="#">Macros</a><a href="#" aria-current="page">Games</a><a href="#">Updates</a></nav>
+<main class="page"><h2>Games</h2><p class="help">Switch the mouse profile when a game starts and go back when it closes.</p>
+<section class="card"><div class="cardrow"><div><strong>Switch profile automatically</strong><span class="help">Checks running programs every few seconds while this app is open.</span></div><input id="m" class="switch" type="checkbox" checked aria-label="Switch profile automatically"></div></section>
+<section class="card" id="tbl" aria-labelledby="rt"><div class="cardrow" style="padding-bottom:0"><div><strong id="rt">Rules</strong><span class="help">If several games run, the first rule in the list wins.</span></div></div>
+<table><thead><tr><th scope="col">#</th><th scope="col">Executable</th><th scope="col">Profile</th><th scope="col"><span class="sr" style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody id="b"><tr><td class="n">1</td><td><code>cs2</code></td><td><select aria-label="Profile for cs2"><option value="auto">Automatic profile</option><option value="fps" selected>FPS 800 DPI</option><option value="macro" >macro</option></select></td><td class="a order"><button aria-label="Move cs2 up" disabled>↑</button> <button aria-label="Move cs2 down" >↓</button> <button class="small danger" aria-label="Remove cs2">Remove</button></td></tr><tr><td class="n">2</td><td><code>Hades.exe</code></td><td><select aria-label="Profile for Hades.exe"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" selected>macro</option></select></td><td class="a order"><button aria-label="Move Hades.exe up" >↑</button> <button aria-label="Move Hades.exe down" >↓</button> <button class="small danger" aria-label="Remove Hades.exe">Remove</button></td></tr><tr><td class="n">3</td><td><code>eldenring.exe</code></td><td><select aria-label="Profile for eldenring.exe"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select></td><td class="a order"><button aria-label="Move eldenring.exe up" >↑</button> <button aria-label="Move eldenring.exe down" disabled>↓</button> <button class="small danger" aria-label="Remove eldenring.exe">Remove</button></td></tr></tbody></table>
+<form class="addbar" id="f"><input id="exe" placeholder="Executable name, e.g. Hades.exe" aria-label="Executable name"><select id="prof" aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select><button class="primary" type="submit">Add rule</button></form></section>
+<p class="help note" id="err" role="alert"></p>
+<p class="help note">Tip: on Steam, the executable name is the file shown in the game’s install folder. Closing this window keeps the app running in the tray when that option is on.</p></main></div><script>const b=document.getElementById('b'),m=document.getElementById('m'),t=document.getElementById('tbl');
+function renum(){[...b.rows].forEach((r,i)=>{r.cells[0].textContent=i+1;const bt=r.querySelectorAll('.order button');bt[0].disabled=i===0;bt[1].disabled=i===b.rows.length-1})}
+b.addEventListener('click',e=>{const bt=e.target.closest('button');if(!bt)return;const r=bt.closest('tr');
+if(bt.classList.contains('danger'))r.remove();
+if(bt.textContent==='↑'&&r.previousElementSibling)b.insertBefore(r,r.previousElementSibling);if(bt.textContent==='↓'&&r.nextElementSibling)b.insertBefore(r.nextElementSibling,r);renum()});
+document.getElementById('f').addEventListener('submit',e=>{e.preventDefault();const x=document.getElementById('exe').value.trim(),er=document.getElementById('err');
+if(!x||/[\/\\]/.test(x)){er.style.color='var(--danger)';er.textContent='Enter the executable name only, without a path.';return}
+if([...b.querySelectorAll('code')].some(c=>c.textContent===x)){er.style.color='var(--danger)';er.textContent='A rule for '+x+' already exists.';return}
+er.textContent='';const o=document.getElementById('prof'),r=b.insertRow();r.innerHTML='<td class="n"></td><td><code></code></td><td><select></select></td><td class="a order"><button>↑</button> <button>↓</button> <button class="small danger">Remove</button></td>';
+r.querySelector('code').textContent=x;const s=r.querySelector('select');s.innerHTML=o.innerHTML;s.value=o.value;renum();document.getElementById('exe').value=''});
+m.addEventListener('change',()=>{t.classList.toggle('off',!m.checked);t.querySelectorAll('select,button,input').forEach(c=>c.disabled=!m.checked)});</script></body></html>

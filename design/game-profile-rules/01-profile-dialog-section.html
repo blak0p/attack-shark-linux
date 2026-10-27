@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Games section in the profiles dialog</title>
+<style>:root{--accent:#1d9e75;--bg:#1e1e1c;--rail:#292a27;--surface:#30312e;--raised:#393a36;--line:#4a4b46;--text:#f2f1ed;--muted:#b6b7b1;--dim:#8b8c86;--ok:#55c590;--danger:#e05f65;--accent-subtle:#244b3e;--accent-on-primary:#09261d;--border-strong:#55564f;--focus-ring:#77dabe;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--radius-md:9px}
+*{box-sizing:border-box}html,body{margin:0}body{width:1024px;height:768px;overflow:hidden;background:var(--surface);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Cantarell","Segoe UI",sans-serif}
+button,input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--accent);background:var(--raised)}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-on-primary);border-color:var(--accent);font-weight:600}
+.small{font-size:11px;padding:6px 9px;background:transparent}.danger{color:#f4a5a5}
+.muted{color:var(--muted)}.help{color:var(--muted);font-size:12px;line-height:1.6;margin:0}
+.badge{background:var(--accent-subtle);border-radius:20px;padding:3px 8px;font-size:10px}
+.switch{appearance:none;-webkit-appearance:none;width:38px;height:22px;margin:0;padding:0;border:0;border-radius:20px;background:#676862;position:relative;transition:.18s;cursor:pointer;flex-shrink:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.18s}
+.switch:checked{background:var(--accent)}.switch:checked::after{transform:translateX(16px)}
+header.top{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--space-6);background:var(--bg);border-bottom:1px solid var(--line)}
+header.top h1{font-size:15px;font-weight:600;margin:0}.sel{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.sel select{width:180px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.dim{position:absolute;inset:64px 0 0;background:#0009;display:grid;place-items:center;padding:16px}
+.dlg{width:min(560px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--bg);border:1px solid var(--border-strong);border-radius:16px;box-shadow:0 24px 80px #0008}
+.dlg h2{font-size:20px;font-weight:600;margin:0 0 6px}.ph{display:flex;justify-content:space-between;align-items:start;margin-bottom:var(--space-4)}
+.ph button{background:transparent;font-size:20px;line-height:1;padding:6px 10px}
+.prow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.prow strong{font-weight:500}.sec{margin-top:var(--space-5);padding-top:var(--space-5);border-top:1px solid var(--border-strong)}
+.sec h3{font-size:15px;margin:0 0 4px}.master{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:var(--space-3) 0 var(--space-4)}
+.grow{display:grid;grid-template-columns:1fr 170px auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.grow code{font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.add{display:grid;grid-template-columns:1fr 170px auto;gap:8px;margin-top:var(--space-3)}.add input{width:100%}
+</style></head><body><header class="top"><h1>Attack Shark X6 Configurator</h1><div class="sel"><span>Profile</span><select aria-label="Active profile"><option>Automatic profile</option><option>FPS 800 DPI</option><option>macro</option></select></div></header><main style="position:relative;height:704px"><div class="dim"><section class="dlg" role="dialog" aria-labelledby="t" aria-modal="true">
+<div class="ph"><div><h2 id="t">Mouse profiles</h2><p class="help">Local settings for this mouse</p></div><button aria-label="Close">×</button></div>
+<div class="prow"><div><strong>Automatic profile</strong> <span class="badge">Active</span></div><div><button class="small">Rename</button> <button class="small">Duplicate</button></div></div>
+<div class="prow"><div><strong>FPS 800 DPI</strong></div><div><button class="small">Switch</button> <button class="small">Rename</button> <button class="small danger">Delete</button></div></div>
+<div class="prow"><div><strong>macro</strong></div><div><button class="small">Switch</button> <button class="small">Rename</button> <button class="small danger">Delete</button></div></div>
+<section class="sec" aria-labelledby="g"><h3 id="g">Games</h3>
+<p class="help">Use a profile while a game runs, then go back to the one you had. Works while this app stays open.</p>
+<div class="master"><label for="m" style="font-size:13px">Switch profile automatically</label><input id="m" class="switch" type="checkbox" checked></div>
+<div id="rules"><div class="grow"><code>cs2</code><select aria-label="Profile for cs2"><option value="auto">Automatic profile</option><option value="fps" selected>FPS 800 DPI</option><option value="macro" >macro</option></select><button class="small danger" aria-label="Remove cs2">Remove</button></div>
+<div class="grow"><code>Hades.exe</code><select aria-label="Profile for Hades.exe"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" selected>macro</option></select><button class="small danger" aria-label="Remove Hades.exe">Remove</button></div></div>
+<form class="add" id="f"><input id="exe" placeholder="Executable name, e.g. eldenring.exe" aria-label="Executable name"><select id="prof" aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select><button class="primary" type="submit">Add</button></form>
+<p class="help" id="err" role="alert" style="margin-top:8px"></p></section>
+</section></div></main><script>const r=document.getElementById('rules'),m=document.getElementById('m');
+document.getElementById('f').addEventListener('submit',e=>{e.preventDefault();const x=document.getElementById('exe').value.trim(),er=document.getElementById('err');
+if(!x||/[\/\\]/.test(x)){er.style.color='var(--danger)';er.textContent='Enter the executable name only, without a path.';return}
+if([...r.querySelectorAll('code')].some(c=>c.textContent===x)){er.style.color='var(--danger)';er.textContent='A rule for '+x+' already exists.';return}
+er.textContent='';const d=document.createElement('div');d.className='grow';const o=document.getElementById('prof');
+d.innerHTML='<code></code><select></select><button class="small danger">Remove</button>';d.firstChild.textContent=x;d.children[1].innerHTML=o.innerHTML;d.children[1].value=o.value;d.lastChild.onclick=()=>d.remove();r.append(d);document.getElementById('exe').value=''});
+r.addEventListener('click',e=>{if(e.target.matches('.danger'))e.target.closest('.grow').remove()});
+m.addEventListener('change',()=>r.querySelectorAll('select,button').forEach(c=>c.disabled=!m.checked));</script></body></html>

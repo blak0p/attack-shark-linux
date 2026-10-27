@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Design system</title>
+<style>
+:root{--accent:#1d9e75;--bg:#1e1e1c;--rail:#292a27;--surface:#30312e;--raised:#393a36;--line:#4a4b46;--text:#f2f1ed;--muted:#b6b7b1;--dim:#8b8c86;--ok:#55c590;--danger:#e05f65;--accent-subtle:#244b3e;--accent-on-primary:#09261d;--border-strong:#55564f;--focus-ring:#77dabe}
+*{box-sizing:border-box}body{margin:0;width:1440px;padding:32px;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Cantarell","Segoe UI",sans-serif}
+h1{font-size:20px;margin:0 0 20px}h2{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:28px 0 12px}
+.sw{display:flex;flex-wrap:wrap;gap:12px}.c{width:150px;font-size:11px;color:var(--muted)}.c i{display:block;height:44px;border-radius:9px;border:1px solid var(--line);margin-bottom:6px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+button{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.p{background:var(--accent);color:var(--accent-on-primary);border-color:var(--accent);font-weight:600}.s{font-size:11px;padding:6px 9px;background:transparent}
+.badge{background:var(--accent-subtle);border-radius:20px;padding:3px 8px;font-size:10px}
+.sw2{appearance:none;width:38px;height:22px;border-radius:20px;background:#676862;position:relative;margin:0}.sw2::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff}.sw2:checked{background:var(--accent)}.sw2:checked::after{transform:translateX(16px)}
+.dlg{width:420px;padding:24px;background:var(--bg);border:1px solid var(--border-strong);border-radius:16px;box-shadow:0 24px 80px #0008}.dlg h3{margin:0 0 6px;font-size:20px;font-weight:600}.dlg p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.sp{display:flex;gap:12px;align-items:end}.sp b{background:var(--accent);display:block;border-radius:2px;width:24px}
+input[type=text]{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px;width:260px}
+</style></head><body><main>
+<h1>Attack Shark X6 Configurator — design system</h1>
+<h2>Colors</h2><div class="sw">
+<div class="c"><i style="background:#1d9e75"></i>--accent #1d9e75</div><div class="c"><i style="background:#1e1e1c"></i>--bg #1e1e1c</div><div class="c"><i style="background:#292a27"></i>--rail #292a27</div><div class="c"><i style="background:#30312e"></i>--surface #30312e</div><div class="c"><i style="background:#393a36"></i>--raised #393a36</div><div class="c"><i style="background:#4a4b46"></i>--line #4a4b46</div><div class="c"><i style="background:#f2f1ed"></i>--text #f2f1ed</div><div class="c"><i style="background:#b6b7b1"></i>--muted #b6b7b1</div><div class="c"><i style="background:#8b8c86"></i>--dim #8b8c86</div><div class="c"><i style="background:#55c590"></i>--ok #55c590</div><div class="c"><i style="background:#e05f65"></i>--danger #e05f65</div><div class="c"><i style="background:#244b3e"></i>--accent-subtle #244b3e</div></div>
+<h2>Typography</h2><div style="font-size:20px;font-weight:600">Dialog title 20/600</div><div style="font-size:13px">Body 13px</div><div style="font-size:12px;color:var(--muted)">Helper text 12px muted</div>
+<h2>Spacing</h2><div class="sp"><b style="height:4px"></b><b style="height:8px"></b><b style="height:12px"></b><b style="height:16px"></b><b style="height:20px"></b><b style="height:24px"></b></div>
+<h2>Components</h2><div class="row"><button>Button</button><button class="p">Primary</button><button class="s">Small action</button><span class="badge">Active</span><input class="sw2" type="checkbox" aria-label="Switch off"><input class="sw2" type="checkbox" checked aria-label="Switch on"><input type="text" value="Text input" aria-label="Text input"></div>
+<h2>Dialog</h2><div class="dlg"><h3>Mouse profiles</h3><p>Local settings for this mouse</p></div>
+</main></body></html>
