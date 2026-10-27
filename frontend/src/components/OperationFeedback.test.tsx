@@ -93,3 +93,14 @@ it("confirms a local save while an independent disconnected-device error remains
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByRole("alert")).toHaveTextContent("Reconnect the mouse.");
 });
+
+it("stays silent about settings refreshed by another operation that announces itself", () => {
+  vi.useFakeTimers();
+  const view = render(<OperationFeedback scope="a" results={[result("1")]} />);
+  view.rerender(<OperationFeedback scope="a" quiet results={[result("2")]} />);
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result("2")]} />);
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result("3")]} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Applied");
+});

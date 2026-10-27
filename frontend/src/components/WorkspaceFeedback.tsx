@@ -1,9 +1,10 @@
 import type { WorkspaceModel } from "../desktop-contract";
 import { OperationFeedback, settingsResult } from "./OperationFeedback";
 
-export function WorkspaceFeedback({ model, library, feedbackFor, retries, initializing = false }: {
+export function WorkspaceFeedback({ model, library, feedbackFor, retries, initializing = false, profileBusy = false }: {
   model: WorkspaceModel;
   initializing?: boolean;
+  profileBusy?: boolean;
   library: { loading: boolean; reading: boolean; busy: boolean; error: string; notice: string };
   feedbackFor(code: string): string;
   retries: { dpi(): void; polling(): void; debounce(): void; sleep(): void };
@@ -23,6 +24,7 @@ export function WorkspaceFeedback({ model, library, feedbackFor, retries, initia
   const resetError = notice.startsWith("Factory reset failed:") || notice.startsWith("Device selection failed;");
   return <OperationFeedback
     scope={JSON.stringify(model.inventory?.Selected ?? null)}
+    quiet={profileBusy}
     busy={initializing || model.automaticApplyBusy || model.remapBusy || library.busy || library.loading || library.reading || model.updateApplying
       || [snapshot, polling, debounce, normalSleep, lighting].some(value => value?.Firmware === "pending")}
     results={[

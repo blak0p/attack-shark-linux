@@ -40,9 +40,11 @@ export function ProgressIndicator({ label = "Working…" }: { label?: string }) 
 }
 
 // Presentation only. A snapshot is not an operation: seed initial versions silently.
-export function OperationFeedback({ scope, busy = false, results }: {
+export function OperationFeedback({ scope, busy = false, quiet = false, results }: {
   scope: string;
   busy?: boolean;
+  // Another operation announces its own outcome; settings it refreshes must not confirm a second time.
+  quiet?: boolean;
   results: FeedbackResult[];
 }) {
   const previous = useRef<{ scope: string; results: Map<string, FeedbackResult> } | undefined>(undefined);
@@ -73,7 +75,7 @@ export function OperationFeedback({ scope, busy = false, results }: {
     previous.current = { scope, results: new Map(results.filter(result => result.initialized !== false).map(result => [result.id, result])) };
     if (prior?.scope !== scope || changed.some(result => result.error)) setConfirmation(undefined);
     const completed = changed.filter(result => result.success && !result.error).at(-1);
-    if (completed) setConfirmation({
+    if (completed && !quiet) setConfirmation({
       id: ++serial.current, scope, message: prior?.results.get(completed.id)?.saveFailed ? "Saved" : completed.success!,
     });
   }, [scope, signature]);
