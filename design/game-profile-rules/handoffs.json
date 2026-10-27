@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "chosen": "02-games-panel.html",
+  "handoffs": {
+    "02-games-panel.html": {
+      "status": "in_progress",
+      "queued": false,
+      "sentAt": "2026-10-27T20:31:57.080Z",
+      "startedAt": "2026-10-27T20:32:01.891Z",
+      "implementedAt": null,
+      "feature": "odd/tasks/per-game-profiles.md",
+      "note": "Exploring the frontend; the Games panel will be tracked as T7d in the feature document."
+    }
+  }
+}

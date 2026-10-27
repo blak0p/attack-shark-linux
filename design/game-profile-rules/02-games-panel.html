@@ -32,12 +32,24 @@ td select{width:100%;max-width:210px}td.a{text-align:right;white-space:nowrap}
 .addbar{display:flex;gap:8px;padding:var(--space-4) var(--space-5);border-top:1px solid var(--line)}.addbar input{flex:1}
 .empty{padding:40px var(--space-5);text-align:center;color:var(--muted)}.empty strong{display:block;color:var(--text);font-size:15px;margin-bottom:4px}
 .off{opacity:.5}.note{margin-top:var(--space-4)}
+
+.cmd{display:flex;gap:8px;align-items:stretch;margin-top:var(--space-3)}
+.cmd code{flex:1;display:block;padding:9px 12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font-size:13px;overflow-wrap:anywhere;user-select:all}
+.steps{margin:var(--space-3) 0 0;padding-left:20px;color:var(--muted);font-size:12px;line-height:1.7}
+.cmdhead{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.cmdhead select{width:210px}
 </style></head><body><header class="top"><h1>Attack Shark X6 Configurator</h1><div class="sel"><span>Profile</span><select aria-label="Active profile"><option>Automatic profile</option><option>FPS 800 DPI</option><option>macro</option></select></div></header><div class="shell"><nav aria-label="Sections"><a href="#">Performance</a><a href="#">Buttons</a><a href="#">Lighting</a><a href="#">Macros</a><a href="#" aria-current="page">Games</a><a href="#">Updates</a></nav>
 <main class="page"><h2>Games</h2><p class="help">Switch the mouse profile when a game starts and go back when it closes.</p>
 <section class="card"><div class="cardrow"><div><strong>Switch profile automatically</strong><span class="help">Checks running programs every few seconds while this app is open.</span></div><input id="m" class="switch" type="checkbox" checked aria-label="Switch profile automatically"></div></section>
 <section class="card" id="tbl" aria-labelledby="rt"><div class="cardrow" style="padding-bottom:0"><div><strong id="rt">Rules</strong><span class="help">If several games run, the first rule in the list wins.</span></div></div>
 <table><thead><tr><th scope="col">#</th><th scope="col">Executable</th><th scope="col">Profile</th><th scope="col"><span class="sr" style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody id="b"><tr><td class="n">1</td><td><code>cs2</code></td><td><select aria-label="Profile for cs2"><option value="auto">Automatic profile</option><option value="fps" selected>FPS 800 DPI</option><option value="macro" >macro</option></select></td><td class="a order"><button aria-label="Move cs2 up" disabled>↑</button> <button aria-label="Move cs2 down" >↓</button> <button class="small danger" aria-label="Remove cs2">Remove</button></td></tr><tr><td class="n">2</td><td><code>Hades.exe</code></td><td><select aria-label="Profile for Hades.exe"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" selected>macro</option></select></td><td class="a order"><button aria-label="Move Hades.exe up" >↑</button> <button aria-label="Move Hades.exe down" >↓</button> <button class="small danger" aria-label="Remove Hades.exe">Remove</button></td></tr><tr><td class="n">3</td><td><code>eldenring.exe</code></td><td><select aria-label="Profile for eldenring.exe"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select></td><td class="a order"><button aria-label="Move eldenring.exe up" >↑</button> <button aria-label="Move eldenring.exe down" disabled>↓</button> <button class="small danger" aria-label="Remove eldenring.exe">Remove</button></td></tr></tbody></table>
 <form class="addbar" id="f"><input id="exe" placeholder="Executable name, e.g. Hades.exe" aria-label="Executable name"><select id="prof" aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select><button class="primary" type="submit">Add rule</button></form></section>
+<section class="card" aria-labelledby="ct"><div class="cardrow" style="flex-direction:column;align-items:stretch">
+<div class="cmdhead"><div><strong id="ct">Without the app open</strong><span class="help">For Steam and other launchers. Works even when this app is closed; if the app is open, it takes care of the mouse.</span></div>
+<select id="cp" aria-label="Profile for the launch command"><option value="Automatic profile">Automatic profile</option><option value="FPS 800 DPI" selected>FPS 800 DPI</option><option value="macro">macro</option></select></div>
+<div class="cmd"><code id="cmd" aria-label="Launch command">attack-shark-linux --profile "FPS 800 DPI" -- %command%</code><button id="copy" type="button">Copy</button></div>
+<p class="help" id="cs" role="status" style="min-height:1.6em"></p>
+<ol class="steps"><li>In Steam, right-click the game and open Properties.</li><li>Paste the command into Launch Options.</li><li>The profile is applied when the game starts and restored when it closes.</li></ol></div></section>
 <p class="help note" id="err" role="alert"></p>
 <p class="help note">Tip: on Steam, the executable name is the file shown in the game’s install folder. Closing this window keeps the app running in the tray when that option is on.</p></main></div><script>const b=document.getElementById('b'),m=document.getElementById('m'),t=document.getElementById('tbl');
 function renum(){[...b.rows].forEach((r,i)=>{r.cells[0].textContent=i+1;const bt=r.querySelectorAll('.order button');bt[0].disabled=i===0;bt[1].disabled=i===b.rows.length-1})}
@@ -49,4 +61,12 @@ if(!x||/[\/\\]/.test(x)){er.style.color='var(--danger)';er.textContent='Enter th
 if([...b.querySelectorAll('code')].some(c=>c.textContent===x)){er.style.color='var(--danger)';er.textContent='A rule for '+x+' already exists.';return}
 er.textContent='';const o=document.getElementById('prof'),r=b.insertRow();r.innerHTML='<td class="n"></td><td><code></code></td><td><select></select></td><td class="a order"><button>↑</button> <button>↓</button> <button class="small danger">Remove</button></td>';
 r.querySelector('code').textContent=x;const s=r.querySelector('select');s.innerHTML=o.innerHTML;s.value=o.value;renum();document.getElementById('exe').value=''});
-m.addEventListener('change',()=>{t.classList.toggle('off',!m.checked);t.querySelectorAll('select,button,input').forEach(c=>c.disabled=!m.checked)});</script></body></html>
+m.addEventListener('change',()=>{t.classList.toggle('off',!m.checked);t.querySelectorAll('select,button,input').forEach(c=>c.disabled=!m.checked)});
+(function(){const sel=document.getElementById('cp'),c=document.getElementById('cmd'),st=document.getElementById('cs');
+function upd(){c.textContent='attack-shark-linux --profile "'+sel.value+'" -- %command%';st.textContent=''}
+sel.addEventListener('change',upd);
+document.getElementById('copy').addEventListener('click',()=>{const t=c.textContent;
+const ok=()=>{st.style.color='var(--ok)';st.textContent='Copied to the clipboard.'};
+const no=()=>{const r=document.createRange();r.selectNodeContents(c);const g=getSelection();g.removeAllRanges();g.addRange(r);st.style.color='var(--muted)';st.textContent='Press Ctrl+C to copy the selected command.'};
+(navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(t).then(ok,no):Promise.reject()).catch(no)})})();
+</script></body></html>

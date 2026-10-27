@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "comments": [
+    {
+      "id": "hh4yj2nl",
+      "file": "02-games-panel.html",
+      "selector": "body > div > main",
+      "excerpt": "Games Switch the mouse profile when a game starts and go back when it closes. Switch profile automatically Checks running programs every few seconds while this app is open. Rules If several games run, the first rule in the list wins. # EXECUTABLE PROFILE ACTIONS 1 cs2 ↑ ↓ Remove 2 Hades.exe ↑ ↓ Remo",
+      "comment": "por aqui añádiria el comando de como usarlo sin tener la app abierta para steam y eso",
+      "createdAt": "2026-10-27T20:31:29.247Z",
+      "status": "resolved",
+      "sentAt": "2026-10-27T20:31:29.251Z",
+      "resolvedAt": "2026-10-27T20:31:40.318Z"
+    }
+  ]
+}
