@@ -15,7 +15,7 @@ S9. Duplicate name feedback in the UI (A prerequisite): creating, duplicating or
 ## Tasks
 T1 | S3 | delegated gentle-ai-worker (context backstop) | unique profile names in configstore + tests; RED: sentinel/check absent, TestDuplicateNamesRejectedAndIndexUntouched failed; GREEN: configstore+desktop tests and go vet pass | done | commit: see git log (feat/profile-launch-wrapper)
 T11 | S9 | delegated gentle-ai-worker (context backstop) | show a clear `duplicate_profile_name` error in the profiles UI (create, duplicate, rename), keep the profile unchanged; RED: 3 new tests failed; GREEN: full Vitest 581 pass (no frontend typecheck script exists) | done | commit: see git log
-T2 | S2 | inline | name->id resolver (not found / ambiguous / hex ID) + tests | pending
+T2 | S2 | delegated gentle-ai-worker (context backstop) | name->id resolver ResolveProfileRef (not found / ambiguous with IDs / hex ID); RED: build failed, symbols undefined; GREEN: configstore tests + go vet pass | done | commit: see git log
 T3 | S4 | inline | flock lock file taken by the app, checked by CLI + tests | pending
 T4 | S1,S5 | inline | CLI parsing `--profile NAME -- cmd`, headless composition via composeDesktopService + RefreshInventory, run command, restore, exit code, help text and README | pending
 T5 | S1 | manual | hardware check with the real mouse (never automated) | pending
@@ -45,3 +45,4 @@ L5. User: later, “que el reset este conectado a los perfiles” and unique pro
 L6. T1 done: ErrDuplicateProfileName and nameInUse in configstore (exact, case-sensitive, own-name rename allowed, load() untouched so existing duplicates still load); desktop code duplicate_profile_name. No frontend type enumerates codes. Next: T2 name->id resolver.
 L7. User: “te añado la tarea de ponerlo como error porfa que no deje crearlo que sea CareSensitive obvio”. Added S9 and T11.
 L8. T11 done: ProfileControls had no code-to-message map (raw codes were shown); added profileErrorMessages with English copy for duplicate_profile_name. Chromium e2e not run.
+L9. T2 done: configstore.ResolveProfileRef, ErrProfileNotFound, ErrAmbiguousProfile + AmbiguousProfileError{IDs}. Exact case-sensitive name first, then 32-hex ID of an existing profile. Not wired to the CLI yet (T4).
