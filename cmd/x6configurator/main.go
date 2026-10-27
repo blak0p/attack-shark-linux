@@ -4,10 +4,12 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/applock"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
@@ -86,6 +88,7 @@ func main() {
 	exitCode := runCLI(os.Args[1:], cliDependencies{
 		startWails: startWails,
 		reset:      emergencyReset,
+		launch:     launchWithProfile,
 	})
 	if exitCode != exitSuccess {
 		os.Exit(exitCode)
@@ -117,6 +120,29 @@ func appLockPath(dataDir string) string {
 	return filepath.Join(dataDir, "app.lock")
 }
 
+const (
+	appLockAttempts   = 5
+	appLockRetryDelay = 250 * time.Millisecond
+)
+
+// acquireAppLock retries briefly on ErrHeld: the launch wrapper's IsHeld probe
+// holds the flock for a moment, which must not make the app look like a second
+// instance.
+func acquireAppLock(path string, attempts int, delay time.Duration) (*applock.Lock, error) {
+	var err error
+	for i := 0; i < attempts; i++ {
+		var lock *applock.Lock
+		lock, err = applock.Acquire(path)
+		if !errors.Is(err, applock.ErrHeld) {
+			return lock, err
+		}
+		if i < attempts-1 {
+			time.Sleep(delay)
+		}
+	}
+	return nil, err
+}
+
 func startWails() error {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
@@ -126,8 +152,10 @@ func startWails() error {
 	dataDir = filepath.Join(dataDir, "attack-shark-linux")
 	// A second instance or an unwritable lock file must not stop the app from
 	// opening; the lock only tells the launch wrapper that the app owns the mouse.
-	if lock, err := applock.Acquire(appLockPath(dataDir)); err == nil {
+	if lock, err := acquireAppLock(appLockPath(dataDir), appLockAttempts, appLockRetryDelay); err == nil {
 		defer lock.Release()
+	} else {
+		slog.Warn("app lock not acquired", "error", err)
 	}
 
 	backend := hidlinux.NewHidrawBackend()

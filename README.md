@@ -188,6 +188,33 @@ sections added above**, preserving all other entries. Alternatively, restore
 your backup if no unrelated edits have been made since it was taken. Do not
 blindly delete the whole file. Save your work and log out and back in again.
 
+## Per-game profiles (launch wrapper)
+
+Switch the mouse to a saved profile while a game runs, then switch back:
+
+```sh
+attack-shark-linux --profile "Name" -- <command> [args...]
+```
+
+For Steam, set the game's launch option to:
+
+```sh
+attack-shark-linux --profile "Name" -- %command%
+```
+
+`Name` is the exact, case-sensitive profile name; a 32-character profile ID also
+works. The wrapper applies the profile, runs the command, waits for it, restores
+the profile that was active before, and exits with the command's exit code
+(127 if the command does not exist, 126 if it cannot be started). SIGINT and
+SIGTERM are forwarded to the command.
+
+- If the desktop app is open, the wrapper does not touch the mouse: the app owns
+  it, and the command simply runs.
+- If the profile cannot be found, is ambiguous, or the switch fails or takes
+  longer than 8 seconds, the wrapper prints a warning to stderr and launches the
+  command anyway. It never blocks the game.
+- Switching to the already-active profile rewrites it.
+
 ## Emergency recovery
 
 If an applied configuration leaves the mouse unusable, run the headless factory

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -68,5 +69,51 @@ func TestRunCLIMapsHeadlessAndWailsFailuresToExitOne(t *testing.T) {
 				t.Fatalf("runCLI(%q) = %d, want 1", tt.args, got)
 			}
 		})
+	}
+}
+
+func TestRunCLIRoutesProfileWrapper(t *testing.T) {
+	var gotRef string
+	var gotCommand []string
+	deps := cliDependencies{launch: func(ref string, command []string) int {
+		gotRef, gotCommand = ref, command
+		return 7
+	}}
+
+	if got := runCLI([]string{"--profile", "Game", "--", "game", "--fullscreen"}, deps); got != 7 {
+		t.Fatalf("exit = %d, want the wrapper's 7", got)
+	}
+	if gotRef != "Game" || !reflect.DeepEqual(gotCommand, []string{"game", "--fullscreen"}) {
+		t.Fatalf("launch got %q %q", gotRef, gotCommand)
+	}
+}
+
+func TestRunCLIRejectsMalformedProfileWrapper(t *testing.T) {
+	for _, args := range [][]string{
+		{"--profile"},
+		{"--profile", "Game"},
+		{"--profile", "Game", "--"},
+		{"--profile", "Game", "game"},
+		{"--profile", "", "--", "game"},
+	} {
+		deps := cliDependencies{launch: func(string, []string) int {
+			t.Fatalf("launch must not run for %q", args)
+			return 0
+		}}
+		if got := runCLI(args, deps); got != exitUsage {
+			t.Errorf("runCLI(%q) = %d, want %d", args, got, exitUsage)
+		}
+	}
+}
+
+func TestRunCLIPriorCommandsIgnoreWrapper(t *testing.T) {
+	launches := 0
+	deps := cliDependencies{
+		startWails: func() error { return nil },
+		reset:      func(context.Context) error { return nil },
+		launch:     func(string, []string) int { launches++; return 0 },
+	}
+	if runCLI(nil, deps) != exitSuccess || runCLI([]string{"reset"}, deps) != exitSuccess || launches != 0 {
+		t.Fatalf("no-arg and reset must keep working without the wrapper (launches=%d)", launches)
 	}
 }

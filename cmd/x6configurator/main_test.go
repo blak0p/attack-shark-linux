@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -12,7 +13,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/applock"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
@@ -864,5 +867,36 @@ func TestConfigurationBaselineDocumentsPollingDefaultsAndPersistence(t *testing.
 		if !strings.Contains(baseline, strings.ToLower(strings.Join(strings.Fields(want), " "))) {
 			t.Errorf("configuration baseline must document %q", want)
 		}
+	}
+}
+
+func TestAcquireAppLockRetriesWhileProbeHoldsLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.lock")
+	probe, err := applock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		probe.Release()
+	}()
+
+	lock, err := acquireAppLock(path, 10, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("acquireAppLock = %v, want success once the probe lets go", err)
+	}
+	lock.Release()
+}
+
+func TestAcquireAppLockGivesUpWhenAnotherInstanceHoldsIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.lock")
+	holder, err := applock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Release()
+
+	if _, err := acquireAppLock(path, 3, 10*time.Millisecond); !errors.Is(err, applock.ErrHeld) {
+		t.Fatalf("acquireAppLock = %v, want ErrHeld", err)
 	}
 }
