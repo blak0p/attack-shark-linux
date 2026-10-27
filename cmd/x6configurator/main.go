@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/blak0p/attack-shark-linux/internal/applock"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
@@ -111,14 +112,26 @@ func emergencyReset(ctx context.Context) error {
 	return err
 }
 
+// appLockPath is the flock file that marks the desktop app as running.
+func appLockPath(dataDir string) string {
+	return filepath.Join(dataDir, "app.lock")
+}
+
 func startWails() error {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
 
+	dataDir = filepath.Join(dataDir, "attack-shark-linux")
+	// A second instance or an unwritable lock file must not stop the app from
+	// opening; the lock only tells the launch wrapper that the app owns the mouse.
+	if lock, err := applock.Acquire(appLockPath(dataDir)); err == nil {
+		defer lock.Release()
+	}
+
 	backend := hidlinux.NewHidrawBackend()
-	service, passive := composeDesktopService(filepath.Join(dataDir, "attack-shark-linux"), backend)
+	service, passive := composeDesktopService(dataDir, backend)
 	updater := releaseUpdater()
 	if updater != nil {
 		desktop.ConfigureUpdater(service, updater, nil)

@@ -16,7 +16,7 @@ S9. Duplicate name feedback in the UI (A prerequisite): creating, duplicating or
 T1 | S3 | delegated gentle-ai-worker (context backstop) | unique profile names in configstore + tests; RED: sentinel/check absent, TestDuplicateNamesRejectedAndIndexUntouched failed; GREEN: configstore+desktop tests and go vet pass | done | commit: see git log (feat/profile-launch-wrapper)
 T11 | S9 | delegated gentle-ai-worker (context backstop) | show a clear `duplicate_profile_name` error in the profiles UI (create, duplicate, rename), keep the profile unchanged; RED: 3 new tests failed; GREEN: full Vitest 581 pass (no frontend typecheck script exists) | done | commit: see git log
 T2 | S2 | delegated gentle-ai-worker (context backstop) | name->id resolver ResolveProfileRef (not found / ambiguous with IDs / hex ID); RED: build failed, symbols undefined; GREEN: configstore tests + go vet pass | done | commit: see git log
-T3 | S4 | inline | flock lock file taken by the app, checked by CLI + tests | pending
+T3 | S4 | inline | flock lock file taken by the app, checked by CLI + tests; RED: applock symbols undefined; GREEN: applock + cmd tests and go vet pass; CLI check wired in T4 | done | commit: see git log
 T4 | S1,S5 | inline | CLI parsing `--profile NAME -- cmd`, headless composition via composeDesktopService + RefreshInventory, run command, restore, exit code, help text and README | pending
 T5 | S1 | manual | hardware check with the real mouse (never automated) | pending
 T6 | S6 | inline | tray + DisableQuitOnLastWindowClosed + minimize fallback, opt-in setting | pending (phase 2)
@@ -46,3 +46,4 @@ L6. T1 done: ErrDuplicateProfileName and nameInUse in configstore (exact, case-s
 L7. User: “te añado la tarea de ponerlo como error porfa que no deje crearlo que sea CareSensitive obvio”. Added S9 and T11.
 L8. T11 done: ProfileControls had no code-to-message map (raw codes were shown); added profileErrorMessages with English copy for duplicate_profile_name. Chromium e2e not run.
 L9. T2 done: configstore.ResolveProfileRef, ErrProfileNotFound, ErrAmbiguousProfile + AmbiguousProfileError{IDs}. Exact case-sensitive name first, then 32-hex ID of an existing profile. Not wired to the CLI yet (T4).
+L10. T3 done: internal/applock (Acquire, IsHeld, ErrHeld) using non-blocking flock; startWails takes `<dataDir>/app.lock` and ignores acquire failure so a second instance still opens. IsHeld never creates the file. appLockPath in cmd/x6configurator/main.go is the path T4 must reuse.
