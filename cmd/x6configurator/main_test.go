@@ -516,8 +516,14 @@ func TestPackagedAppImageWebKitProcessesAreExecutable(t *testing.T) {
 	}
 
 	for _, process := range []string{"WebKitNetworkProcess", "WebKitWebProcess"} {
-		path := filepath.Join(extractDir, "squashfs-root", "usr", "lib", "x86_64-linux-gnu", "webkitgtk-6.0", process)
-		info, err := os.Stat(path)
+		// Debian-based builders use a multiarch libdir; Arch-based builders do not.
+		var info os.FileInfo
+		var err error
+		for _, libdir := range []string{filepath.Join("usr", "lib", "x86_64-linux-gnu"), filepath.Join("usr", "lib")} {
+			if info, err = os.Stat(filepath.Join(extractDir, "squashfs-root", libdir, "webkitgtk-6.0", process)); err == nil {
+				break
+			}
+		}
 		if err != nil {
 			t.Fatalf("stat packaged %s: %v", process, err)
 		}
