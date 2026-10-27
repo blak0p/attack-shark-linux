@@ -117,3 +117,9 @@ func TestRunCLIPriorCommandsIgnoreWrapper(t *testing.T) {
 		t.Fatalf("no-arg and reset must keep working without the wrapper (launches=%d)", launches)
 	}
 }
+
+func TestCLIProfileWithoutLauncherIsAFailureNotUsage(t *testing.T) {
+	if got := runCLI([]string{"--profile", "Game", "--", "true"}, cliDependencies{}); got != exitFailure {
+		t.Fatalf("exit = %d, want %d", got, exitFailure)
+	}
+}

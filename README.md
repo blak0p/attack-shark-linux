@@ -205,14 +205,21 @@ attack-shark-linux --profile "Name" -- %command%
 `Name` is the exact, case-sensitive profile name; a 32-character profile ID also
 works. The wrapper applies the profile, runs the command, waits for it, restores
 the profile that was active before, and exits with the command's exit code
-(127 if the command does not exist, 126 if it cannot be started). SIGINT and
-SIGTERM are forwarded to the command.
+(127 if the command does not exist, 126 if it cannot be started). SIGTERM and
+SIGHUP are forwarded to the command; Ctrl-C reaches it through the terminal. A
+signal received before the command starts cancels the launch and puts the
+profile back.
 
 - If the desktop app is open, the wrapper does not touch the mouse: the app owns
   it, and the command simply runs.
-- If the profile cannot be found, is ambiguous, or the switch fails or takes
-  longer than 8 seconds, the wrapper prints a warning to stderr and launches the
-  command anyway. It never blocks the game.
+- If the profile cannot be found, is ambiguous, or the switch fails, the wrapper
+  prints a warning to stderr and launches the command anyway. Detection, reading
+  the profiles and the switch share one 8-second budget before the launch, and
+  the restore afterwards has its own 8 seconds, so the game is never held back
+  longer than that.
+- A switch that fails part-way (`apply_failed`) or times out is followed by a
+  restore of the previous profile, since the mouse may be half written. The
+  restore is skipped if the app was opened during the game.
 - Switching to the already-active profile rewrites it.
 
 ## Emergency recovery

@@ -44,9 +44,12 @@ func runCLI(args []string, dependencies cliDependencies) int {
 		return exitSuccess
 	case len(args) > 0 && args[0] == "--profile":
 		// --profile NAME -- COMMAND [ARGS...]
-		if len(args) < 4 || args[1] == "" || args[2] != "--" || dependencies.launch == nil {
+		if len(args) < 4 || args[1] == "" || args[2] != "--" {
 			io.WriteString(os.Stderr, usageText)
 			return exitUsage
+		}
+		if dependencies.launch == nil {
+			return exitFailure
 		}
 		return dependencies.launch(args[1], args[3:])
 	default:

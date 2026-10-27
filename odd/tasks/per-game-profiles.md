@@ -26,7 +26,7 @@ T9 | S8 | inline | connect emergency `reset` to profiles (emergencyReset lacks A
 T10 | S7 | inline | trim frontend size (about 45 MB at most) | pending (before release)
 
 ## Open questions (unverified)
-- Q1 (answered in T5: X6 reports serial_present=false yet SwitchProfile worked for a profile without macros). Receiver reports `serial_present=false` and `SwitchProfile` refuses SessionOnly bindings (no serial) with ProfileUnavailable; the app already switches profiles, so verify why headless would differ (check in T4).
+- Q1 (answered in T5: the X6 reports serial_present=false and SwitchProfile still worked for a profile without macros). Earlier concern: the receiver reports `serial_present=false` and `SwitchProfile` refuses SessionOnly bindings (no serial) with ProfileUnavailable; the app already switches profiles, so verify why headless would differ (check in T4).
 - Q2. A corrupt saved profile blocks GetProfiles and therefore all switching; decide behavior for the wrapper (warn and launch).
 - Q3. Tray visibility on Hyprland depends on the user's bar having a tray module.
 - Q4. SwitchProfile uses context.Background() without timeout; the wrapper needs its own timeout so the game is not delayed indefinitely.
