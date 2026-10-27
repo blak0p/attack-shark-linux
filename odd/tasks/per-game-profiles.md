@@ -10,9 +10,11 @@ S5. Switching to the already-active profile rewrites it anyway (accepted by the 
 S6. Tray app with watcher (B, second phase): opt-in setting, off by default. When on, closing the window keeps the app in the system tray (Wails `Linux.DisableQuitOnLastWindowClosed` plus `SystemTray`). A selector in the app maps an executable (or launcher entry) to a profile. The app scans /proc every few seconds, applies the mapped profile when the executable appears and restores the previous one when it exits. Autostart is an opt-in toggle that writes/removes `~/.config/autostart/*.desktop`; nothing is installed system-wide and no systemd unit is used. If no tray exists (Hyprland without Waybar tray module), the window minimizes and the app stays alive.
 S7. Memory footprint (decision): accept ~300 MB for the full app, no WebKit purge patch, no separate watcher binary. Trim frontend size before the release.
 S8. Existing `reset` stays as is; connecting `reset` to profiles is a later task before the release (see T9).
+S9. Duplicate name feedback in the UI (A prerequisite): creating, duplicating or renaming a profile with an already-used name must show an error and must not create or rename it. Name matching is case-sensitive. User: “te añado la tarea de ponerlo como error porfa que no deje crearlo que sea CareSensitive obvio”. Backend already rejects with code `duplicate_profile_name` (T1); the frontend has no message for that code yet (assumption: it currently shows the generic error).
 
 ## Tasks
 T1 | S3 | delegated gentle-ai-worker (context backstop) | unique profile names in configstore + tests; RED: sentinel/check absent, TestDuplicateNamesRejectedAndIndexUntouched failed; GREEN: configstore+desktop tests and go vet pass | done | commit: see git log (feat/profile-launch-wrapper)
+T11 | S9 | delegated gentle-ai-worker (context backstop) | show a clear `duplicate_profile_name` error in the profiles UI (create, duplicate, rename), keep the profile unchanged; RED: 3 new tests failed; GREEN: full Vitest 581 pass (no frontend typecheck script exists) | done | commit: see git log
 T2 | S2 | inline | name->id resolver (not found / ambiguous / hex ID) + tests | pending
 T3 | S4 | inline | flock lock file taken by the app, checked by CLI + tests | pending
 T4 | S1,S5 | inline | CLI parsing `--profile NAME -- cmd`, headless composition via composeDesktopService + RefreshInventory, run command, restore, exit code, help text and README | pending
@@ -41,3 +43,5 @@ L3. User: “seria el selector de profiles por ejecutable juego acceso lo que qu
 L4. User: “depende si esta desde la app le hace caso a la app si no nada”; the wrapper and the app are two independent things.
 L5. User: later, “que el reset este conectado a los perfiles” and unique profile names, then release.
 L6. T1 done: ErrDuplicateProfileName and nameInUse in configstore (exact, case-sensitive, own-name rename allowed, load() untouched so existing duplicates still load); desktop code duplicate_profile_name. No frontend type enumerates codes. Next: T2 name->id resolver.
+L7. User: “te añado la tarea de ponerlo como error porfa que no deje crearlo que sea CareSensitive obvio”. Added S9 and T11.
+L8. T11 done: ProfileControls had no code-to-message map (raw codes were shown); added profileErrorMessages with English copy for duplicate_profile_name. Chromium e2e not run.
