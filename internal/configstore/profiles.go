@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	ErrInvalidProfile   = errors.New("invalid local profile")
-	ErrProtectedProfile = errors.New("cannot delete active or last profile")
+	ErrInvalidProfile       = errors.New("invalid local profile")
+	ErrProtectedProfile     = errors.New("cannot delete active or last profile")
+	ErrDuplicateProfileName = errors.New("profile name already in use")
 )
 
 // ProfileSummary is local metadata, not an onboard hardware profile.
@@ -231,6 +232,17 @@ func (s *ProfileStore) Read(id mouse.DeviceID, binding, profileID string) (Local
 	}
 	return readLocalProfile(dir, profileID)
 }
+
+// nameInUse reports whether another profile already has this exact name.
+// Matching is case-sensitive; exceptID lets a profile keep its own name.
+func nameInUse(index profileIndex, name, exceptID string) bool {
+	for _, p := range index.Profiles {
+		if p.Name == name && p.ID != exceptID {
+			return true
+		}
+	}
+	return false
+}
 func profilePosition(index profileIndex, id string) int {
 	for i, p := range index.Profiles {
 		if p.ID == id {
@@ -258,6 +270,9 @@ func (s *ProfileStore) clone(id mouse.DeviceID, binding, sourceID, name string, 
 	index, dir, err := s.load(id, binding)
 	if err != nil {
 		return ProfileSnapshot{}, err
+	}
+	if nameInUse(index, name, "") {
+		return ProfileSnapshot{}, ErrDuplicateProfileName
 	}
 	if activate {
 		sourceID = index.ActiveID
@@ -291,6 +306,9 @@ func (s *ProfileStore) Rename(id mouse.DeviceID, binding, profileID, name string
 		pos := profilePosition(*index, profileID)
 		if pos < 0 {
 			return ErrInvalidProfile
+		}
+		if nameInUse(*index, name, profileID) {
+			return ErrDuplicateProfileName
 		}
 		index.Profiles[pos].Name = name
 		return nil

@@ -12,7 +12,7 @@ S7. Memory footprint (decision): accept ~300 MB for the full app, no WebKit purg
 S8. Existing `reset` stays as is; connecting `reset` to profiles is a later task before the release (see T9).
 
 ## Tasks
-T1 | S3 | inline | unique profile names in configstore + tests | pending
+T1 | S3 | delegated gentle-ai-worker (context backstop) | unique profile names in configstore + tests; RED: sentinel/check absent, TestDuplicateNamesRejectedAndIndexUntouched failed; GREEN: configstore+desktop tests and go vet pass | done | commit: see git log (feat/profile-launch-wrapper)
 T2 | S2 | inline | name->id resolver (not found / ambiguous / hex ID) + tests | pending
 T3 | S4 | inline | flock lock file taken by the app, checked by CLI + tests | pending
 T4 | S1,S5 | inline | CLI parsing `--profile NAME -- cmd`, headless composition via composeDesktopService + RefreshInventory, run command, restore, exit code, help text and README | pending
@@ -40,3 +40,4 @@ L2. User constraints: used by real users, “lo mas limpia posible sin ser invas
 L3. User: “seria el selector de profiles por ejecutable juego acceso lo que quiera” and “es con el servicio que mira proc para aplicarlo”; and the wrapper for Steam launch options (“casi todos los launchers lo tienen hacemos las dos”).
 L4. User: “depende si esta desde la app le hace caso a la app si no nada”; the wrapper and the app are two independent things.
 L5. User: later, “que el reset este conectado a los perfiles” and unique profile names, then release.
+L6. T1 done: ErrDuplicateProfileName and nameInUse in configstore (exact, case-sensitive, own-name rename allowed, load() untouched so existing duplicates still load); desktop code duplicate_profile_name. No frontend type enumerates codes. Next: T2 name->id resolver.
