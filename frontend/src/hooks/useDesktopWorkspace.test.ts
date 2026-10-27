@@ -185,6 +185,15 @@ describe("unified update lifecycle", () => {
     await act(async () => late.reject(new Error("unmounted")));
   });
 
+  it("stays silent when this build has no updater (dev or unmanaged builds)", async () => {
+    const h = serviceFor({ CheckUnifiedUpdates: vi.fn().mockRejectedValue(new Error("updates are unavailable")), ApplyUnifiedUpdate: vi.fn() });
+    const { result } = renderHook(() => useDesktopWorkspace(h.service));
+    await waitFor(() => expect(h.service.CheckUnifiedUpdates).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.model.updateChecking).toBe(false));
+    expect(result.current.model.updateError).toBe("");
+    expect(result.current.model.unifiedUpdate).toBeUndefined();
+  });
+
   it("reports check rejection/null without erasing known outcomes and retries", async () => {
     const h = serviceFor({ CheckUnifiedUpdates: vi.fn().mockResolvedValueOnce(unified()).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(null), ApplyUnifiedUpdate: vi.fn() });
     const { result } = renderHook(() => useDesktopWorkspace(h.service));

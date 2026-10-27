@@ -45,6 +45,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       } else if (kind === "check" && info) setUpdate(info);
     }).catch((error: unknown) => {
       if (!current()) return;
+      // Builds without a managed updater (dev or unmanaged AppImage) have nothing to check: stay quiet.
+      if (kind === "check" && error instanceof Error && error.message === "updates are unavailable") return;
       // A rejected apply does not establish whether a write occurred; retain known facts.
       if (unifiedUpdates || kind === "apply") setUpdateError(error instanceof Error ? error.message : kind === "apply" ? "Unable to restart" : "Unable to check updates.");
     }).finally(() => {
