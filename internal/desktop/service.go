@@ -237,6 +237,7 @@ type Service struct {
 	operationMu         sync.Mutex
 	reset               resetRunner
 	update              *updateState
+	watcherSettings     watcherComponent
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
