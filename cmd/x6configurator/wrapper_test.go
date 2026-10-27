@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -212,5 +213,17 @@ func TestWrapperForwardsSignalAndRestores(t *testing.T) {
 	}
 	if want := []string{idGame, idWork}; !reflect.DeepEqual(sw.calls(), want) {
 		t.Fatalf("switches = %v, want %v", sw.calls(), want)
+	}
+}
+
+func TestQuietDiagnosticsSilencesLogsAndRestores(t *testing.T) {
+	previous := slog.Default()
+	restore := quietDiagnostics()
+	if slog.Default().Enabled(context.Background(), slog.LevelError) {
+		t.Fatal("slog still enabled while the wrapper is quiet")
+	}
+	restore()
+	if slog.Default() != previous {
+		t.Fatal("slog default was not restored")
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +17,8 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/applock"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/desktop"
+	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
 
 const (
@@ -45,8 +49,24 @@ type wrapperDependencies struct {
 	signals <-chan os.Signal
 }
 
+// quietDiagnostics silences the device diagnostics and structured logs so the
+// wrapper does not flood the launched command's terminal; the wrapper reports
+// its own warnings. The returned function restores the previous state.
+func quietDiagnostics() (restore func()) {
+	previous := slog.Default()
+	restoreMouse := mouse.SetInventoryDiagnosticWriter(io.Discard)
+	restoreHID := hidlinux.SetInventoryDiagnosticWriter(io.Discard)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.Level(math.MaxInt32)})))
+	return func() {
+		slog.SetDefault(previous)
+		restoreHID()
+		restoreMouse()
+	}
+}
+
 // launchWithProfile is the production wiring of runWrapper.
 func launchWithProfile(ref string, command []string) int {
+	defer quietDiagnostics()()
 	configDir, configErr := os.UserConfigDir()
 	dataDir := filepath.Join(configDir, "attack-shark-linux")
 	return runWrapper(ref, command, wrapperDependencies{
