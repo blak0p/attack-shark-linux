@@ -133,3 +133,38 @@ func TestPrepareAppDirWrapsAppRunAndInjectsWebKitHook(t *testing.T) {
 		t.Errorf("expected LD_PRELOAD to contain libwebkit-relocate.so, got %q", parts[1])
 	}
 }
+
+func TestPrepareAppDirKeepsScriptAppRunGeneratedByWails(t *testing.T) {
+	appDir := filepath.Join(t.TempDir(), "test.AppDir")
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wails v3 generates a shell AppRun that already relocates WebKit, so there
+	// is no ELF to wrap and nothing may replace it with a wrapper that execs a
+	// missing AppRun.wrapped.
+	wailsAppRun := []byte("#!/bin/sh\nexec \"$APPDIR/usr/bin/app\" \"$@\"\n")
+	appRunPath := filepath.Join(appDir, "AppRun")
+	if err := os.WriteFile(appRunPath, wailsAppRun, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prepareScript, err := filepath.Abs(filepath.Join("..", "..", "packaging", "appimage", "prepare-appdir.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("/bin/sh", prepareScript, appDir).CombinedOutput(); err != nil {
+		t.Fatalf("prepare-appdir.sh failed: %v, output: %s", err, output)
+	}
+
+	got, err := os.ReadFile(appRunPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(wailsAppRun) {
+		t.Errorf("script AppRun must stay untouched, got:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(appDir, "AppRun.wrapped")); err == nil {
+		t.Error("AppRun.wrapped must not exist when AppRun was not an ELF binary")
+	}
+}
