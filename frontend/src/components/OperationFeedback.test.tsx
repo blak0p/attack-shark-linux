@@ -93,3 +93,26 @@ it("confirms a local save while an independent disconnected-device error remains
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByRole("alert")).toHaveTextContent("Reconnect the mouse.");
 });
+
+it("stays silent about settings refreshed by another operation that announces itself", () => {
+  vi.useFakeTimers();
+  const view = render(<OperationFeedback scope="a" results={[result("1")]} />);
+  view.rerender(<OperationFeedback scope="a" quiet results={[result("2")]} />);
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result("2")]} />);
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  view.rerender(<OperationFeedback scope="a" results={[result("3")]} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Applied");
+});
+
+it("shows one alert when several settings fail with the same message", () => {
+  render(<OperationFeedback scope="a" results={[
+    result("1", { id: "sleep", label: "Sleep", success: undefined, error: "No ACK" }),
+    result("1", { id: "debounce", label: "Key response time", success: undefined, error: "No ACK" }),
+    result("1", { id: "lighting", label: "Lighting", success: undefined, error: "No ACK" }),
+    result("1", { id: "polling", label: "Polling rate", success: undefined, error: "Other" }),
+  ]} />);
+  const alerts = screen.getAllByRole("alert");
+  expect(alerts).toHaveLength(2);
+  expect(alerts[0]).toHaveTextContent("Sleep, Key response time, Lighting: No ACK");
+});

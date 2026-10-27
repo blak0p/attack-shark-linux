@@ -115,7 +115,7 @@ export function App({ service }: { service: DesktopService }) {
     </WorkspaceView>
   );
 
-  const feedback = <WorkspaceFeedback initializing={!snapshot} model={model} library={macroLibrary} feedbackFor={feedbackFor} retries={{
+  const feedback = <WorkspaceFeedback initializing={!snapshot} profileBusy={profileBusy} model={model} library={macroLibrary} feedbackFor={feedbackFor} retries={{
     dpi: actions.retryPersistence, polling: actions.retryPollingPersistence,
     debounce: actions.retryDebouncePersistence, sleep: actions.retryNormalSleepPersistence,
   }} />;

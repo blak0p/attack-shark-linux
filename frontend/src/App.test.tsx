@@ -638,7 +638,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
   it.each([
     ["permission_denied", "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."],
     ["device_disconnected", "Mouse disconnected. Reconnect the receiver or mouse, then try again."],
-  ])("renders actionable %s feedback in every affected panel", async (code, message) => {
+  ])("names every affected panel in one actionable %s alert", async (code, message) => {
     const failed = { Firmware: "failed", Error: { Code: code } };
     const service = serviceFor(snapshot(), {
       GetPollingSnapshot: vi.fn().mockResolvedValue(pollingSnapshot(failed)),
@@ -653,10 +653,10 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     });
     render(<App service={service} />);
 
-    await waitFor(() => expect(screen.getAllByRole("alert").filter(alert => alert.classList.contains("feedback-message"))).toHaveLength(5));
-    for (const label of ["Mouse settings", "Polling rate", "Sleep", "Key response time", "Buttons"]) {
-      expect(screen.getAllByRole("alert").find(alert => alert.textContent?.startsWith(label + ":"))).toHaveTextContent(message);
-    }
+    await waitFor(() => expect(screen.getAllByRole("alert").filter(alert => alert.classList.contains("feedback-message"))).toHaveLength(1));
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(message);
+    for (const label of ["Mouse settings", "Polling rate", "Sleep", "Key response time", "Buttons"]) expect(alert).toHaveTextContent(label);
     expect(document.querySelector(".device-status")).not.toHaveTextContent(message);
   });
 

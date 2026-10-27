@@ -40,9 +40,11 @@ export function ProgressIndicator({ label = "Working…" }: { label?: string }) 
 }
 
 // Presentation only. A snapshot is not an operation: seed initial versions silently.
-export function OperationFeedback({ scope, busy = false, results }: {
+export function OperationFeedback({ scope, busy = false, quiet = false, results }: {
   scope: string;
   busy?: boolean;
+  // Another operation announces its own outcome; settings it refreshes must not confirm a second time.
+  quiet?: boolean;
   results: FeedbackResult[];
 }) {
   const previous = useRef<{ scope: string; results: Map<string, FeedbackResult> } | undefined>(undefined);
@@ -73,7 +75,7 @@ export function OperationFeedback({ scope, busy = false, results }: {
     previous.current = { scope, results: new Map(results.filter(result => result.initialized !== false).map(result => [result.id, result])) };
     if (prior?.scope !== scope || changed.some(result => result.error)) setConfirmation(undefined);
     const completed = changed.filter(result => result.success && !result.error).at(-1);
-    if (completed) setConfirmation({
+    if (completed && !quiet) setConfirmation({
       id: ++serial.current, scope, message: prior?.results.get(completed.id)?.saveFailed ? "Saved" : completed.success!,
     });
   }, [scope, signature]);
@@ -89,11 +91,22 @@ export function OperationFeedback({ scope, busy = false, results }: {
     {(busy || message) && <div key={busy ? "pending" : confirmation?.id} className="feedback-message" role="status" aria-live="polite" aria-label="Operation status">
       {busy ? <ProgressIndicator /> : <><span aria-hidden="true">✓</span><span>{message}</span></>}
     </div>}
-    {failures.map(result => <div key={result.id} role="alert" className="feedback-message feedback-error">
-      <span><b>{result.label}</b>: {result.error}</span>
-      {result.retry && <button type="button" className="button" disabled={busy} onClick={result.retry}>Retry</button>}
+    {groupFailures(failures).map(group => <div key={group.map(result => result.id).join()} role="alert" className="feedback-message feedback-error">
+      <span><b>{group.map(result => result.label).join(", ")}</b>: {group[0].error}</span>
+      {group[0].retry && <button type="button" className="button" disabled={busy} onClick={group[0].retry}>Retry</button>}
     </div>)}
   </FeedbackPortal>;
+}
+
+// One failure often marks several settings at once (a shared hardware write); show it once.
+// Retryable failures stay separate because each retry acts on its own setting.
+function groupFailures(failures: FeedbackResult[]): FeedbackResult[][] {
+  const groups: FeedbackResult[][] = [];
+  for (const failure of failures) {
+    const group = failure.retry ? undefined : groups.find(candidate => !candidate[0].retry && candidate[0].error === failure.error);
+    if (group) group.push(failure); else groups.push([failure]);
+  }
+  return groups;
 }
 
 export function settingsResult(id: string, label: string, snapshot: {
