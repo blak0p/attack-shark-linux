@@ -80,7 +80,17 @@ const changeProfiles = (update: (state: ReturnType<typeof profileResult>) => voi
   const state = profileResult(); state.Error.Code = ''; state.Applied = false;
   update(state); profileStates.set(selected.ID.Serial, state); return profileResult();
 };
+// Browser-only stand-in for the watcher settings store; the backend validates for real.
+let watcher: { Enabled: boolean; Rules: { Executable: string; ProfileID: string }[] } = {
+  Enabled: true, Rules: [{ Executable: 'cs2', ProfileID: 'automatic' }],
+};
+const watcherResult = () => ({ ...structuredClone(watcher), Error: { Code: '' } });
 const service = {
+  GetWatcherSettings: async () => watcherResult(),
+  SetWatcherSettings: async (enabled: boolean, rules: { Executable: string; ProfileID: string }[]) => {
+    watcher = { Enabled: enabled, Rules: structuredClone(rules) };
+    return watcherResult();
+  },
   GetProfiles: async () => profileResult(),
   CreateProfile: async (name: string) => changeProfiles(state => {
     const id = `profile-${++profileCounter}`;

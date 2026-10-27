@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { GamesAvailableContext } from "./workspace-view-context";
 import { WorkspaceView } from "./WorkspaceView";
 
 afterEach(cleanup);
@@ -37,6 +38,15 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: "Lighting" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "DPI control" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reset control" })).toBeInTheDocument();
+  });
+
+  it("shows the Games section only when the games context says it is available", () => {
+    const view = <WorkspaceView id="performance" title="Performance"><button>Primary control</button></WorkspaceView>;
+    const { unmount } = render(<WorkspaceShell>{view}</WorkspaceShell>);
+    expect(screen.queryByRole("link", { name: "Games" })).not.toBeInTheDocument();
+    unmount();
+    render(<GamesAvailableContext.Provider value><WorkspaceShell>{view}</WorkspaceShell></GamesAvailableContext.Provider>);
+    expect(screen.getByRole("link", { name: "Games" })).toHaveAttribute("data-view", "games");
   });
 
   it("renders the GNOME navigation rail with 5 section items and glyphs", () => {

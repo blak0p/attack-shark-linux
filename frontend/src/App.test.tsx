@@ -287,6 +287,26 @@ const serviceFor = (initial: Snapshot, overrides: Partial<DesktopService> = {}):
   };
 };
 
+describe("Games section", () => {
+  const watcher = {
+    GetProfiles: vi.fn().mockResolvedValue({ Profiles: [{ ID: "a".repeat(32), Name: "Main", CreatedAt: "" }], ActiveID: "a".repeat(32), Notice: "", Error: { Code: "" }, Applied: false }),
+    GetWatcherSettings: vi.fn().mockResolvedValue({ Enabled: false, Rules: [], Error: { Code: "" } }),
+    SetWatcherSettings: vi.fn(),
+  };
+  it("is absent when the service has no watcher methods", async () => {
+    render(<App service={serviceFor(snapshot())} />);
+    await screen.findByRole("link", { name: "Device" });
+    expect(screen.queryByRole("link", { name: "Games" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Games" })).not.toBeInTheDocument();
+  });
+  it("shows the navigation entry and panel when the service has the watcher methods", async () => {
+    render(<App service={serviceFor(snapshot(), watcher)} />);
+    fireEvent.click(await screen.findByRole("link", { name: "Games" }));
+    const region = await screen.findByRole("region", { name: "Games" });
+    expect(await within(region).findByRole("checkbox", { name: "Switch profile automatically" })).not.toBeChecked();
+  });
+});
+
 describe("serviceFor remap fixture", () => {
   const appliedConfig = { Buttons: [
     { Button: 1, Action: "left" as const, PreservedDefault: "" as const },

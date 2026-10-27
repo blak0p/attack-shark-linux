@@ -1,4 +1,5 @@
-import type { WorkspaceViewId } from "./workspace-view-context";
+import { useContext } from "react";
+import { GamesAvailableContext, type WorkspaceViewId } from "./workspace-view-context";
 
 const sections: Array<{ id: WorkspaceViewId; label: string; glyph: string }> = [
   { id: "performance", label: "Performance", glyph: "◉" },
@@ -6,13 +7,15 @@ const sections: Array<{ id: WorkspaceViewId; label: string; glyph: string }> = [
   { id: "controls", label: "Controls", glyph: "⌁" },
   { id: "remapping", label: "Button remapping", glyph: "↺" },
   { id: "macros", label: "Macros", glyph: "≡" },
+  { id: "games", label: "Games", glyph: "▶" },
   { id: "device", label: "Device", glyph: "▣" },
 ];
 
 export function SectionNavigation({ activeView, onNavigate }: { activeView: WorkspaceViewId; onNavigate(view: WorkspaceViewId): void }) {
+  const gamesAvailable = useContext(GamesAvailableContext);
   return (
     <nav aria-label="Workspace sections">
-      {sections.map((section) => (
+      {sections.filter((section) => section.id !== "games" || gamesAvailable).map((section) => (
         <a
           key={section.id}
           href={`#workspace-view-${section.id}`}
