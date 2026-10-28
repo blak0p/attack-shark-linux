@@ -195,3 +195,90 @@ func TestSetWatcherSettingsAcceptsFrontendJSON(t *testing.T) {
 		t.Fatalf("get = %#v", again)
 	}
 }
+
+func TestSetWatcherSettingsPreservesTray(t *testing.T) {
+	s, _ := newWatcherService(t)
+	rules := []WatcherRule{{Executable: "game.exe", ProfileID: watcherHexA}}
+	if got := s.SetTrayEnabled(true); !got.Tray || got.Error.Code != "" {
+		t.Fatalf("tray = %#v", got)
+	}
+	got := s.SetWatcherSettings(true, rules)
+	if got.Error.Code != "" || !got.Tray || !got.Enabled {
+		t.Fatalf("set = %#v", got)
+	}
+	if again := s.GetWatcherSettings(); !again.Tray {
+		t.Fatalf("get = %#v", again)
+	}
+}
+
+func TestSetTrayEnabledKeepsEnabledAndRulesAndCallsHandlerOnce(t *testing.T) {
+	s, _ := newWatcherService(t)
+	rules := []WatcherRule{{Executable: "game.exe", ProfileID: watcherHexA}}
+	s.SetWatcherSettings(true, rules)
+	var seen []configstore.WatcherSettings
+	s.SetWatcherChangeHandler(func(v configstore.WatcherSettings) { seen = append(seen, v) })
+	got := s.SetTrayEnabled(true)
+	if got.Error.Code != "" || !got.Tray || !got.Enabled || !reflect.DeepEqual(got.Rules, rules) {
+		t.Fatalf("set = %#v", got)
+	}
+	if len(seen) != 1 || !seen[0].Tray || !seen[0].Enabled || len(seen[0].Rules) != 1 {
+		t.Fatalf("handler = %#v", seen)
+	}
+	if off := s.SetTrayEnabled(false); off.Tray || !off.Enabled || len(off.Rules) != 1 {
+		t.Fatalf("off = %#v", off)
+	}
+}
+
+func TestSetTrayEnabledErrors(t *testing.T) {
+	s := &Service{}
+	calls := 0
+	s.SetWatcherChangeHandler(func(configstore.WatcherSettings) { calls++ })
+	if got := s.SetTrayEnabled(true); got.Error.Code != WatcherUnavailable || got.Tray {
+		t.Fatalf("unavailable = %#v", got)
+	}
+	s, path := newWatcherService(t)
+	s.SetWatcherChangeHandler(func(configstore.WatcherSettings) { calls++ })
+	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.SetTrayEnabled(true); got.Error.Code != InvalidWatcherSettings {
+		t.Fatalf("invalid = %#v", got)
+	}
+	if contents, _ := os.ReadFile(path); string(contents) != "{bad" {
+		t.Fatalf("file changed: %s", contents)
+	}
+	if calls != 0 {
+		t.Fatalf("handler calls = %d", calls)
+	}
+}
+
+func TestWatcherSnapshotJSONHasTrayKey(t *testing.T) {
+	s, _ := newWatcherService(t)
+	s.SetTrayEnabled(true)
+	encoded, err := json.Marshal(s.GetWatcherSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded["Tray"] != true {
+		t.Fatalf("decode %s: %v", encoded, err)
+	}
+}
+
+func TestAddWatcherChangeHandlerNotifiesEveryListener(t *testing.T) {
+	s, _ := newWatcherService(t)
+	var first, second, third int
+	s.SetWatcherChangeHandler(func(configstore.WatcherSettings) { first++ })
+	s.AddWatcherChangeHandler(func(configstore.WatcherSettings) { second++ })
+	s.AddWatcherChangeHandler(func(configstore.WatcherSettings) { third++ })
+	s.SetTrayEnabled(true)
+	s.SetWatcherSettings(true, nil)
+	if first != 2 || second != 2 || third != 2 {
+		t.Fatalf("calls = %d %d %d", first, second, third)
+	}
+	s.SetWatcherChangeHandler(nil)
+	s.SetTrayEnabled(false)
+	if first != 2 || second != 3 || third != 3 {
+		t.Fatalf("after clear = %d %d %d", first, second, third)
+	}
+}

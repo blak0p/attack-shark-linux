@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"sync"
 	"time"
 
@@ -50,6 +51,10 @@ type watcherController struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	applied bool // true once Apply has run; applied* hold what the run reflects
+	enabled bool
+	rules   []configstore.WatcherRule
 }
 
 func newWatcherController(run func(ctx context.Context, rules []procwatch.Rule)) *watcherController {
@@ -58,10 +63,16 @@ func newWatcherController(run func(ctx context.Context, rules []procwatch.Rule))
 
 // Apply stops the current run, if any, and starts a new one when the settings
 // are enabled and hold at least one rule. A run that was active when the
-// settings changed does not restore the previous profile.
+// settings changed does not restore the previous profile. A change that leaves
+// Enabled and Rules as they were (for example only Tray) keeps the run alive.
 func (c *watcherController) Apply(settings configstore.WatcherSettings) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.applied && c.enabled == settings.Enabled && reflect.DeepEqual(c.rules, settings.Rules) {
+		return
+	}
+	c.applied, c.enabled = true, settings.Enabled
+	c.rules = append([]configstore.WatcherRule(nil), settings.Rules...)
 	c.stopLocked()
 	if !settings.Enabled || len(settings.Rules) == 0 {
 		return
