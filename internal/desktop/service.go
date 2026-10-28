@@ -238,6 +238,7 @@ type Service struct {
 	reset               resetRunner
 	update              *updateState
 	watcherSettings     watcherComponent
+	gameCatalog         gameComponent
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
