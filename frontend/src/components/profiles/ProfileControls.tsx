@@ -5,6 +5,10 @@ import '../../styles/profiles.css';
 import { GnomeSelect } from '../panels/GnomeSelect';
 import { FeedbackPortal } from '../OperationFeedback';
 
+const profileErrorMessages: Record<string, string> = {
+  duplicate_profile_name: 'A profile with that name already exists. Choose a different name.',
+};
+const profileError = (code: string) => profileErrorMessages[code] ?? code;
 type Operation = 'Create' | 'Rename' | 'Duplicate' | 'Delete';
 export function ProfileControls({ service, scope, disabled, refresh, onBusy }: {
   service: Partial<ProfilesService>; scope: string; disabled: boolean;
@@ -67,7 +71,7 @@ export function ProfileControls({ service, scope, disabled, refresh, onBusy }: {
       setSnapshot(next);
       setError(switching && (!next.Applied || next.Error.Code)
         ? `Profile was not fully applied; mouse settings may be partial.${next.Error.Code ? ` (${next.Error.Code})` : ''}`
-        : next.Error.Code);
+        : profileError(next.Error.Code));
       if (switching && next.Applied && !next.Error.Code) setMessage('Profile applied.');
       if (!next.Error.Code) setDialog(undefined);
     } catch {

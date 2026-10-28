@@ -19,6 +19,7 @@ const (
 	ProfileUnavailable ErrorCode = "profile_unavailable"
 	InvalidProfile     ErrorCode = "invalid_profile"
 	ProtectedProfile   ErrorCode = "protected_profile"
+	DuplicateProfile   ErrorCode = "duplicate_profile_name"
 )
 
 // ProfileSnapshot describes local files, never onboard slots or hardware readback.
@@ -68,6 +69,9 @@ func (s *Service) profileSelection() (Binding, ErrorCode) {
 func profileError(err error) ErrorCode {
 	if errors.Is(err, configstore.ErrProtectedProfile) {
 		return ProtectedProfile
+	}
+	if errors.Is(err, configstore.ErrDuplicateProfileName) {
+		return DuplicateProfile
 	}
 	if errors.Is(err, configstore.ErrInvalidProfile) {
 		return InvalidProfile

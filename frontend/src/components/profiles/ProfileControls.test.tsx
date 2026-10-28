@@ -126,3 +126,36 @@ it('uses the themed profile menu with direct choices and keyboard dismissal', as
  expect(screen.queryByRole('menuitem', { name: 'Gaming', exact: true })).not.toBeInTheDocument();
  expect(f.service.SwitchProfile).not.toHaveBeenCalled();
 });
+
+const duplicateMessage = 'A profile with that name already exists. Choose a different name.';
+const duplicateCases: [string, string, string, string, string][] = [
+ ['Create', 'Create profile', 'CreateProfile', 'Gaming', ''],
+ ['Duplicate', 'Duplicate Automatic profile', 'DuplicateProfile', 'Gaming', 'a'],
+ ['Rename', 'Rename Automatic profile', 'RenameProfile', 'Gaming', 'a'],
+];
+it.each(duplicateCases)('shows the duplicate-name message for %s and leaves the profile list unchanged', async (_op, trigger, method, typed, id) => {
+ const f = fixture(); (f.service as Record<string, ReturnType<typeof vi.fn>>)[method].mockResolvedValue({ ...initial, Error: { Code: 'duplicate_profile_name' } });
+ render(<ProfileControls {...f} scope="alpha" disabled={false} onBusy={() => {}} />);
+ await waitFor(() => expect(screen.getByRole('button', { name: 'Manage profiles' })).toBeEnabled());
+ fireEvent.click(screen.getByRole('button', { name: 'Manage profiles' }));
+ fireEvent.click(screen.getByRole('button', { name: trigger }));
+ fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: typed } });
+ fireEvent.click(screen.getByRole('button', { name: 'Confirm profile action' }));
+ await screen.findByRole('alert');
+ expect(screen.getByRole('alert')).toHaveTextContent(duplicateMessage);
+ expect(screen.getByRole('alert')).not.toHaveTextContent('duplicate_profile_name');
+ const call = (f.service as Record<string, ReturnType<typeof vi.fn>>)[method].mock.calls[0];
+ expect(call).toEqual(id ? [id, typed] : [typed]);
+ expect(Array.from(document.querySelectorAll('.profile-identity strong')).map(n => n.textContent)).toEqual(['Automatic profile', 'Gaming']);
+});
+it('keeps showing the raw code for other profile errors', async () => {
+ const f = fixture(); f.service.CreateProfile.mockResolvedValue({ ...initial, Error: { Code: 'invalid_profile_name' } });
+ render(<ProfileControls {...f} scope="alpha" disabled={false} onBusy={() => {}} />);
+ await waitFor(() => expect(screen.getByRole('button', { name: 'Manage profiles' })).toBeEnabled());
+ fireEvent.click(screen.getByRole('button', { name: 'Manage profiles' }));
+ fireEvent.click(screen.getByRole('button', { name: 'Create profile' }));
+ fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'x' } });
+ fireEvent.click(screen.getByRole('button', { name: 'Confirm profile action' }));
+ await screen.findByRole('alert');
+ expect(screen.getByRole('alert')).toHaveTextContent('invalid_profile_name');
+});

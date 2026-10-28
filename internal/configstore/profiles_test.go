@@ -1,7 +1,9 @@
 package configstore_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,4 +163,108 @@ func tree(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+var uniqueID = mouse.DeviceID{VendorID: 1, ProductID: 2, Serial: "unique"}
+
+func uniqueStore(t *testing.T) (*configstore.ProfileStore, string, configstore.ProfileSnapshot) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "profiles")
+	s := configstore.NewProfileStore(root)
+	snap, err := s.Bootstrap(uniqueID, "x6", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err = s.Create(uniqueID, "x6", "Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, root, snap
+}
+
+func indexBytes(t *testing.T, root string) []byte {
+	t.Helper()
+	m, err := filepath.Glob(filepath.Join(root, "*", "index.json"))
+	if err != nil || len(m) != 1 {
+		t.Fatal(m, err)
+	}
+	raw, err := os.ReadFile(m[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestDuplicateNamesRejectedAndIndexUntouched(t *testing.T) {
+	s, root, snap := uniqueStore(t)
+	other := snap.Profiles[0].ID
+	before := indexBytes(t, root)
+	calls := map[string]func() error{
+		"create":    func() error { _, err := s.Create(uniqueID, "x6", "Work"); return err },
+		"duplicate": func() error { _, err := s.Duplicate(uniqueID, "x6", other, "Work"); return err },
+		"rename":    func() error { _, err := s.Rename(uniqueID, "x6", other, "Work"); return err },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, configstore.ErrDuplicateProfileName) {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !bytes.Equal(before, indexBytes(t, root)) {
+			t.Fatalf("%s changed index.json", name)
+		}
+	}
+}
+
+func TestRenameToOwnNameAndCaseDifferenceAllowed(t *testing.T) {
+	s, _, snap := uniqueStore(t)
+	if _, err := s.Rename(uniqueID, "x6", snap.ActiveID, "Work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(uniqueID, "x6", "work"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUniqueNamesKeepValidOperations(t *testing.T) {
+	s, _, snap := uniqueStore(t)
+	if _, err := s.Create(uniqueID, "x6", "Game"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Duplicate(uniqueID, "x6", snap.ActiveID, "Copy"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Rename(uniqueID, "x6", snap.ActiveID, "Renamed")
+	if err != nil || len(got.Profiles) != 4 {
+		t.Fatal(got, err)
+	}
+	if _, err = s.Create(uniqueID, "x6", ""); !errors.Is(err, configstore.ErrInvalidProfile) {
+		t.Fatal(err)
+	}
+}
+
+func TestExistingDuplicateNamesStillLoadAndSwitch(t *testing.T) {
+	s, root, snap := uniqueStore(t)
+	m, _ := filepath.Glob(filepath.Join(root, "*", "index.json"))
+	var index map[string]any
+	if err := json.Unmarshal(indexBytes(t, root), &index); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range index["profiles"].([]any) {
+		p.(map[string]any)["name"] = "Same"
+	}
+	raw, _ := json.Marshal(index)
+	if err := os.WriteFile(m[0], raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s = configstore.NewProfileStore(root)
+	listed, err := s.List(uniqueID, "x6")
+	if err != nil || len(listed.Profiles) != 2 || listed.Profiles[0].Name != listed.Profiles[1].Name {
+		t.Fatal(listed, err)
+	}
+	other := listed.Profiles[0].ID
+	if other == snap.ActiveID {
+		other = listed.Profiles[1].ID
+	}
+	if got, err := s.Switch(uniqueID, "x6", other); err != nil || got.ActiveID != other {
+		t.Fatal(got, err)
+	}
 }
