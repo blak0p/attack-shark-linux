@@ -86,6 +86,14 @@ describe("desktopService", () => {
     const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
     await expect(invoke(...args)).rejects.toBe(failure);
   });
+  it.each(['ListInstalledGames', 'PickGameFolder', 'PickGameExecutable'] as const)('forwards games method %s with no arguments and preserves outcomes and rejections', async method => {
+    const outcome = { Games: [], Path: '', Error: { Code: '' } };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    expect(await desktopService[method]()).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(desktopService[method]()).rejects.toBe(failure);
+  });
   it("does not check or apply updates merely by constructing the adapter", () => {
     for (const name of ["CheckUnifiedUpdates", "ApplyUnifiedUpdate", "CheckForUpdate", "ApplyVerifiedUpdate"] as const) {
       expect(bindings[name]).not.toHaveBeenCalled();

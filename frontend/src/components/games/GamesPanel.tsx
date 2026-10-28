@@ -1,25 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ProfileSnapshot, ProfilesService, WatcherRule, WatcherService, WatcherSettingsSnapshot } from '../../desktop-contract';
+import type { GamesService, ProfileSnapshot, ProfilesService, WatcherRule, WatcherService, WatcherSettingsSnapshot } from '../../desktop-contract';
 import '../../styles/games.css';
 import { GnomeSelect } from '../panels/GnomeSelect';
+import { AddGameDialog } from './AddGameDialog';
 
 const watcherErrors: Record<string, string> = {
   invalid_watcher_settings: 'That rule is not valid. Use the executable name only, without a path.',
   watcher_unavailable: 'Automatic switching is not available.',
 };
-const pathError = 'Enter the executable name only, without a path.';
 
 /** Escapes a name for use inside double quotes in a POSIX shell. */
 export const shellQuote = (name: string) => name.replace(/[\\"$`]/g, '\\$&');
 export const launchCommand = (name: string) => `attack-shark-linux --profile "${shellQuote(name)}" -- %command%`;
 
-export function GamesPanel({ service }: { service: Partial<WatcherService> & Partial<ProfilesService> }) {
+export function GamesPanel({ service }: { service: Partial<WatcherService> & Partial<ProfilesService> & Partial<GamesService> }) {
   const [settings, setSettings] = useState<WatcherSettingsSnapshot>();
   const [profiles, setProfiles] = useState<ProfileSnapshot['Profiles']>([]);
   const [activeID, setActiveID] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [exe, setExe] = useState('');
+  const [adding, setAdding] = useState(false);
   const [formProfile, setFormProfile] = useState('');
   const [commandProfile, setCommandProfile] = useState('');
   const [copy, setCopy] = useState<{ text: string; ok: boolean }>();
@@ -66,14 +66,13 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
     [next[index], next[index + delta]] = [next[index + delta], next[index]];
     void persist(enabled, next);
   };
-  const submit = async (event: { preventDefault(): void }) => {
-    event.preventDefault();
-    const name = exe.trim();
-    if (!name || /[\\/]/.test(name)) { setError(pathError); return; }
-    if (rules.some(rule => rule.Executable === name)) { setError(`A rule for ${name} already exists.`); return; }
-    if (!selectedForm) return;
-    if (await persist(enabled, [...rules, { Executable: name, ProfileID: selectedForm }])) setExe('');
+  const addRule = async (rule: WatcherRule) => {
+    const ok = await persist(enabled, [...rules, rule]);
+    if (ok) setAdding(false);
+    return ok;
   };
+  const openDialog = () => { setError(''); setAdding(true); };
+  const closeDialog = () => { setError(''); setAdding(false); };
   const command = launchCommand(nameOf(selectedCommand) ?? '');
   const copyCommand = async () => {
     try {
@@ -90,7 +89,7 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
   };
   const loaded = !!settings;
   const off = !enabled;
-  const controlsDisabled = !loaded || off || busy;
+  const controlsDisabled = !loaded || busy;
 
   return <div className="games-panel">
     <section className="games-card">
@@ -100,40 +99,42 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
         <input className="switch" type="checkbox" aria-label="Switch profile automatically" checked={enabled}
           disabled={!loaded || busy} onChange={event => void persist(event.target.checked, rules)} />
       </div>
+      {loaded && off && <p className="help games-offnote">Automatic switching is off. Your rules are saved and will apply when you turn it on.</p>}
     </section>
-    <section className={`games-card${off ? ' off' : ''}`} role="region" aria-labelledby="games-rules-title">
+    <section className="games-card" role="region" aria-labelledby="games-rules-title">
       <div className="games-cardrow">
         <div><strong id="games-rules-title">Rules</strong>
           <span className="help">If several games run, the first rule in the list wins.</span></div>
       </div>
-      {rules.length === 0 ? (loaded && <div className="games-empty"><strong>No rules yet</strong>Add the executable of a game and choose its profile.</div>) :
+      {rules.length === 0 ? (loaded && <div className="games-empty"><strong>No rules yet</strong>Add a game or app and choose its profile.</div>) :
         <table className="games-table"><thead><tr>
-          <th scope="col">#</th><th scope="col">Executable</th><th scope="col">Profile</th>
+          <th scope="col">#</th><th scope="col">Name</th><th scope="col">Profile</th>
           <th scope="col"><span style={{ position: 'absolute', left: -9999 }}>Actions</span></th></tr></thead>
           <tbody>{rules.map((rule, index) => {
             const known = nameOf(rule.ProfileID) !== undefined;
-            return <tr key={rule.Executable}>
+            const primary = rule.Name || rule.Executable;
+            const secondary = rule.Folder || rule.Executable;
+            return <tr key={`${rule.Folder}\n${rule.Executable}`}>
               <td className="n">{index + 1}</td>
-              <td><code>{rule.Executable}</code></td>
+              <td><strong className="games-name">{primary}</strong>
+                {secondary !== primary && <span className="games-sub">{secondary}</span>}</td>
               <td><span className={`games-profile-select${known ? '' : ' invalid'}`}>
-                <GnomeSelect aria-label={`Profile for ${rule.Executable}`} value={rule.ProfileID} placeholder="Profile missing"
+                <GnomeSelect aria-label={`Profile for ${primary}`} value={rule.ProfileID} placeholder="Profile missing"
                   options={profileOptions} disabled={controlsDisabled}
                   onChange={value => void persist(enabled, rules.map((r, i) => i === index ? { ...r, ProfileID: value } : r))} />
-              </span>{!known && loaded && <span className="help games-error">The profile for {rule.Executable} no longer exists. Choose another profile.</span>}</td>
+              </span>{!known && loaded && <span className="help games-error">The profile for {primary} no longer exists. Choose another profile.</span>}</td>
               <td className="games-actions">
-                <button type="button" className="order" aria-label={`Move ${rule.Executable} up`} disabled={controlsDisabled || index === 0} onClick={() => move(index, -1)}>↑</button>{' '}
-                <button type="button" className="order" aria-label={`Move ${rule.Executable} down`} disabled={controlsDisabled || index === rules.length - 1} onClick={() => move(index, 1)}>↓</button>{' '}
-                <button type="button" className="small danger" aria-label={`Remove ${rule.Executable}`} disabled={controlsDisabled}
+                <button type="button" className="order" aria-label={`Move ${primary} up`} disabled={controlsDisabled || index === 0} onClick={() => move(index, -1)}>↑</button>{' '}
+                <button type="button" className="order" aria-label={`Move ${primary} down`} disabled={controlsDisabled || index === rules.length - 1} onClick={() => move(index, 1)}>↓</button>{' '}
+                <button type="button" className="small danger" aria-label={`Remove ${primary}`} disabled={controlsDisabled}
                   onClick={() => void persist(enabled, rules.filter((_, i) => i !== index))}>Remove</button>
               </td></tr>;
           })}</tbody></table>}
-      <form className="games-addbar" onSubmit={event => void submit(event)}>
-        <input type="text" aria-label="Executable name" placeholder="Executable name, e.g. Hades.exe" value={exe}
-          disabled={controlsDisabled} onChange={event => setExe(event.target.value)} />
-        <GnomeSelect aria-label="Profile" value={selectedForm} placeholder="No profiles" options={profileOptions}
-          disabled={controlsDisabled || !profiles.length} onChange={setFormProfile} />
-        <button type="submit" className="primary" disabled={controlsDisabled || !profiles.length}>Add rule</button>
-      </form>
+      <div className="games-addbar">
+        <button type="button" className="primary" disabled={controlsDisabled || !profiles.length} onClick={openDialog}>Add a game</button>
+      </div>
+      {adding && <AddGameDialog service={service} rules={rules} profileOptions={profileOptions} profile={selectedForm}
+        error={error} onError={setError} onProfile={setFormProfile} onAdd={addRule} onClose={closeDialog} />}
     </section>
     <section className="games-card" aria-labelledby="games-launch-title">
       <div className="games-launch">
@@ -151,7 +152,6 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
         <ol className="games-steps"><li>In Steam, right-click the game and open Properties.</li><li>Paste the command into Launch Options.</li><li>The profile is applied when the game starts and restored when it closes.</li></ol>
       </div>
     </section>
-    <p className="help games-error" role="alert" hidden={!error}>{error}</p>
-    <p className="help">Tip: on Steam, the executable name is the file shown in the game’s install folder.</p>
+    <p className="help games-error" role="alert" hidden={!error || adding}>{error}</p>
   </div>;
 }

@@ -81,13 +81,24 @@ const changeProfiles = (update: (state: ReturnType<typeof profileResult>) => voi
   update(state); profileStates.set(selected.ID.Serial, state); return profileResult();
 };
 // Browser-only stand-in for the watcher settings store; the backend validates for real.
-let watcher: { Enabled: boolean; Rules: { Executable: string; ProfileID: string }[] } = {
-  Enabled: true, Rules: [{ Executable: 'cs2', ProfileID: 'automatic' }],
+type FakeRule = { Executable: string; Folder: string; Name: string; ProfileID: string };
+let watcher: { Enabled: boolean; Rules: FakeRule[] } = {
+  Enabled: true, Rules: [{ Executable: 'cs2', Folder: '', Name: '', ProfileID: 'automatic' }],
 };
+const gameCatalog = [
+  { Name: 'Terraria', Source: 'Steam', Folder: '/home/user/.steam/steamapps/common/Terraria', Executable: '', IsGame: true },
+  { Name: 'Rocket League', Source: 'Heroic', Folder: '/home/user/Games/Heroic/RocketLeague', Executable: '', IsGame: true },
+  { Name: 'xemu', Source: 'App', Folder: '', Executable: 'xemu', IsGame: true },
+  { Name: 'Firefox', Source: 'App', Folder: '', Executable: 'firefox', IsGame: false },
+];
+const cancelled = { Path: '', Name: '', Cancelled: true, Error: { Code: '' } };
 const watcherResult = () => ({ ...structuredClone(watcher), Error: { Code: '' } });
 const service = {
   GetWatcherSettings: async () => watcherResult(),
-  SetWatcherSettings: async (enabled: boolean, rules: { Executable: string; ProfileID: string }[]) => {
+  ListInstalledGames: async () => ({ Games: structuredClone(gameCatalog), Error: { Code: '' } }),
+  PickGameFolder: async () => cancelled,
+  PickGameExecutable: async () => cancelled,
+  SetWatcherSettings: async (enabled: boolean, rules: FakeRule[]) => {
     watcher = { Enabled: enabled, Rules: structuredClone(rules) };
     return watcherResult();
   },
