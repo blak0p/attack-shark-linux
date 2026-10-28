@@ -210,6 +210,7 @@ func startWails() error {
 	})
 	window.SetURL("/")
 	window.Center()
+	installTray(app, window, service)
 
 	if err := app.Run(); err != nil {
 		return err
