@@ -1,33 +1,26 @@
 package main
 
 import (
-	"os"
-
 	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/gamelib"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// gamePickerOptions is the pure description of one native dialog.
+// gamePickerOptions is the pure description of the native dialog.
 type gamePickerOptions struct {
 	title       string
 	directories bool
 	files       bool
-	startDir    string
 }
 
-func gamePickerOptionsFor(folder bool, home string) gamePickerOptions {
-	if folder {
-		return gamePickerOptions{title: "Choose the game folder", directories: true}
-	}
-	return gamePickerOptions{title: "Choose the game executable", files: true, startDir: home}
+func gamePickerOptionsFor() gamePickerOptions {
+	return gamePickerOptions{title: "Choose the game folder", directories: true}
 }
 
-// newGamePicker opens the native GTK chooser. Cancelling returns ("", nil).
-func newGamePicker(app *application.App) func(folder bool) (string, error) {
-	return func(folder bool) (string, error) {
-		home, _ := os.UserHomeDir()
-		opts := gamePickerOptionsFor(folder, home)
+// newGamePicker opens the native GTK folder chooser. Cancelling returns ("", nil).
+func newGamePicker(app *application.App) func() (string, error) {
+	return func() (string, error) {
+		opts := gamePickerOptionsFor()
 		dialog := app.Dialog.OpenFile().
 			SetTitle(opts.title).
 			CanChooseDirectories(opts.directories).
@@ -35,9 +28,6 @@ func newGamePicker(app *application.App) func(folder bool) (string, error) {
 		// Parent the chooser to the app window so it stays on top of the app.
 		if window := app.Window.Current(); window != nil {
 			dialog.AttachToWindow(window)
-		}
-		if opts.startDir != "" {
-			dialog.SetDirectory(opts.startDir)
 		}
 		return dialog.PromptForSingleSelection()
 	}

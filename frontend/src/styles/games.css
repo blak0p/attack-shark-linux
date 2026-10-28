@@ -37,22 +37,23 @@
 .games-status.ok { color: var(--ok) !important; }
 .games-error { color: var(--danger) !important; }
 
-.games-dialog { width: min(520px, calc(100vw - 48px)); max-height: calc(100vh - 48px); box-sizing: border-box; overflow: auto; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: 16px; padding: var(--space-6); box-shadow: 0 24px 80px #0008; }
+.games-dialog { width: min(760px, 92vw); height: min(80vh, calc(100vh - 48px)); box-sizing: border-box; overflow: hidden; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: 16px; padding: var(--space-6); box-shadow: 0 24px 80px #0008; }
 .games-dialog::backdrop { background: rgb(0 0 0 / 55%); }
-.games-dialog-form { display: grid; gap: var(--space-4); }
+.games-dialog[open] { display: flex; flex-direction: column; }
+.games-dialog-form { display: flex; flex-direction: column; gap: var(--space-4); flex: 1; min-height: 0; }
+.games-dialog-top, .games-dialog-bottom { display: grid; gap: var(--space-3); flex: none; }
+.games-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.games-panel .games-chip { border-radius: 20px; padding: 5px 14px; font-size: 12px; background: transparent; color: var(--muted); }
+.games-panel .games-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-subtle); color: var(--text); }
 .games-dialog h2 { margin: 0; font-size: 20px; font-weight: 600; }
 .games-dialog input[type="text"] { width: 100%; box-sizing: border-box; }
-.games-list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.games-list { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
 .games-list-empty { padding: var(--space-3); text-align: center; }
-.games-group { margin: 0; padding: 0 var(--space-2); font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
 .games-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .games-panel .games-item { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); text-align: left; background: transparent; border-color: transparent; font-size: 13px; }
 .games-panel .games-item[aria-pressed="true"] { border-color: var(--accent); background: var(--raised); }
 .games-item-name { overflow-wrap: anywhere; }
 .games-badge { flex: none; background: var(--accent-subtle); font-size: 10px; border-radius: 20px; padding: 3px 8px; }
-.games-others summary, .games-manual summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: var(--space-1) var(--space-2); }
-.games-manual { display: grid; gap: var(--space-2); }
-.games-manual summary { padding-left: 0; }
 .games-browse { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .games-selected span { color: var(--dim); overflow-wrap: anywhere; }
 .games-dialog-profile { display: grid; gap: 6px; color: var(--muted); }

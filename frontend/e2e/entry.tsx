@@ -97,7 +97,6 @@ const service = {
   GetWatcherSettings: async () => watcherResult(),
   ListInstalledGames: async () => ({ Games: structuredClone(gameCatalog), Error: { Code: '' } }),
   PickGameFolder: async () => cancelled,
-  PickGameExecutable: async () => cancelled,
   SetWatcherSettings: async (enabled: boolean, rules: FakeRule[]) => {
     watcher = { Enabled: enabled, Rules: structuredClone(rules) };
     return watcherResult();

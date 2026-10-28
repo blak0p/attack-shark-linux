@@ -34,7 +34,6 @@ function fixture(initial = snap(true, rules3)) {
     SetWatcherSettings: vi.fn(async (enabled: boolean, rules: WatcherRule[]) => snap(enabled, rules)),
     ListInstalledGames: vi.fn().mockResolvedValue({ Games: catalog, Error: { Code: '' } }),
     PickGameFolder: vi.fn().mockResolvedValue(noPick),
-    PickGameExecutable: vi.fn().mockResolvedValue(noPick),
   };
   return service;
 }
@@ -121,32 +120,65 @@ async function openDialog(service = fixture()) {
 }
 const itemNames = (dialog: HTMLElement) => within(dialog).queryAllByRole('button', { pressed: false }).map(b => b.querySelector('.games-item-name')?.textContent).filter(Boolean);
 
-it('lists games first and other apps in a collapsed group, with source badges', async () => {
+const chips = (dialog: HTMLElement) => within(within(dialog).getByRole('group', { name: 'Filter by source' }));
+const chip = (dialog: HTMLElement, name: string) => chips(dialog).getByRole('button', { name });
+
+it('removes the executable browse button and the manual executable input', async () => {
   const { dialog } = await openDialog();
-  expect(within(dialog).getByRole('heading', { name: 'Games' })).toBeVisible();
-  const others = dialog.querySelector('details.games-others') as HTMLDetailsElement;
-  expect(others.open).toBe(false);
-  expect(within(others).getByText('Other apps')).toBeVisible();
-  expect(within(others).getByRole('button', { name: /Firefox/ })).toHaveTextContent('App');
+  expect(within(dialog).queryByRole('button', { name: 'Browse for an executable…' })).not.toBeInTheDocument();
+  expect(within(dialog).queryByText('Enter an executable name')).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('textbox', { name: 'Executable name' })).not.toBeInTheDocument();
+  expect(within(dialog).queryByText('Other apps')).not.toBeInTheDocument();
+  expect(within(dialog).getAllByRole('button', { name: /^Browse/ })).toHaveLength(1);
+  expect(within(dialog).getByRole('button', { name: 'Browse for a game folder…' })).toBeVisible();
+});
+
+it('lists one list with games first then other apps, each sorted by name, with source badges', async () => {
+  const { dialog } = await openDialog();
   expect(within(dialog).getByRole('button', { name: /Terraria/ })).toHaveTextContent('Steam');
   expect(within(dialog).getByRole('button', { name: /Rocket League/ })).toHaveTextContent('Heroic');
   expect(within(dialog).getByRole('button', { name: /xemu/ })).toHaveTextContent('App');
-  expect(others.contains(within(dialog).getByRole('button', { name: /xemu/ }))).toBe(false);
-  expect(itemNames(dialog)).toEqual(['Terraria', 'Rocket League', 'xemu', 'Firefox']);
+  expect(within(dialog).getByRole('button', { name: /Firefox/ })).toHaveTextContent('App');
+  expect(itemNames(dialog)).toEqual(['Rocket League', 'Terraria', 'xemu', 'Firefox']);
 });
 
-it('filters case-insensitively across both groups and opens the other apps when they match', async () => {
+it('offers All, Steam, Heroic and Apps chips with aria-pressed, All by default', async () => {
   const { dialog } = await openDialog();
+  const labels = chips(dialog).getAllByRole('button').map(b => b.textContent);
+  expect(labels).toEqual(['All', 'Steam', 'Heroic', 'Apps']);
+  expect(chip(dialog, 'All')).toHaveAttribute('aria-pressed', 'true');
+  for (const n of ['Steam', 'Heroic', 'Apps']) expect(chip(dialog, n)).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(chip(dialog, 'Heroic'));
+  expect(chip(dialog, 'Heroic')).toHaveAttribute('aria-pressed', 'true');
+  expect(chip(dialog, 'All')).toHaveAttribute('aria-pressed', 'false');
+});
+
+it('filters by source chip and combines it with the case-insensitive search', async () => {
+  const { dialog } = await openDialog();
+  fireEvent.click(chip(dialog, 'Steam'));
+  expect(itemNames(dialog)).toEqual(['Terraria']);
+  fireEvent.click(chip(dialog, 'Heroic'));
+  expect(itemNames(dialog)).toEqual(['Rocket League']);
+  fireEvent.click(chip(dialog, 'Apps'));
+  expect(itemNames(dialog)).toEqual(['xemu', 'Firefox']);
   const search = within(dialog).getByRole('textbox', { name: 'Search games' });
+  fireEvent.change(search, { target: { value: 'FIRE' } });
+  expect(itemNames(dialog)).toEqual(['Firefox']);
+  fireEvent.click(chip(dialog, 'Steam'));
+  expect(itemNames(dialog)).toEqual([]);
+  expect(within(dialog).getByText('Nothing matches your search.')).toBeVisible();
+  fireEvent.click(chip(dialog, 'All'));
+  expect(itemNames(dialog)).toEqual(['Firefox']);
   fireEvent.change(search, { target: { value: 'TERRA' } });
   expect(itemNames(dialog)).toEqual(['Terraria']);
-  expect(dialog.querySelector('details.games-others')).toBeNull();
-  fireEvent.change(search, { target: { value: 'fire' } });
-  expect(itemNames(dialog)).toEqual(['Firefox']);
-  expect((dialog.querySelector('details.games-others') as HTMLDetailsElement).open).toBe(true);
-  fireEvent.change(search, { target: { value: 'zzz' } });
-  expect(itemNames(dialog)).toEqual([]);
-  expect(within(dialog).getByText('No games match your search.')).toBeVisible();
+});
+
+it('says nothing matches when a chip alone filters everything out', async () => {
+  const s = fixture(); s.ListInstalledGames.mockResolvedValue({ Games: [catalog[0]], Error: { Code: '' } });
+  const { dialog } = await openDialog(s);
+  fireEvent.click(chip(dialog, 'Heroic'));
+  expect(within(dialog).getByText('Nothing matches your search.')).toBeVisible();
+  expect(within(dialog.querySelector('.games-list') as HTMLElement).queryByText('No installed games found. Use Browse below.')).not.toBeInTheDocument();
 });
 
 it('shows the empty state when no games are installed', async () => {
@@ -195,55 +227,14 @@ it('adds a picked folder as a folder rule named by the result', async () => {
   await waitFor(() => expect(lastSet(s)).toEqual([true, [...rules3, { Executable: '', Folder: '/games/Hades', Name: 'Hades II', ProfileID: B }]]));
 });
 
-it('adds a picked executable as an executable rule with its base name', async () => {
-  const s = fixture(); s.PickGameExecutable.mockResolvedValue({ Path: '/opt/games/Celeste.bin', Name: 'Celeste', Cancelled: false, Error: { Code: '' } });
-  const { dialog } = await openDialog(s);
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Browse for an executable…' }));
-  expect(await within(dialog).findByText('Celeste')).toBeVisible();
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-  await waitFor(() => expect(lastSet(s)).toEqual([true, [...rules3, { Executable: 'Celeste.bin', Folder: '', Name: 'Celeste', ProfileID: B }]]));
-});
-
-it('adds nothing when the file chooser is cancelled', async () => {
+it('adds nothing when the folder chooser is cancelled', async () => {
   const { service, dialog } = await openDialog();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Browse for a game folder…' }));
-  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Browse for an executable…' })).toBeEnabled());
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Browse for an executable…' }));
-  await waitFor(() => expect(service.PickGameExecutable).toHaveBeenCalledOnce());
-  expect(service.PickGameFolder).toHaveBeenCalledOnce();
+  await waitFor(() => expect(service.PickGameFolder).toHaveBeenCalledOnce());
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Browse for a game folder…' })).toBeEnabled());
   expect(within(dialog).queryByText(/^Selected:/)).not.toBeInTheDocument();
   expect(service.SetWatcherSettings).not.toHaveBeenCalled();
   expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
-});
-
-it('adds a manual executable name with the text as display name', async () => {
-  const { service, dialog } = await openDialog();
-  fireEvent.click(within(dialog).getByText('Enter an executable name'));
-  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Executable name' }), { target: { value: '  Celeste.exe ' } });
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-  await waitFor(() => expect(lastSet(service)).toEqual([true, [...rules3, { Executable: 'Celeste.exe', Folder: '', Name: 'Celeste.exe', ProfileID: B }]]));
-});
-
-it.each([
-  ['', 'Enter the executable name only, without a path.'],
-  ['   ', 'Enter the executable name only, without a path.'],
-  ['/usr/bin/cs2', 'Enter the executable name only, without a path.'],
-  ['C:\\Games\\Hades.exe', 'Enter the executable name only, without a path.'],
-  [' cs2 ', 'A rule for cs2 already exists.'],
-])('rejects manual %j without calling the backend', async (value, message) => {
-  const { service, dialog } = await openDialog();
-  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Executable name' }), { target: { value } });
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-  expect(within(dialog).getByRole('alert')).toHaveTextContent(message);
-  expect(service.SetWatcherSettings).not.toHaveBeenCalled();
-  expect(exes()).toEqual(['cs2', 'Hades.exe', 'eldenring.exe']);
-});
-
-it('treats executable names as case-sensitive when checking duplicates', async () => {
-  const { service, dialog } = await openDialog();
-  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Executable name' }), { target: { value: 'CS2' } });
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-  await waitFor(() => expect(service.SetWatcherSettings).toHaveBeenCalledOnce());
 });
 
 it('rejects a duplicate folder and a duplicate executable from the list without calling the backend', async () => {
@@ -275,13 +266,10 @@ it('rejects a picked folder that is already a rule', async () => {
   expect(s.SetWatcherSettings).not.toHaveBeenCalled();
 });
 
-it.each([
-  ['PickGameFolder', 'Browse for a game folder…'],
-  ['PickGameExecutable', 'Browse for an executable…'],
-] as const)('shows pick_failed from %s', async (method, label) => {
-  const s = fixture(); s[method].mockResolvedValue({ ...noPick, Cancelled: false, Error: { Code: 'pick_failed' } });
+it('shows pick_failed from PickGameFolder', async () => {
+  const s = fixture(); s.PickGameFolder.mockResolvedValue({ ...noPick, Cancelled: false, Error: { Code: 'pick_failed' } });
   const { dialog } = await openDialog(s);
-  fireEvent.click(within(dialog).getByRole('button', { name: label }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Browse for a game folder…' }));
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('The file chooser could not be opened.');
   expect(s.SetWatcherSettings).not.toHaveBeenCalled();
 });
@@ -292,18 +280,15 @@ it('shows games_unavailable when the catalog cannot be read', async () => {
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('The list of installed games is not available.');
 });
 
-it('falls back to the manual input when the games methods are absent', async () => {
+it('shows no list, search or chips when the games methods are absent', async () => {
   const { GetProfiles, GetWatcherSettings, SetWatcherSettings } = fixture();
-  const s = { GetProfiles, GetWatcherSettings, SetWatcherSettings };
-  render(<GamesPanel service={s} />);
+  render(<GamesPanel service={{ GetProfiles, GetWatcherSettings, SetWatcherSettings }} />);
   await screen.findByRole('table');
   fireEvent.click(screen.getByRole('button', { name: 'Add a game' }));
   const dialog = screen.getByRole('dialog', { name: 'Add a game' });
-  expect(within(dialog).queryByRole('textbox', { name: 'Search games' })).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('group', { name: 'Filter by source' })).not.toBeInTheDocument();
   expect(within(dialog).queryByRole('button', { name: /Browse/ })).not.toBeInTheDocument();
-  fireEvent.change(within(dialog).getByRole('textbox', { name: 'Executable name' }), { target: { value: 'Celeste.exe' } });
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-  await waitFor(() => expect(SetWatcherSettings).toHaveBeenCalledWith(true, [...rules3, { Executable: 'Celeste.exe', Folder: '', Name: 'Celeste.exe', ProfileID: B }]));
 });
 
 it('keeps Folder and Name of every rule when reordering or changing the profile', async () => {

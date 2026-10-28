@@ -60,63 +60,41 @@ func TestGameJSONKeysArePascalCase(t *testing.T) {
 	}
 }
 
-func pickerReturning(path string, err error, gotFolder *bool) func(bool) (string, error) {
-	return func(folder bool) (string, error) {
-		if gotFolder != nil {
-			*gotFolder = folder
-		}
-		return path, err
-	}
+func pickerReturning(path string, err error) func() (string, error) {
+	return func() (string, error) { return path, err }
 }
 
 func TestPickGameFolder(t *testing.T) {
-	var folder bool
-	r := (&Service{}).AttachGamePicker(pickerReturning("/games/Hades//", nil, &folder)).PickGameFolder()
+	r := (&Service{}).AttachGamePicker(pickerReturning("/games/Hades//", nil)).PickGameFolder()
 	want := PickResult{Path: "/games/Hades", Name: "Hades"}
-	if r != want || !folder {
-		t.Fatalf("result = %+v folder=%v", r, folder)
-	}
-}
-
-func TestPickGameExecutable(t *testing.T) {
-	folder := true
-	r := (&Service{}).AttachGamePicker(pickerReturning("/games/Hades/Hades.exe", nil, &folder)).PickGameExecutable()
-	want := PickResult{Path: "/games/Hades/Hades.exe", Name: "Hades.exe"}
-	if r != want || folder {
-		t.Fatalf("result = %+v folder=%v", r, folder)
+	if r != want {
+		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestPickCancelled(t *testing.T) {
-	s := (&Service{}).AttachGamePicker(pickerReturning("", nil, nil))
-	for _, r := range []PickResult{s.PickGameFolder(), s.PickGameExecutable()} {
-		if r != (PickResult{Cancelled: true}) {
-			t.Fatalf("result = %+v", r)
-		}
+	r := (&Service{}).AttachGamePicker(pickerReturning("", nil)).PickGameFolder()
+	if r != (PickResult{Cancelled: true}) {
+		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestPickFailures(t *testing.T) {
-	cases := map[string]func(bool) (string, error){
-		"error":    pickerReturning("/x", errors.New("boom"), nil),
-		"relative": pickerReturning("games/Hades", nil, nil),
+	cases := map[string]func() (string, error){
+		"error":    pickerReturning("/x", errors.New("boom")),
+		"relative": pickerReturning("games/Hades", nil),
 	}
 	for name, p := range cases {
-		s := (&Service{}).AttachGamePicker(p)
-		for _, r := range []PickResult{s.PickGameFolder(), s.PickGameExecutable()} {
-			if r != (PickResult{Error: Error{Code: PickFailed}}) {
-				t.Fatalf("%s: result = %+v", name, r)
-			}
+		r := (&Service{}).AttachGamePicker(p).PickGameFolder()
+		if r != (PickResult{Error: Error{Code: PickFailed}}) {
+			t.Fatalf("%s: result = %+v", name, r)
 		}
 	}
 }
 
 func TestPickWithoutPicker(t *testing.T) {
-	s := &Service{}
-	for _, r := range []PickResult{s.PickGameFolder(), s.PickGameExecutable()} {
-		if r != (PickResult{Error: Error{Code: GamesUnavailable}}) {
-			t.Fatalf("result = %+v", r)
-		}
+	if r := (&Service{}).PickGameFolder(); r != (PickResult{Error: Error{Code: GamesUnavailable}}) {
+		t.Fatalf("result = %+v", r)
 	}
 }
 
@@ -124,7 +102,7 @@ func TestSecondPickWhileOpenIsRejected(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	calls := 0
-	s := (&Service{}).AttachGamePicker(func(bool) (string, error) {
+	s := (&Service{}).AttachGamePicker(func() (string, error) {
 		calls++
 		close(entered)
 		<-release
@@ -133,7 +111,7 @@ func TestSecondPickWhileOpenIsRejected(t *testing.T) {
 	done := make(chan PickResult)
 	go func() { done <- s.PickGameFolder() }()
 	<-entered
-	second := s.PickGameExecutable()
+	second := s.PickGameFolder()
 	if second != (PickResult{Error: Error{Code: PickFailed}}) {
 		t.Fatalf("second = %+v", second)
 	}

@@ -76,7 +76,6 @@ const gamesCall = <T,>(method: keyof GamesService): Promise<T> =>
 export const desktopService: DesktopService & ProfilesService & WatcherService & GamesService = {
   ListInstalledGames: () => gamesCall('ListInstalledGames'),
   PickGameFolder: () => gamesCall('PickGameFolder'),
-  PickGameExecutable: () => gamesCall('PickGameExecutable'),
   GetWatcherSettings: () => watcherCall('GetWatcherSettings'),
   SetWatcherSettings: (enabled: boolean, rules: WatcherRule[]) => watcherCall('SetWatcherSettings', enabled, rules),
   GetProfiles: () => profileCall('GetProfiles'),

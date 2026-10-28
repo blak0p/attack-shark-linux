@@ -41,7 +41,7 @@ type gameComponent struct {
 	mu      sync.Mutex // guards catalog and picker
 	pickMu  sync.Mutex // held while a native dialog is open
 	catalog func() []InstalledGame
-	picker  func(folder bool) (string, error)
+	picker  func() (string, error)
 }
 
 func (s *Service) games() *gameComponent { return &s.gameCatalog }
@@ -56,7 +56,7 @@ func (s *Service) AttachGameCatalog(list func() []InstalledGame) *Service {
 }
 
 // AttachGamePicker wires the native dialog opener before publication.
-func (s *Service) AttachGamePicker(pick func(folder bool) (string, error)) *Service {
+func (s *Service) AttachGamePicker(pick func() (string, error)) *Service {
 	c := s.games()
 	c.mu.Lock()
 	c.picker = pick
@@ -78,12 +78,7 @@ func (s *Service) ListInstalledGames() GameListSnapshot {
 }
 
 // PickGameFolder opens a native dialog restricted to directories.
-func (s *Service) PickGameFolder() PickResult { return s.pick(true) }
-
-// PickGameExecutable opens a native dialog restricted to files.
-func (s *Service) PickGameExecutable() PickResult { return s.pick(false) }
-
-func (s *Service) pick(folder bool) PickResult {
+func (s *Service) PickGameFolder() PickResult {
 	c := s.games()
 	c.mu.Lock()
 	picker := c.picker
@@ -95,7 +90,7 @@ func (s *Service) pick(folder bool) PickResult {
 		return PickResult{Error: Error{Code: PickFailed}}
 	}
 	defer c.pickMu.Unlock()
-	path, err := picker(folder)
+	path, err := picker()
 	if err != nil {
 		return PickResult{Error: Error{Code: PickFailed}}
 	}

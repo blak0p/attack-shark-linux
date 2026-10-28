@@ -6,7 +6,6 @@ export const gamesErrors: Record<string, string> = {
   pick_failed: 'The file chooser could not be opened.',
   games_unavailable: 'The list of installed games is not available.',
 };
-export const pathError = 'Enter the executable name only, without a path.';
 
 type Choice = { Name: string; Folder: string; Executable: string };
 type ProfileOption = { value: string; label: string; direct: boolean };
@@ -15,7 +14,12 @@ const isGame = (game: InstalledGame) => game.Source !== 'App' || game.IsGame;
 const choiceFrom = (game: InstalledGame): Choice => game.Source === 'App'
   ? { Name: game.Name, Executable: game.Executable, Folder: '' }
   : { Name: game.Name, Folder: game.Folder, Executable: '' };
-const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+const byName = (a: InstalledGame, b: InstalledGame) => {
+  const x = a.Name.toLowerCase(), y = b.Name.toLowerCase();
+  return x < y ? -1 : x > y ? 1 : 0;
+};
+const sources = [['All', 'All'], ['Steam', 'Steam'], ['Heroic', 'Heroic'], ['App', 'Apps']] as const;
+type SourceFilter = typeof sources[number][0];
 
 export function AddGameDialog({ service, rules, profileOptions, profile, error, onError, onProfile, onAdd, onClose }: {
   service: Partial<GamesService>;
@@ -34,9 +38,7 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
   const [games, setGames] = useState<InstalledGame[]>();
   const [query, setQuery] = useState('');
   const [choice, setChoice] = useState<Choice>();
-  const [manual, setManual] = useState('');
-  const [manualOpen, setManualOpen] = useState(!hasCatalog);
-  const [othersOpen, setOthersOpen] = useState(false);
+  const [source, setSource] = useState<SourceFilter>('All');
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState(false);
 
@@ -59,34 +61,24 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
   }, [service]);
 
   const needle = query.trim().toLowerCase();
-  const matching = (games ?? []).filter(game => game.Name.toLowerCase().includes(needle));
-  const gameItems = matching.filter(isGame);
-  const otherItems = matching.filter(game => !isGame(game));
-  const forcedOpen = needle !== '' && otherItems.length > 0;
+  const matching = (games ?? []).filter(game => (source === 'All' || game.Source === source) && game.Name.toLowerCase().includes(needle));
+  const visible = [...matching.filter(isGame).sort(byName), ...matching.filter(game => !isGame(game)).sort(byName)];
 
-  const pick = async (method: 'PickGameFolder' | 'PickGameExecutable') => {
+  const pick = async () => {
     setPicking(true); onError('');
     try {
-      const result: PickResult | undefined = await service[method]?.();
+      const result: PickResult | undefined = await service.PickGameFolder?.();
       if (!result || result.Cancelled) return;
       if (result.Error.Code) { onError(gamesErrors[result.Error.Code] ?? result.Error.Code); return; }
-      setManual('');
-      setChoice(method === 'PickGameFolder'
-        ? { Name: result.Name, Folder: result.Path, Executable: '' }
-        : { Name: result.Name, Executable: baseName(result.Path), Folder: '' });
+      setChoice({ Name: result.Name, Folder: result.Path, Executable: '' });
     } catch { onError(gamesErrors.pick_failed); } finally { setPicking(false); }
   };
 
   const submit = async (event: { preventDefault(): void }) => {
     event.preventDefault();
     if (adding || !profile) return;
-    let next: Choice;
-    if (choice) next = choice;
-    else {
-      const name = manual.trim();
-      if (!name || /[\\/]/.test(name)) { setManualOpen(true); onError(pathError); return; }
-      next = { Name: name, Executable: name, Folder: '' };
-    }
+    if (!choice) return;
+    const next = choice;
     const duplicate = rules.some(rule => (next.Folder !== '' && rule.Folder === next.Folder) ||
       (next.Executable !== '' && rule.Executable === next.Executable));
     if (duplicate) { onError(`A rule for ${next.Name} already exists.`); return; }
@@ -100,7 +92,7 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
     const selected = choice?.Name === own.Name && choice.Folder === own.Folder && choice.Executable === own.Executable;
     return <li key={`${game.Source}\n${game.Name}\n${game.Folder}\n${game.Executable}`}>
       <button type="button" className="games-item" aria-pressed={selected}
-        onClick={() => { setChoice(own); setManual(''); onError(''); }}>
+        onClick={() => { setChoice(own); onError(''); }}>
         <span className="games-item-name">{game.Name}</span>
         <span className="games-badge">{game.Source}</span>
       </button>
@@ -113,34 +105,27 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
     <form className="games-dialog-form" onSubmit={event => void submit(event)}>
       <h2 id={titleID}>Add a game</h2>
       {hasCatalog && <>
-        <input type="text" aria-label="Search games" placeholder="Search games" value={query}
-          onChange={event => setQuery(event.target.value)} />
+        <div className="games-dialog-top">
+          <input type="text" aria-label="Search games" placeholder="Search games" value={query}
+            onChange={event => setQuery(event.target.value)} />
+          <div role="group" aria-label="Filter by source" className="games-chips">
+            {sources.map(([value, label]) => <button key={value} type="button" className="games-chip"
+              aria-pressed={source === value} onClick={() => setSource(value)}>{label}</button>)}
+          </div>
+        </div>
         <div className="games-list">
           {games && (games.length === 0
             ? <p className="help games-list-empty">No installed games found. Use Browse below.</p>
-            : matching.length === 0 && <p className="help games-list-empty">No games match your search.</p>)}
-          {gameItems.length > 0 && <>
-            <h3 className="games-group">Games</h3>
-            <ul className="games-items">{gameItems.map(item)}</ul>
-          </>}
-          {otherItems.length > 0 && <details className="games-others" open={forcedOpen || othersOpen}
-            onToggle={event => setOthersOpen(event.currentTarget.open)}>
-            <summary>Other apps</summary>
-            <ul className="games-items">{otherItems.map(item)}</ul>
-          </details>}
-        </div>
-        <div className="games-browse">
-          {service.PickGameFolder && <button type="button" disabled={picking} onClick={() => void pick('PickGameFolder')}>Browse for a game folder…</button>}
-          {service.PickGameExecutable && <button type="button" disabled={picking} onClick={() => void pick('PickGameExecutable')}>Browse for an executable…</button>}
+            : visible.length === 0 && <p className="help games-list-empty">Nothing matches your search.</p>)}
+          {visible.length > 0 && <ul className="games-items">{visible.map(item)}</ul>}
         </div>
       </>}
-      {choice && <p className="help games-selected">Selected: <strong>{choice.Name}</strong>{' '}
-        <span>{choice.Folder || choice.Executable}</span></p>}
-      <details className="games-manual" open={manualOpen} onToggle={event => setManualOpen(event.currentTarget.open)}>
-        <summary>Enter an executable name</summary>
-        <input type="text" aria-label="Executable name" placeholder="Executable name, e.g. Hades.exe" value={manual}
-          onChange={event => { setManual(event.target.value); setChoice(undefined); }} />
-      </details>
+      <div className="games-dialog-bottom">
+        {service.PickGameFolder && <div className="games-browse">
+          <button type="button" disabled={picking} onClick={() => void pick()}>Browse for a game folder…</button>
+        </div>}
+        {choice && <p className="help games-selected">Selected: <strong>{choice.Name}</strong>{' '}
+          <span>{choice.Folder || choice.Executable}</span></p>}
       <label className="games-dialog-profile"><span>Profile</span>
         <GnomeSelect aria-label="Profile" value={profile} placeholder="No profiles" options={profileOptions}
           disabled={!profileOptions.length} portalTarget={() => dialogRef.current} onChange={onProfile} />
@@ -148,7 +133,8 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
       <p className="help games-error" role="alert" hidden={!error}>{error}</p>
       <div className="games-dialog-footer">
         <button type="button" onClick={onClose}>Cancel</button>
-        <button type="submit" className="primary" disabled={!profileOptions.length || adding}>Add</button>
+        <button type="submit" className="primary" disabled={!profileOptions.length || adding || !choice}>Add</button>
+      </div>
       </div>
     </form>
   </dialog>;
