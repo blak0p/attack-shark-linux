@@ -159,3 +159,19 @@ func TestProfileSwitcherAdapter(t *testing.T) {
 		t.Fatalf("ActiveID with unavailable profiles = %q, want empty", got)
 	}
 }
+
+func TestWatcherControllerPassesFolderToProcwatch(t *testing.T) {
+	runner := &fakeRunner{}
+	c := newWatcherController(runner.run)
+	defer c.Stop()
+
+	c.Apply(configstore.WatcherSettings{Enabled: true, Rules: []configstore.WatcherRule{
+		{Folder: "/games/T", Name: "T", ProfileID: idGame}, {Executable: "b", ProfileID: idWork},
+	}})
+
+	waitFor(t, "the watcher to start", func() bool { return len(runner.started()) == 1 })
+	want := []procwatch.Rule{{Folder: "/games/T", ProfileID: idGame}, {Executable: "b", ProfileID: idWork}}
+	if got := runner.started()[0].rules; !reflect.DeepEqual(got, want) {
+		t.Fatalf("rules = %v, want %v", got, want)
+	}
+}

@@ -67,7 +67,7 @@ func (c *watcherController) Apply(settings configstore.WatcherSettings) {
 	}
 	rules := make([]procwatch.Rule, len(settings.Rules))
 	for i, r := range settings.Rules {
-		rules[i] = procwatch.Rule{Executable: r.Executable, ProfileID: r.ProfileID}
+		rules[i] = procwatch.Rule{Executable: r.Executable, Folder: r.Folder, ProfileID: r.ProfileID}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

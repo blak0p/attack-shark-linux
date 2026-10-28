@@ -1,6 +1,7 @@
 package configstore
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -149,5 +150,131 @@ func TestWatcherStoreSaveIOFailureLeavesFile(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Fatal("file changed on I/O failure")
+	}
+}
+
+func TestWatcherStoreFolderRuleCleanedAndNamedFromBase(t *testing.T) {
+	store := NewWatcherStore(filepath.Join(t.TempDir(), "w.json"))
+	err := store.Save(WatcherSettings{Rules: []WatcherRule{
+		{Folder: " /games/T/ ", Name: "  Title  ", ProfileID: hexA},
+		{Folder: "/games/./Other//", ProfileID: hexB},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []WatcherRule{
+		{Folder: "/games/T", Name: "Title", ProfileID: hexA},
+		{Folder: "/games/Other", Name: "Other", ProfileID: hexB},
+	}
+	if !reflect.DeepEqual(got.Rules, want) {
+		t.Fatalf("rules = %#v", got.Rules)
+	}
+}
+
+func TestWatcherStoreExecutableRuleKeepsOptionalName(t *testing.T) {
+	store := NewWatcherStore(filepath.Join(t.TempDir(), "w.json"))
+	if err := store.Save(WatcherSettings{Rules: []WatcherRule{{Executable: "a", Name: " Pretty ", ProfileID: hexA}}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Load()
+	if got.Rules[0].Name != "Pretty" || got.Rules[0].Folder != "" {
+		t.Fatalf("rule = %#v", got.Rules[0])
+	}
+}
+
+func TestWatcherStoreExecutableAndFolderRuleDoNotConflict(t *testing.T) {
+	store := NewWatcherStore(filepath.Join(t.TempDir(), "w.json"))
+	err := store.Save(WatcherSettings{Rules: []WatcherRule{
+		{Executable: "T", ProfileID: hexA}, {Folder: "/T", ProfileID: hexB},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWatcherStoreRejectsInvalidFolderRules(t *testing.T) {
+	cases := map[string][]WatcherRule{
+		"relative":         {{Folder: "games/T", ProfileID: hexA}},
+		"blank folder":     {{Folder: "  ", ProfileID: hexA}},
+		"both set":         {{Executable: "a", Folder: "/g", ProfileID: hexA}},
+		"neither set":      {{Name: "x", ProfileID: hexA}},
+		"folder nul":       {{Folder: "/g\x00x", ProfileID: hexA}},
+		"folder too long":  {{Folder: "/" + strings.Repeat("a", 4096), ProfileID: hexA}},
+		"name nul":         {{Folder: "/g", Name: "a\x00b", ProfileID: hexA}},
+		"name too long":    {{Folder: "/g", Name: strings.Repeat("a", 256), ProfileID: hexA}},
+		"exe name too big": {{Executable: "a", Name: strings.Repeat("a", 256), ProfileID: hexA}},
+		"duplicate folder": {{Folder: "/g/T", ProfileID: hexA}, {Folder: "/g/T/", ProfileID: hexB}},
+		"bad profile":      {{Folder: "/g", ProfileID: "abc"}},
+	}
+	for name, rules := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "w.json")
+			store := NewWatcherStore(path)
+			if err := store.Save(WatcherSettings{Enabled: true, Rules: []WatcherRule{{Folder: "/keep", ProfileID: hexA}}}); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(path)
+			if err := store.Save(WatcherSettings{Rules: rules}); !errors.Is(err, ErrInvalidWatcherSettings) {
+				t.Fatalf("err = %v", err)
+			}
+			after, _ := os.ReadFile(path)
+			if string(before) != string(after) {
+				t.Fatal("file changed on rejection")
+			}
+		})
+	}
+}
+
+func TestWatcherStoreLoadsOldFormatFileUnchanged(t *testing.T) {
+	old := `{"enabled":true,"rules":[{"executable":"game.exe","profile_id":"` + hexA + `"}]}`
+	path := filepath.Join(t.TempDir(), "watcher-v1.json")
+	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewWatcherStore(path)
+	got, err := store.Load()
+	want := WatcherSettings{Enabled: true, Rules: []WatcherRule{{Executable: "game.exe", ProfileID: hexA}}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("load = %#v, %v", got, err)
+	}
+	if err := store.Save(got); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != old {
+		t.Fatalf("saved = %s", after)
+	}
+}
+
+func TestWatcherStoreInvalidStoredFolderRule(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "w.json")
+	contents := `{"enabled":true,"rules":[{"folder":"relative/dir","profile_id":"` + hexA + `"}]}`
+	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWatcherStore(path).Load(); !errors.Is(err, ErrInvalidWatcherSettings) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWatcherStoreFolderRuleFileOmitsExecutableKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "w.json")
+	store := NewWatcherStore(path)
+	if err := store.Save(WatcherSettings{Enabled: true, Rules: []WatcherRule{{Folder: "/games/T", Name: "T", ProfileID: hexA}}}); err != nil {
+		t.Fatal(err)
+	}
+	contents, _ := os.ReadFile(path)
+	var decoded struct {
+		Rules []map[string]any `json:"rules"`
+	}
+	if err := json.Unmarshal(contents, &decoded); err != nil || len(decoded.Rules) != 1 {
+		t.Fatalf("decode %s: %v", contents, err)
+	}
+	if _, ok := decoded.Rules[0]["executable"]; ok {
+		t.Fatalf("folder rule wrote executable key: %s", contents)
 	}
 }
