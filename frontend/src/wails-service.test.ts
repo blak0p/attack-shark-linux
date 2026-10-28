@@ -86,7 +86,7 @@ describe("desktopService", () => {
     const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
     await expect(invoke(...args)).rejects.toBe(failure);
   });
-  it.each(['ListInstalledGames', 'PickGameFolder'] as const)('forwards games method %s with no arguments and preserves outcomes and rejections', async method => {
+  it.each(['ListInstalledGames', 'PickGameFolder', 'GetLauncherPath'] as const)('forwards games method %s with no arguments and preserves outcomes and rejections', async method => {
     const outcome = { Games: [], Path: '', Error: { Code: '' } };
     runtime.Call.ByName.mockResolvedValueOnce(outcome);
     expect(await desktopService[method]()).toBe(outcome);

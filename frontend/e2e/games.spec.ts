@@ -22,9 +22,9 @@ test('games panel edits rules, keeps their order and builds the Steam command', 
   await expect(dialog.getByRole('alert')).toContainText('already exists');
   await dialog.getByRole('button', { name: 'Cancel' }).click();
 
-  await expect(page.getByLabel('Launch command', { exact: true })).toContainText('attack-shark-linux --profile "Automatic profile" -- %command%');
+  await expect(page.getByLabel('Launch command', { exact: true })).toContainText(`'/home/user/My Apps/x6.AppImage' --profile "Automatic profile" -- %command%`);
   await page.getByRole('button', { name: 'Copy' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('attack-shark-linux --profile "Automatic profile" -- %command%');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`'/home/user/My Apps/x6.AppImage' --profile "Automatic profile" -- %command%`);
 
   await expect(page.getByText('Automatic switching is off.')).toHaveCount(0);
   await page.getByLabel('Switch profile automatically').uncheck();

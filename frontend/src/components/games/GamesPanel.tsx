@@ -11,7 +11,11 @@ const watcherErrors: Record<string, string> = {
 
 /** Escapes a name for use inside double quotes in a POSIX shell. */
 export const shellQuote = (name: string) => name.replace(/[\\"$`]/g, '\\$&');
-export const launchCommand = (name: string) => `attack-shark-linux --profile "${shellQuote(name)}" -- %command%`;
+/** Single-quotes a path for a POSIX shell, but only when it has unsafe characters. */
+export const quoteLauncherPath = (path: string) =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(path) ? path : `'${path.replace(/'/g, `'\\''`)}'`;
+export const launchCommand = (name: string, launcher = 'attack-shark-linux') =>
+  `${launcher === 'attack-shark-linux' ? launcher : quoteLauncherPath(launcher)} --profile "${shellQuote(name)}" -- %command%`;
 
 export function GamesPanel({ service }: { service: Partial<WatcherService> & Partial<ProfilesService> & Partial<GamesService> }) {
   const [settings, setSettings] = useState<WatcherSettingsSnapshot>();
@@ -22,6 +26,7 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
   const [adding, setAdding] = useState(false);
   const [formProfile, setFormProfile] = useState('');
   const [commandProfile, setCommandProfile] = useState('');
+  const [launcherPath, setLauncherPath] = useState('');
   const [copy, setCopy] = useState<{ text: string; ok: boolean }>();
   const commandRef = useRef<HTMLElement>(null);
   const lock = useRef(false);
@@ -36,6 +41,9 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
       if (!current) return;
       setProfiles(next.Profiles); setActiveID(next.ActiveID);
     }).catch(() => { if (current) setError('Unable to load local profiles.'); });
+    void service.GetLauncherPath?.().then(next => {
+      if (current && !next.Error.Code && next.Path) setLauncherPath(next.Path);
+    }).catch(() => {});
     return () => { current = false; };
   }, [service]);
 
@@ -73,7 +81,7 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
   };
   const openDialog = () => { setError(''); setAdding(true); };
   const closeDialog = () => { setError(''); setAdding(false); };
-  const command = launchCommand(nameOf(selectedCommand) ?? '');
+  const command = launchCommand(nameOf(selectedCommand) ?? '', launcherPath || undefined);
   const copyCommand = async () => {
     try {
       if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');

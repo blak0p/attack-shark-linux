@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import type { InstalledGame, PickResult, WatcherRule, WatcherSettingsSnapshot } from '../../desktop-contract';
-import { GamesPanel, launchCommand, shellQuote } from './GamesPanel';
+import { GamesPanel, launchCommand, quoteLauncherPath, shellQuote } from './GamesPanel';
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -344,6 +344,41 @@ it.each([
 ])('shell-quotes %j', (name, quoted) => {
   expect(shellQuote(name)).toBe(quoted);
   expect(launchCommand(name)).toBe(`attack-shark-linux --profile "${quoted}" -- %command%`);
+});
+
+it.each([
+  ['/home/u/.local/bin/x6.AppImage', '/home/u/.local/bin/x6.AppImage'],
+  ['/home/u/My Apps/x6', "'/home/u/My Apps/x6'"],
+  ["/home/u/it's/x6", "'/home/u/it'\\''s/x6'"],
+  ['/home/u/$HOME/x6', "'/home/u/$HOME/x6'"],
+  ['/home/ñandú/app', "'/home/ñandú/app'"],
+])('quotes launcher path %j only when needed', (path, quoted) => {
+  expect(quoteLauncherPath(path)).toBe(quoted);
+  expect(launchCommand('macro', path)).toBe(`${quoted} --profile "macro" -- %command%`);
+});
+
+it('shows the real launcher path in the command once loaded', async () => {
+  const s = { ...fixture(), GetLauncherPath: vi.fn().mockResolvedValue({ Path: '/home/u/My Apps/x6.AppImage', Error: { Code: '' } }) };
+  await show(s as ReturnType<typeof fixture>);
+  await waitFor(() => expect(screen.getByLabelText('Launch command')).toHaveTextContent(`'/home/u/My Apps/x6.AppImage' --profile "FPS 800 DPI" -- %command%`));
+});
+
+it('keeps the PATH fallback while the launcher path loads or when it errors', async () => {
+  const pending = { ...fixture(), GetLauncherPath: vi.fn(() => new Promise(() => {})) };
+  await show(pending as unknown as ReturnType<typeof fixture>);
+  expect(screen.getByLabelText('Launch command')).toHaveTextContent('attack-shark-linux --profile "FPS 800 DPI" -- %command%');
+  cleanup();
+  const failed = { ...fixture(), GetLauncherPath: vi.fn().mockResolvedValue({ Path: '', Error: { Code: 'launcher_unavailable' } }) };
+  await show(failed as ReturnType<typeof fixture>);
+  await waitFor(() => expect(failed.GetLauncherPath).toHaveBeenCalled());
+  expect(screen.getByLabelText('Launch command')).toHaveTextContent('attack-shark-linux --profile "FPS 800 DPI" -- %command%');
+  expect(screen.queryByRole('alert')).toBeNull();
+  cleanup();
+  const rejected = { ...fixture(), GetLauncherPath: vi.fn().mockRejectedValue(new Error('x')) };
+  await show(rejected as ReturnType<typeof fixture>);
+  await waitFor(() => expect(rejected.GetLauncherPath).toHaveBeenCalled());
+  expect(screen.getByLabelText('Launch command')).toHaveTextContent('attack-shark-linux --profile "FPS 800 DPI" -- %command%');
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 it('shows the launch command for the active profile and follows the selected profile', async () => {

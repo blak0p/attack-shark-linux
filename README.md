@@ -202,6 +202,12 @@ For Steam, set the game's launch option to:
 attack-shark-linux --profile "Name" -- %command%
 ```
 
+The Games panel in the app shows this command with the full path of the
+launcher, so it works even when `attack-shark-linux` is not on your `PATH`. For
+the AppImage, the path is the AppImage file itself; if you move the AppImage the
+path changes, so copy the command again. If the path cannot be determined, the
+panel falls back to the bare `attack-shark-linux` form shown above.
+
 `Name` is the exact, case-sensitive profile name; a 32-character profile ID also
 works. The wrapper applies the profile, runs the command, waits for it, restores
 the profile that was active before, and exits with the command's exit code
