@@ -39,11 +39,13 @@ func newTrayHarness(host bool) *trayHarness {
 	return h
 }
 
-func TestTrayManagerCreatesOnlyWhenOnAndHostPresent(t *testing.T) {
+func TestTrayManagerCreatesTheTrayWhateverTheSettingWhenAHostExists(t *testing.T) {
+	// Wails 3.0.0 publishes the menu over D-Bus only for a tray created before
+	// the app runs, so the tray must exist from startup and not follow the switch.
 	h := newTrayHarness(true)
 	h.manager.Apply(false)
-	if len(h.created) != 0 {
-		t.Fatalf("tray created while off")
+	if len(h.created) != 1 {
+		t.Fatalf("created = %d, want 1 even while the setting is off", len(h.created))
 	}
 	h.manager.Apply(true)
 	h.manager.Apply(true)
@@ -52,16 +54,13 @@ func TestTrayManagerCreatesOnlyWhenOnAndHostPresent(t *testing.T) {
 	}
 }
 
-func TestTrayManagerDestroysWhenTurnedOffAndRecreates(t *testing.T) {
+func TestTrayManagerNeverDestroysOrRecreatesWhenToggled(t *testing.T) {
 	h := newTrayHarness(true)
 	h.manager.Apply(true)
 	h.manager.Apply(false)
-	if h.created[0].destroyed != 1 {
-		t.Fatalf("destroyed = %d, want 1", h.created[0].destroyed)
-	}
 	h.manager.Apply(true)
-	if len(h.created) != 2 {
-		t.Fatalf("created = %d, want 2", len(h.created))
+	if len(h.created) != 1 || h.created[0].destroyed != 0 {
+		t.Fatalf("created = %d, destroyed = %d; toggling must keep the same tray", len(h.created), h.created[0].destroyed)
 	}
 }
 

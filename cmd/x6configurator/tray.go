@@ -88,12 +88,15 @@ func newTrayManager(hasHost func() bool, create func() trayHandle) *trayManager 
 	return &trayManager{hasHost: hasHost, create: create}
 }
 
-// Apply records the setting and creates or destroys the tray to match it.
+// Apply records the setting and makes sure the tray exists when a host does.
+// The tray is never destroyed: Wails 3.0.0 publishes the menu over D-Bus only
+// for a tray created before the app runs, so a tray created later would show
+// an icon without its menu. The setting only decides what closing the window does.
 func (m *trayManager) Apply(on bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.on = on
-	m.syncLocked(on && m.hasHost())
+	m.syncLocked(m.hasHost())
 }
 
 // OnClose returns what to do for a window close, re-checking the host and
@@ -107,12 +110,8 @@ func (m *trayManager) OnClose() closeDecision {
 }
 
 func (m *trayManager) syncLocked(want bool) {
-	switch {
-	case want && m.handle == nil:
+	if want && m.handle == nil {
 		m.handle = m.create()
-	case !m.on && m.handle != nil:
-		m.handle.Destroy()
-		m.handle = nil
 	}
 }
 

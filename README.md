@@ -234,7 +234,9 @@ Two switches in the Games panel keep automatic profile switching alive without
 an open window:
 
 - **Keep running in the tray**: closing the window hides it and the app keeps
-  running with a tray icon (menu: Open, Quit). Without a system tray on your
+  running with a tray icon (menu: Open, Quit). The icon is shown whenever the
+  app runs and a tray exists, even with this switch off; the switch only decides
+  whether closing the window hides it or quits. Without a system tray on your
   desktop the window is minimised instead. The tray needs a StatusNotifier host
   (for example a tray module in your bar on Hyprland).
 - **Start in the tray when I log in**: writes
