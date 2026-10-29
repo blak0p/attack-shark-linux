@@ -5,7 +5,7 @@ import { OperationFeedback } from "../OperationFeedback";
 import { GnomeSelect } from "./GnomeSelect";
 import { captureInput, startTake, stopTake, type DelayPolicy, type Take } from "../../macros/recorder";
 import type { Macro, MacroLibraryService } from "../../desktop-contract";
-import { useMacroLibrary } from "../../hooks/useMacroLibrary";
+import { libraryNoticeKeys, useMacroLibrary } from "../../hooks/useMacroLibrary";
 import { deviceAdmission } from "../../macros/device-admission";
 import { exportMacroFile, MAX_MACRO_FILE_BYTES } from "../../macros/macro-file";
 import "./MacroManagerPanel.css";
@@ -377,9 +377,9 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
         {validationError && <p role="alert" className="macro-error">{validationError}</p>}
         {!feedbackManaged && <OperationFeedback scope="local-library" busy={busy || loading || reading} results={[{
           id: "library", label: t("feedback.labels.macros"), version: notice, error,
-          success: notice === "Saved to library. No device changes made." ? t("feedback.saved")
-            : notice === "Imported as a new local macro. No device changes made." ? t("feedback.imported")
-            : notice === "Macro deleted from library." ? t("feedback.deleted") : undefined,
+          success: notice === t(libraryNoticeKeys.saved) ? t("feedback.saved")
+            : notice === t(libraryNoticeKeys.imported) ? t("feedback.imported")
+            : notice === t(libraryNoticeKeys.deleted) ? t("feedback.deleted") : undefined,
         }]} />}
       </article>
     </div>

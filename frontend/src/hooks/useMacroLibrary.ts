@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Macro, MacroLibraryService } from "../desktop-contract";
+import { i18n } from "../i18n";
 import { copyMacroEvent, importMacroFile } from "../macros/macro-file";
 
 type DraftEvent = Omit<Macro["events"][number], "delay_ms"> & { delay_ms: number | string };
 type Draft = { id?: string; name: string; events: DraftEvent[] };
 // Preserve numeric precision across the JavaScript/JSON boundary; this is not a device timing limit.
 const validDelay = (value: number | string) => String(value).trim() !== "" && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
+// Shared with the components that compare against the notice text.
+export const libraryNoticeKeys = { saved: "notices.macroSaved", imported: "notices.macroImported", deleted: "notices.macroDeleted" } as const;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function useMacroLibrary(service: MacroLibraryService) {
@@ -29,8 +32,8 @@ export function useMacroLibrary(service: MacroLibraryService) {
   const [recordingActive, setRecordingActive] = useState(false);
   const validationError = (() => {
     for (const [index, event] of (draft?.events ?? []).entries()) {
-      if (!validDelay(event.delay_ms)) return `Event ${index + 1} delay must be a nonnegative whole number of milliseconds.`;
-      try { copyMacroEvent({ ...event, delay_ms: Number(event.delay_ms) }, `Event ${index + 1}`); }
+      if (!validDelay(event.delay_ms)) return i18n.t("validation.eventDelay", { n: index + 1 });
+      try { copyMacroEvent({ ...event, delay_ms: Number(event.delay_ms) }, i18n.t("macroFile.eventN", { n: index + 1 })); }
       catch (failure) { return errorMessage(failure); }
     }
     return "";
@@ -98,7 +101,7 @@ export function useMacroLibrary(service: MacroLibraryService) {
         if (generation !== epoch.current) return;
         setMacros((current) => current.filter((macro) => macro.id !== draft.id));
         pendingConfirmation.current = false;
-        setDraft(undefined); setConfirmation(false); setNotice("Macro deleted from library.");
+        setDraft(undefined); setConfirmation(false); setNotice(i18n.t(libraryNoticeKeys.deleted));
       } else {
         const events = draft.events.map((event) => ({ ...event, delay_ms: Number(event.delay_ms) }));
         const next = draft.id
@@ -106,7 +109,7 @@ export function useMacroLibrary(service: MacroLibraryService) {
           : await service.CreateMacro(draft.name, events);
         if (generation !== epoch.current) return;
         setMacros((current) => draft.id ? current.map((macro) => macro.id === next.id ? next : macro) : [...current, next]);
-        setDraft(next); setNotice("Saved to library. No device changes made.");
+        setDraft(next); setNotice(i18n.t(libraryNoticeKeys.saved));
       }
     } catch (failure) {
       if (generation === epoch.current) setError(errorMessage(failure));
@@ -127,7 +130,7 @@ export function useMacroLibrary(service: MacroLibraryService) {
       const next = await service.CreateMacro(copy.name, copy.events);
       if (generation !== epoch.current) return;
       setMacros((current) => [...current, next]);
-      setDraft(next); setNotice("Imported as a new local macro. No device changes made.");
+      setDraft(next); setNotice(i18n.t(libraryNoticeKeys.imported));
     } catch (failure) {
       if (generation === epoch.current) setError(errorMessage(failure));
     } finally {

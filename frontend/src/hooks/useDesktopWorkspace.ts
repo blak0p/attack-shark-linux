@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { i18n } from "../i18n";
 import type { Binding, DesktopService, DPIConfig, RemapSnapshot, Snapshot, WorkspaceActions, WorkspaceModel } from "../desktop-contract";
 
-const dpiAppliedNotice = "DPI applied.";
-const pollingAppliedNotice = "Polling applied.";
+// Shared with the components that compare against the notice text.
+export const workspaceNoticeKeys = {
+  factoryResetCompleted: "notices.factoryResetCompleted",
+  factoryResetFailedPrefix: "notices.factoryResetFailedPrefix",
+  deviceSelectionFailedPrefix: "notices.deviceSelectionFailedPrefix",
+} as const;
+const dpiAppliedNotice = () => i18n.t("notices.dpiApplied");
+const pollingAppliedNotice = () => i18n.t("notices.pollingApplied");
 
 export function useDesktopWorkspace(service: DesktopService): { model: WorkspaceModel; actions: WorkspaceActions } {
   const [snapshot, setSnapshot] = useState<Snapshot>();
@@ -41,14 +48,14 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       if (!current()) return;
       if (unifiedUpdates) {
         if (info) setUnifiedUpdate(info as NonNullable<WorkspaceModel["unifiedUpdate"]>);
-        else setUpdateError("No update result returned.");
+        else setUpdateError(i18n.t("notices.noUpdateResult"));
       } else if (kind === "check" && info) setUpdate(info);
     }).catch((error: unknown) => {
       if (!current()) return;
       // Builds without a managed updater (dev or unmanaged AppImage) have nothing to check: stay quiet.
       if (kind === "check" && error instanceof Error && error.message === "updates are unavailable") return;
       // A rejected apply does not establish whether a write occurred; retain known facts.
-      if (unifiedUpdates || kind === "apply") setUpdateError(error instanceof Error ? error.message : kind === "apply" ? "Unable to restart" : "Unable to check updates.");
+      if (unifiedUpdates || kind === "apply") setUpdateError(error instanceof Error ? error.message : kind === "apply" ? i18n.t("notices.unableToRestart") : i18n.t("notices.unableToCheckUpdates"));
     }).finally(() => {
       if (!current()) return;
       scope.busy = false;
@@ -78,7 +85,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     return request.then((next) => {
       if (scope.active && scope.service === service && scope.epoch === epoch) setRemap(next);
     }).catch((error: unknown) => {
-      if (scope.active && scope.service === service && scope.epoch === epoch) setRemapError(error instanceof Error ? error.message : "Unable to load remapping.");
+      if (scope.active && scope.service === service && scope.epoch === epoch) setRemapError(error instanceof Error ? error.message : i18n.t("notices.remapLoadFailed"));
     });
   };
 
@@ -109,17 +116,17 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       setRemapError(next.Error.Code);
       if (kind === "apply") {
         setNotice(next.Firmware !== "success"
-          ? "Remap transport not confirmed; hardware state is unknown or partial."
+          ? i18n.t("notices.remapNotConfirmed")
           : next.Persistence === "failed"
-            ? "Remap transport confirmed; local saving failed; playback and hardware persistence are unverified."
-            : "Remap transport confirmed; playback and hardware persistence are unverified.");
+            ? i18n.t("notices.remapConfirmedSaveFailed")
+            : i18n.t("notices.remapConfirmed"));
       } else {
-        setNotice(next.Error.Code ? "Local remap staging failed; draft retained." : kind === "discard" ? "Remap draft discarded locally; hardware unchanged." : "Remap staged locally; not applied to hardware.");
+        setNotice(next.Error.Code ? i18n.t("notices.remapStagingFailed") : kind === "discard" ? i18n.t("notices.remapDiscarded") : i18n.t("notices.remapStaged"));
       }
     }).catch((error: unknown) => {
       if (!current()) return;
-      setRemapError(error instanceof Error ? error.message : "Remap request failed.");
-      setNotice(kind === "apply" ? "Remap transport failed; hardware state is unknown or partial." : "Local remap request failed; draft retained.");
+      setRemapError(error instanceof Error ? error.message : i18n.t("notices.remapRequestFailed"));
+      setNotice(kind === "apply" ? i18n.t("notices.remapTransportFailed") : i18n.t("notices.remapRequestLocalFailed"));
     }).finally(() => {
       if (!current()) return;
       scope.busy = false;
@@ -231,7 +238,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       return service.ApplyDPI().then((updated) => {
         if (superseded()) return updated;
         setSnapshot(updated);
-        setNotice(updated.Firmware === "failed" ? "DPI application failed." : dpiAppliedNotice);
+        setNotice(updated.Firmware === "failed" ? i18n.t("notices.dpiFailed") : dpiAppliedNotice());
         return updated;
       });
     }));
@@ -260,8 +267,8 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
           refreshSelectedDeviceSnapshots(true);
         }).catch((error: unknown) => {
           if (!scope.active || scope.service !== service || scope.epoch !== epoch) return;
-          setRemapError(error instanceof Error ? error.message : "Device selection failed.");
-          setNotice("Device selection failed; select the previous device again to recover its workspace.");
+          setRemapError(error instanceof Error ? error.message : i18n.t("notices.deviceSelectionFailed"));
+          setNotice(`${i18n.t(workspaceNoticeKeys.deviceSelectionFailedPrefix)} ${i18n.t("notices.deviceSelectionFailedRecover")}`);
         });
       }
     },
@@ -274,7 +281,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       return service.ApplyPollingRate().then((updated) => {
         if (superseded()) return updated;
         setPolling(updated);
-        setNotice(updated.Firmware === "failed" ? "Polling application failed." : pollingAppliedNotice);
+        setNotice(updated.Firmware === "failed" ? i18n.t("notices.pollingFailed") : pollingAppliedNotice());
         return updated;
       });
     })),
@@ -286,7 +293,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       return service.ApplyDebounce().then((updated) => {
         if (superseded()) return updated;
         setDebounce(updated);
-        setNotice(updated.Firmware === "failed" ? "Key response time application failed." : "Key response time applied.");
+        setNotice(updated.Firmware === "failed" ? i18n.t("notices.keyResponseFailed") : i18n.t("notices.keyResponseApplied"));
         return updated;
       });
       }));
@@ -315,7 +322,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       : service.StageMacroAssignmentWithMode(id, button, repeat, mode)),
     stageMacroAssignmentWithMode: (id, button, repeat, mode) => runRemap("stage", () => service.StageMacroAssignmentWithMode(id, button, repeat, mode)),
     clearButtonMacroAssignment: (button: number) => runRemap("stage", () => {
-      if (!service.ClearButtonMacroAssignment) throw new Error("Per-button macro clearing is unavailable");
+      if (!service.ClearButtonMacroAssignment) throw new Error(i18n.t("notices.macroClearUnavailable"));
       return service.ClearButtonMacroAssignment(button);
     }),
     stageRemap: (button, action) => {
@@ -330,7 +337,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         remapValue.current = staged;
         setRemap(staged);
         // StageRemap preserves the overlay; explicitly clear it only on its target.
-        if (!service.ClearButtonMacroAssignment) throw new Error("Per-button macro clearing is unavailable");
+        if (!service.ClearButtonMacroAssignment) throw new Error(i18n.t("notices.macroClearUnavailable"));
         return service.ClearButtonMacroAssignment(button);
       });
     },
@@ -352,10 +359,10 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
         if (!current()) return;
         setResetConfirmation(false);
         if (result.Cleanup.State !== "success") {
-          setNotice(`Factory reset failed: ${result.Error.Code}.`);
+          setNotice(`${i18n.t(workspaceNoticeKeys.factoryResetFailedPrefix)} ${result.Error.Code}.`);
           return;
         }
-        setNotice("Factory reset completed.");
+        setNotice(i18n.t(workspaceNoticeKeys.factoryResetCompleted));
         const refresh = <T,>(request: Promise<T>, update: (next: T) => void) =>
           request.then((next) => { if (current()) update(next); }).catch(() => {});
         // Keep old mutation completions/events out until every authoritative read settles.
@@ -370,7 +377,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
       }).catch((error: unknown) => {
         if (!current()) return;
         setResetConfirmation(false);
-        setNotice(`Factory reset failed: ${error instanceof Error ? error.message : "request failed"}.`);
+        setNotice(`${i18n.t(workspaceNoticeKeys.factoryResetFailedPrefix)} ${error instanceof Error ? error.message : i18n.t("notices.requestFailed")}.`);
       }).finally(() => {
         if (!current()) return;
         scope.resetting = false;

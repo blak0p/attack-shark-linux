@@ -17,7 +17,7 @@ T1 | S1,S2,S3 | parent | done | i18n infrastructure (i18next init, en/es JSON, l
 T2 | S1,S2,S4 | parent | done | Migrate App, workspace, feedback, updates components to t(). Tests: 663 pass, build ok (incl. Spanish rendering test). Commit: d1779c8.
 T3 | S1,S2,S4 | parent | done | Migrate panels (DPI, polling, lighting, power, sleep, reset, features, device status). Tests: 665 pass, build ok. Commit: 0092d26.
 T4 | S1,S2,S4,S5,S6,S7 | parent (remap, macros) + worker (profiles, games) | done | Migrate ButtonRemap (389bdca), MacroManager (65d1202), Profiles and Games panels (worker mvtowprx-1-l5fz under the runtime context backstop; parent read the full diff, reran npm test 670 pass and build, fixed the untranslated duplicate-profile default name). Risk: none (UI strings only; a message already on screen keeps its language until the next action). Commit: 09c49f9.
-T6 | S1,S2,S5,S6,S7,S8 | worker (runtime context backstop) | in progress | Translate hook-generated text (notices in useDesktopWorkspace, feedbackFor fallbacks). Logic compares English notice strings today (WorkspaceFeedback), so switch those to codes first.
+T6 | S1,S2,S5,S6,S7,S8 | worker mvtp12af-2-wckk (runtime context backstop) | done | Translate hook-generated text (notices in useDesktopWorkspace, feedbackFor fallbacks). Logic compares English notice strings today (WorkspaceFeedback), so switch those to codes first. Parent read the consumer diffs, reran npm test 673 pass + build, and checked mechanically that every removed English literal still exists in en.json. Risk: none. Commit: 3e204aa.
 T5 | S1,S2 | parent | pending | Docs (README language note), full check, es completeness test.
 
 ## Log

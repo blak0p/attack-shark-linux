@@ -1,5 +1,7 @@
 import type { WorkspaceModel } from "../desktop-contract";
 import { useTranslation } from "react-i18next";
+import { libraryNoticeKeys } from "../hooks/useMacroLibrary";
+import { workspaceNoticeKeys } from "../hooks/useDesktopWorkspace";
 import { OperationFeedback, settingsResult } from "./OperationFeedback";
 
 export function WorkspaceFeedback({ model, library, feedbackFor, retries, initializing = false, profileBusy = false }: {
@@ -23,7 +25,7 @@ export function WorkspaceFeedback({ model, library, feedbackFor, retries, initia
   if (Object.keys(appliedDrafts).length > 0 && remap?.MacroProgress && (remap.MacroProgress.Assignment > 0 || remap.MacroProgress.Upload > 0) && remap.Firmware === "success" && draftsMatch) remapResult.success = t("feedback.sent");
   if (model.remapError) remapResult.error = feedbackFor(model.remapError);
   if (remap?.Firmware === "failed" && remap.MacroProgress) remapResult.error = `${remapResult.error ?? t("feedback.uploadFailed")} ${t("feedback.devicePartial")}`;
-  const resetError = notice.startsWith("Factory reset failed:") || notice.startsWith("Device selection failed;");
+  const resetError = notice.startsWith(t(workspaceNoticeKeys.factoryResetFailedPrefix)) || notice.startsWith(t(workspaceNoticeKeys.deviceSelectionFailedPrefix));
   return <OperationFeedback
     scope={JSON.stringify(model.inventory?.Selected ?? null)}
     quiet={profileBusy}
@@ -37,11 +39,11 @@ export function WorkspaceFeedback({ model, library, feedbackFor, retries, initia
       settingsResult("lighting", t("feedback.labels.lighting"), lighting, feedbackFor),
       remapResult,
       { id: "library", label: t("feedback.labels.macros"), version: library.notice, error: library.error,
-        success: library.notice === "Saved to library. No device changes made." ? t("feedback.saved")
-          : library.notice === "Imported as a new local macro. No device changes made." ? t("feedback.imported")
-          : library.notice === "Macro deleted from library." ? t("feedback.deleted") : undefined },
+        success: library.notice === t(libraryNoticeKeys.saved) ? t("feedback.saved")
+          : library.notice === t(libraryNoticeKeys.imported) ? t("feedback.imported")
+          : library.notice === t(libraryNoticeKeys.deleted) ? t("feedback.deleted") : undefined },
       { id: "reset", label: t("feedback.labels.device"), version: notice, error: resetError ? notice : undefined,
-        success: notice === "Factory reset completed." ? t("feedback.reset") : undefined },
+        success: notice === t(workspaceNoticeKeys.factoryResetCompleted) ? t("feedback.reset") : undefined },
     ]}
   />;
 }
