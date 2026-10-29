@@ -7,12 +7,15 @@ S1. "quiero traducir la app a varios idiomas"
 S2. "ingles y español que son los mas usados"
 S3. English is the base and fallback language; Spanish is the second locale; default follows the system language, manual override persists.
 S4. Existing tests keep passing with English as the default test language.
+S5. English UI text stays byte-identical to today (existing tests pin it); never change English wording, plurals, or punctuation while migrating. Pin any oddity instead of fixing it.
+S6. Conventions: components call `const { t } = useTranslation()` (from "react-i18next") before any early return; module-level helpers use `i18n.t` (import { i18n } from the i18n module). Keys live in frontend/src/i18n/locales/en.json and es.json with identical key sets (plural suffixes _one/_other, plus _many for Spanish, are the only allowed difference). Do not translate backend/user data (profile names, game names, executable names, codes). Logic that compares against English strings keeps comparing the English source; only displayed output is translated. Spanish uses Rioplatense voseo for instructions to the user (e.g. "Elegí", "Reintentá").
+S7. Each migrated area gets a Spanish rendering test (see frontend/src/components/Translated.test.tsx for the pattern: setLanguage("es") in beforeEach, setLanguage("en") in afterEach).
 
 ## Tasks
 T1 | S1,S2,S3 | parent | done | i18n infrastructure (i18next init, en/es JSON, language detection + persistence, selector in TopBar), with tests. Tests: 660 pass, build ok. Commit: 310304f.
 T2 | S1,S2,S4 | parent | done | Migrate App, workspace, feedback, updates components to t(). Tests: 663 pass, build ok (incl. Spanish rendering test). Commit: d1779c8.
 T3 | S1,S2,S4 | parent | done | Migrate panels (DPI, polling, lighting, power, sleep, reset, features, device status). Tests: 665 pass, build ok. Commit: 0092d26.
-T4 | S1,S2,S4 | parent | pending | Migrate ButtonRemap, MacroManager, Profiles, Games panels.
+T4 | S1,S2,S4,S5,S6,S7 | parent (remap, macros) + worker (profiles, games) | in progress | Migrate ButtonRemap (389bdca), MacroManager (65d1202), Profiles and Games panels (worker, runtime context backstop).
 T6 | S1,S2 | parent | pending | Translate hook-generated text (notices in useDesktopWorkspace, feedbackFor fallbacks). Logic compares English notice strings today (WorkspaceFeedback), so switch those to codes first.
 T5 | S1,S2 | parent | pending | Docs (README language note), full check, es completeness test.
 
