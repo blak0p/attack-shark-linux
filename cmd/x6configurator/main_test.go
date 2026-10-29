@@ -126,7 +126,7 @@ func TestAuthenticatedStartupConfigurationOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, startup, ok := strings.Cut(string(contents), "func startWails() error {")
+	_, startup, ok := strings.Cut(string(contents), "func startDesktop(trayMode bool) error {")
 	if !ok {
 		t.Fatal("missing startup")
 	}

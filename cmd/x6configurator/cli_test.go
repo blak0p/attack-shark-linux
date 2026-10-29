@@ -123,3 +123,30 @@ func TestCLIProfileWithoutLauncherIsAFailureNotUsage(t *testing.T) {
 		t.Fatalf("exit = %d, want %d", got, exitFailure)
 	}
 }
+
+func TestRunCLITrayFlagStartsDesktopInTrayModeOnly(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantExit     int
+		wantTrayRuns int
+	}{
+		{name: "exact --tray", args: []string{"--tray"}, wantExit: 0, wantTrayRuns: 1},
+		{name: "extra argument is rejected", args: []string{"--tray", "x"}, wantExit: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			windowed, tray := 0, 0
+			got := runCLI(tt.args, cliDependencies{
+				startWails: func() error { windowed++; return nil },
+				startTray:  func() error { tray++; return nil },
+			})
+			if got != tt.wantExit || tray != tt.wantTrayRuns || windowed != 0 {
+				t.Fatalf("runCLI(%q) = exit %d, tray %d, windowed %d", tt.args, got, tray, windowed)
+			}
+		})
+	}
+	if got := runCLI([]string{"--tray"}, cliDependencies{startTray: func() error { return errors.New("boom") }}); got != 1 {
+		t.Fatalf("a tray start failure must exit 1, got %d", got)
+	}
+}
