@@ -15,8 +15,8 @@ const profiles = {
   Profiles: [{ ID: A, Name: 'Automatic profile', CreatedAt: '' }, { ID: B, Name: 'FPS 800 DPI', CreatedAt: '' }, { ID: C, Name: 'macro', CreatedAt: '' }],
   ActiveID: B, Notice: '', Error: { Code: '' }, Applied: false,
 };
-const snap = (enabled: boolean, rules: WatcherRule[], code = ''): WatcherSettingsSnapshot =>
-  ({ Enabled: enabled, Rules: rules, Error: { Code: code } });
+const snap = (enabled: boolean, rules: WatcherRule[], code = '', tray = false): WatcherSettingsSnapshot =>
+  ({ Enabled: enabled, Rules: rules, Tray: tray, Error: { Code: code } });
 const rules3: WatcherRule[] = [{ Executable: 'cs2', Folder: '', Name: '', ProfileID: B }, { Executable: 'Hades.exe', Folder: '', Name: '', ProfileID: C }, { Executable: 'eldenring.exe', Folder: '', Name: '', ProfileID: A }];
 const folderRule: WatcherRule = { Executable: '', Folder: '/games/Terraria', Name: 'Terraria', ProfileID: C };
 const catalog: InstalledGame[] = [
@@ -406,4 +406,145 @@ it('falls back to a manual copy hint when the clipboard is unavailable', async (
   fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
   expect(await screen.findByText('Press Ctrl+C to copy the selected command.')).toBeVisible();
   expect(screen.queryByText('Copied to the clipboard.')).not.toBeInTheDocument();
+});
+
+const trayName = 'Keep running in the tray';
+const trayHelp = 'When you close the window, the app keeps running in the system tray so the watcher stays active. Quit it from the tray menu.';
+function trayFixture(tray: boolean) {
+  const s = fixture(snap(true, rules3, '', tray));
+  let stored = tray;
+  s.SetWatcherSettings.mockImplementation(async (enabled: boolean, rules: WatcherRule[]) => snap(enabled, rules, '', stored));
+  const SetTrayEnabled = vi.fn(async (value: boolean) => { stored = value; return snap(true, rules3, '', value); });
+  return Object.assign(s, { SetTrayEnabled });
+}
+
+it('shows the tray row with the stored value and helper text below the watcher switch', async () => {
+  for (const stored of [true, false]) {
+    cleanup();
+    await show(trayFixture(stored) as never);
+    const box = screen.getByRole('checkbox', { name: trayName });
+    if (stored) expect(box).toBeChecked(); else expect(box).not.toBeChecked();
+    expect(screen.getByText(trayName, { selector: 'strong' })).toBeVisible();
+    expect(screen.getByText(trayHelp)).toBeVisible();
+    const first = screen.getByRole('checkbox', { name: 'Switch profile automatically' });
+    expect(first.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});
+
+it('toggling the tray calls SetTrayEnabled with the exact boolean and renders the returned snapshot', async () => {
+  const s = trayFixture(false);
+  await show(s as never);
+  fireEvent.click(screen.getByRole('checkbox', { name: trayName }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: trayName })).toBeChecked());
+  expect(s.SetTrayEnabled).toHaveBeenCalledOnce();
+  expect(s.SetTrayEnabled).toHaveBeenCalledWith(true);
+  expect(s.SetWatcherSettings).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('checkbox', { name: trayName }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: trayName })).not.toBeChecked());
+  expect(s.SetTrayEnabled).toHaveBeenLastCalledWith(false);
+  expect(s.SetWatcherSettings).not.toHaveBeenCalled();
+  expect(exes()).toEqual(['cs2', 'Hades.exe', 'eldenring.exe']);
+});
+
+it.each([
+  ['invalid_watcher_settings', 'That rule is not valid. Use the executable name only, without a path.'],
+  ['watcher_unavailable', 'Automatic switching is not available.'],
+])('a tray error (%s) keeps the stored value and shows the alert', async (code, text) => {
+  const s = trayFixture(false);
+  s.SetTrayEnabled.mockResolvedValueOnce(snap(true, rules3, code, false));
+  await show(s as never);
+  fireEvent.click(screen.getByRole('checkbox', { name: trayName }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(text);
+  expect(screen.getByRole('checkbox', { name: trayName })).not.toBeChecked();
+  expect(s.SetWatcherSettings).not.toHaveBeenCalled();
+});
+
+it('a rejected tray call shows the unavailable alert and keeps the stored value', async () => {
+  const s = trayFixture(true);
+  s.SetTrayEnabled.mockRejectedValueOnce(new Error('boom'));
+  await show(s as never);
+  fireEvent.click(screen.getByRole('checkbox', { name: trayName }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Automatic switching is not available.');
+  expect(screen.getByRole('checkbox', { name: trayName })).toBeChecked();
+});
+
+it('hides the tray row when the service has no SetTrayEnabled', async () => {
+  await show();
+  expect(screen.queryByRole('checkbox', { name: trayName })).not.toBeInTheDocument();
+  expect(screen.queryByText(trayHelp)).not.toBeInTheDocument();
+});
+
+it('rule edits after toggling the tray still send the full rules list', async () => {
+  const s = trayFixture(false);
+  await show(s as never);
+  fireEvent.click(screen.getByRole('checkbox', { name: trayName }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: trayName })).toBeChecked());
+  fireEvent.click(screen.getByRole('button', { name: 'Move cs2 down' }));
+  await waitFor(() => expect(s.SetWatcherSettings).toHaveBeenCalledOnce());
+  expect(lastSet(s)).toEqual([true, [rules3[1], rules3[0], rules3[2]]]);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: trayName })).toBeChecked());
+});
+
+const loginName = 'Start in the tray when I log in';
+const loginHelp = 'Starts the app in the system tray when you log in. If the tray switch above is off, the window opens instead.';
+const auto = (enabled: boolean, code = '') => ({ Enabled: enabled, Error: { Code: code } });
+function loginFixture(stored: boolean) {
+  const s = fixture();
+  let value = stored;
+  const GetAutostart = vi.fn(async () => auto(value));
+  const SetAutostartEnabled = vi.fn(async (next: boolean) => { value = next; return auto(next); });
+  return Object.assign(s, { GetAutostart, SetAutostartEnabled });
+}
+
+it('shows the login start row with the stored value and helper text below the tray switch', async () => {
+  for (const stored of [true, false]) {
+    cleanup();
+    await show(Object.assign(loginFixture(stored), { SetTrayEnabled: vi.fn() }) as never);
+    const box = await screen.findByRole('checkbox', { name: loginName });
+    await waitFor(() => (stored ? expect(box).toBeChecked() : expect(box).not.toBeChecked()));
+    expect(screen.getByText(loginName, { selector: 'strong' })).toBeVisible();
+    expect(screen.getByText(loginHelp)).toBeVisible();
+    const tray = screen.getByRole('checkbox', { name: 'Keep running in the tray' });
+    expect(tray.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});
+
+it('toggling the login start sends the exact boolean and renders the returned state', async () => {
+  const s = loginFixture(false);
+  await show(s as never);
+  const box = await screen.findByRole('checkbox', { name: loginName });
+  fireEvent.click(box);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: loginName })).toBeChecked());
+  expect(s.SetAutostartEnabled).toHaveBeenCalledOnce();
+  expect(s.SetAutostartEnabled).toHaveBeenCalledWith(true);
+  fireEvent.click(screen.getByRole('checkbox', { name: loginName }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: loginName })).not.toBeChecked());
+  expect(s.SetAutostartEnabled).toHaveBeenLastCalledWith(false);
+  expect(s.SetWatcherSettings).not.toHaveBeenCalled();
+});
+
+it('a login start error keeps the stored value and shows the alert', async () => {
+  const s = loginFixture(false);
+  s.SetAutostartEnabled.mockResolvedValueOnce(auto(false, 'autostart_unavailable'));
+  await show(s as never);
+  fireEvent.click(await screen.findByRole('checkbox', { name: loginName }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not change the start at login.');
+  expect(screen.getByRole('checkbox', { name: loginName })).not.toBeChecked();
+});
+
+it('a rejected login start call shows the alert and keeps the stored value', async () => {
+  const s = loginFixture(true);
+  s.SetAutostartEnabled.mockRejectedValueOnce(new Error('boom'));
+  await show(s as never);
+  const box = await screen.findByRole('checkbox', { name: loginName });
+  await waitFor(() => expect(box).toBeChecked());
+  fireEvent.click(box);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not change the start at login.');
+  expect(screen.getByRole('checkbox', { name: loginName })).toBeChecked();
+});
+
+it('hides the login start row when the service has no autostart methods', async () => {
+  await show();
+  expect(screen.queryByRole('checkbox', { name: loginName })).not.toBeInTheDocument();
+  expect(screen.queryByText(loginHelp)).not.toBeInTheDocument();
 });

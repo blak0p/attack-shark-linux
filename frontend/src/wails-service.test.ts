@@ -77,8 +77,18 @@ describe("desktopService", () => {
   });
   it.each([
     ['GetWatcherSettings', []], ['SetWatcherSettings', [true, [{ Executable: 'cs2', ProfileID: 'a'.repeat(32) }]]],
+    ['SetTrayEnabled', [true]], ['SetTrayEnabled', [false]],
   ] as const)('forwards watcher method %s and preserves outcomes and rejections', async (method, args) => {
-    const outcome = { Enabled: true, Rules: [], Error: { Code: '' } };
+    const outcome = { Enabled: true, Rules: [], Tray: false, Error: { Code: '' } };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    const invoke = desktopService[method] as (...values: unknown[]) => Promise<unknown>;
+    expect(await invoke(...args)).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(invoke(...args)).rejects.toBe(failure);
+  });
+  it.each([['GetAutostart', []], ['SetAutostartEnabled', [true]], ['SetAutostartEnabled', [false]]] as const)('forwards autostart method %s and preserves outcomes and rejections', async (method, args) => {
+    const outcome = { Enabled: true, Error: { Code: '' } };
     runtime.Call.ByName.mockResolvedValueOnce(outcome);
     const invoke = desktopService[method] as (...values: unknown[]) => Promise<unknown>;
     expect(await invoke(...args)).toBe(outcome);

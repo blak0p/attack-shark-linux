@@ -278,3 +278,55 @@ func TestWatcherStoreFolderRuleFileOmitsExecutableKey(t *testing.T) {
 		t.Fatalf("folder rule wrote executable key: %s", contents)
 	}
 }
+
+func TestWatcherStoreOldFileLoadsWithTrayFalseAndResavesIdentical(t *testing.T) {
+	old := `{"enabled":true,"rules":[{"executable":"game.exe","profile_id":"` + hexA + `"}]}`
+	path := filepath.Join(t.TempDir(), "watcher-v1.json")
+	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewWatcherStore(path)
+	got, err := store.Load()
+	if err != nil || got.Tray {
+		t.Fatalf("load = %#v, %v", got, err)
+	}
+	if err := store.Save(got); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != old {
+		t.Fatalf("saved = %s", after)
+	}
+}
+
+func TestWatcherStoreTrayRoundTripsAndIsWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "watcher-v1.json")
+	store := NewWatcherStore(path)
+	want := WatcherSettings{Enabled: true, Tray: true, Rules: []WatcherRule{{Executable: "game.exe", ProfileID: hexA}}}
+	if err := store.Save(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("load = %#v, %v", got, err)
+	}
+	contents, _ := os.ReadFile(path)
+	if !strings.Contains(string(contents), `"tray":true`) {
+		t.Fatalf("file = %s", contents)
+	}
+}
+
+func TestWatcherStoreRejectedSaveWithTrayLeavesFileUntouched(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "watcher-v1.json")
+	store := NewWatcherStore(path)
+	if err := store.Save(WatcherSettings{Enabled: true, Rules: []WatcherRule{{Executable: "a", ProfileID: hexA}}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	err := store.Save(WatcherSettings{Tray: true, Rules: []WatcherRule{{Executable: "a/b", ProfileID: hexA}}})
+	if !errors.Is(err, ErrInvalidWatcherSettings) {
+		t.Fatalf("err = %v", err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatalf("file changed: %s", after)
+	}
+}

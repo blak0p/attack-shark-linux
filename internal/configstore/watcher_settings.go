@@ -38,6 +38,7 @@ type WatcherRule struct {
 // WatcherSettings is the opt-in process watcher configuration.
 type WatcherSettings struct {
 	Enabled bool          `json:"enabled"`
+	Tray    bool          `json:"tray,omitempty"`
 	Rules   []WatcherRule `json:"rules"`
 }
 
@@ -121,7 +122,7 @@ func normalizeWatcherSettings(in WatcherSettings) (WatcherSettings, error) {
 	if len(in.Rules) > maxWatcherRules {
 		return WatcherSettings{}, fmt.Errorf("%w: more than %d rules", ErrInvalidWatcherSettings, maxWatcherRules)
 	}
-	out := WatcherSettings{Enabled: in.Enabled, Rules: make([]WatcherRule, 0, len(in.Rules))}
+	out := WatcherSettings{Enabled: in.Enabled, Tray: in.Tray, Rules: make([]WatcherRule, 0, len(in.Rules))}
 	seenExecutable := make(map[string]bool, len(in.Rules))
 	seenFolder := make(map[string]bool, len(in.Rules))
 	for i, rule := range in.Rules {

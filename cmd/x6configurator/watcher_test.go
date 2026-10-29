@@ -203,3 +203,35 @@ func TestWatcherControllerPassesFolderToProcwatch(t *testing.T) {
 		t.Fatalf("rules = %v, want %v", got, want)
 	}
 }
+
+func TestWatcherControllerTrayOnlyChangeDoesNotRestart(t *testing.T) {
+	runner := &fakeRunner{}
+	c := newWatcherController(runner.run)
+	defer c.Stop()
+
+	c.Apply(gameSettings)
+	waitFor(t, "run", func() bool { return len(runner.started()) == 1 })
+	withTray := gameSettings
+	withTray.Tray = true
+	c.Apply(withTray)
+	time.Sleep(50 * time.Millisecond)
+
+	if n := len(runner.started()); n != 1 || stopped(runner.started()[0]) {
+		t.Fatalf("%d runs, first stopped=%v; want the original run untouched", n, stopped(runner.started()[0]))
+	}
+}
+
+func TestWatcherControllerRulesChangeWithTrayRestarts(t *testing.T) {
+	runner := &fakeRunner{}
+	c := newWatcherController(runner.run)
+	defer c.Stop()
+
+	c.Apply(gameSettings)
+	waitFor(t, "run", func() bool { return len(runner.started()) == 1 })
+	c.Apply(configstore.WatcherSettings{Enabled: true, Tray: true, Rules: []configstore.WatcherRule{{Executable: "other", ProfileID: idWork}}})
+	waitFor(t, "second run", func() bool { return len(runner.started()) == 2 })
+
+	if !stopped(runner.started()[0]) {
+		t.Fatal("the previous run is still active")
+	}
+}
