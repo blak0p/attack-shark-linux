@@ -1,0 +1,13 @@
+{
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "es": "Español"
+  },
+  "topBar": {
+    "title": "Configuración del mouse",
+    "windowControls": "Controles de ventana",
+    "minimise": "Minimizar ventana",
+    "close": "Cerrar ventana"
+  }
+}
