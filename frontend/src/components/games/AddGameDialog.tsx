@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { i18n } from '../../i18n';
 import type { GamesService, InstalledGame, PickResult, WatcherRule } from '../../desktop-contract';
 import { GnomeSelect } from '../panels/GnomeSelect';
 
-export const gamesErrors: Record<string, string> = {
-  pick_failed: 'The file chooser could not be opened.',
-  games_unavailable: 'The list of installed games is not available.',
-};
+const gamesErrorCodes = ['pick_failed', 'games_unavailable'] as const;
+/** Known error messages in the active language; unknown codes are undefined. */
+export const gamesErrors = Object.fromEntries(gamesErrorCodes.map(code => [code, undefined])) as Record<string, string | undefined>;
+for (const code of gamesErrorCodes) Object.defineProperty(gamesErrors, code, { enumerable: true, get: () => i18n.t(`games.errors.${code}`) });
 
 type Choice = { Name: string; Folder: string; Executable: string };
 type ProfileOption = { value: string; label: string; direct: boolean };
@@ -18,8 +20,10 @@ const byName = (a: InstalledGame, b: InstalledGame) => {
   const x = a.Name.toLowerCase(), y = b.Name.toLowerCase();
   return x < y ? -1 : x > y ? 1 : 0;
 };
-const sources = [['All', 'All'], ['Steam', 'Steam'], ['Heroic', 'Heroic'], ['App', 'Apps']] as const;
-type SourceFilter = typeof sources[number][0];
+const sources = ['All', 'Steam', 'Heroic', 'App'] as const;
+type SourceFilter = typeof sources[number];
+const sourceLabel = (value: SourceFilter) =>
+  value === 'All' ? i18n.t('games.dialog.sourceAll') : value === 'App' ? i18n.t('games.dialog.sourceApp') : value;
 
 export function AddGameDialog({ service, rules, profileOptions, profile, error, onError, onProfile, onAdd, onClose }: {
   service: Partial<GamesService>;
@@ -32,6 +36,7 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
   onAdd(rule: WatcherRule): Promise<boolean>;
   onClose(): void;
 }) {
+  const { t } = useTranslation();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleID = useId();
   const hasCatalog = !!service.ListInstalledGames;
@@ -81,7 +86,7 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
     const next = choice;
     const duplicate = rules.some(rule => (next.Folder !== '' && rule.Folder === next.Folder) ||
       (next.Executable !== '' && rule.Executable === next.Executable));
-    if (duplicate) { onError(`A rule for ${next.Name} already exists.`); return; }
+    if (duplicate) { onError(t('games.errors.duplicateRule', { name: next.Name })); return; }
     setAdding(true);
     try { await onAdd({ Executable: next.Executable, Folder: next.Folder, Name: next.Name, ProfileID: profile }); }
     finally { setAdding(false); }
@@ -103,37 +108,37 @@ export function AddGameDialog({ service, rules, profileOptions, profile, error, 
     onCancel={event => { event.preventDefault(); onClose(); }}
     onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
     <form className="games-dialog-form" onSubmit={event => void submit(event)}>
-      <h2 id={titleID}>Add a game</h2>
+      <h2 id={titleID}>{t('games.dialog.title')}</h2>
       {hasCatalog && <>
         <div className="games-dialog-top">
-          <input type="text" aria-label="Search games" placeholder="Search games" value={query}
+          <input type="text" aria-label={t('games.dialog.search')} placeholder={t('games.dialog.search')} value={query}
             onChange={event => setQuery(event.target.value)} />
-          <div role="group" aria-label="Filter by source" className="games-chips">
-            {sources.map(([value, label]) => <button key={value} type="button" className="games-chip"
-              aria-pressed={source === value} onClick={() => setSource(value)}>{label}</button>)}
+          <div role="group" aria-label={t('games.dialog.filter')} className="games-chips">
+            {sources.map(value => <button key={value} type="button" className="games-chip"
+              aria-pressed={source === value} onClick={() => setSource(value)}>{sourceLabel(value)}</button>)}
           </div>
         </div>
         <div className="games-list">
           {games && (games.length === 0
-            ? <p className="help games-list-empty">No installed games found. Use Browse below.</p>
-            : visible.length === 0 && <p className="help games-list-empty">Nothing matches your search.</p>)}
+            ? <p className="help games-list-empty">{t('games.dialog.none')}</p>
+            : visible.length === 0 && <p className="help games-list-empty">{t('games.dialog.noMatch')}</p>)}
           {visible.length > 0 && <ul className="games-items">{visible.map(item)}</ul>}
         </div>
       </>}
       <div className="games-dialog-bottom">
         {service.PickGameFolder && <div className="games-browse">
-          <button type="button" disabled={picking} onClick={() => void pick()}>Browse for a game folder…</button>
+          <button type="button" disabled={picking} onClick={() => void pick()}>{t('games.dialog.browse')}</button>
         </div>}
-        {choice && <p className="help games-selected">Selected: <strong>{choice.Name}</strong>{' '}
+        {choice && <p className="help games-selected">{t('games.dialog.selected')} <strong>{choice.Name}</strong>{' '}
           <span>{choice.Folder || choice.Executable}</span></p>}
-      <label className="games-dialog-profile"><span>Profile</span>
-        <GnomeSelect aria-label="Profile" value={profile} placeholder="No profiles" options={profileOptions}
+      <label className="games-dialog-profile"><span>{t('games.dialog.profile')}</span>
+        <GnomeSelect aria-label={t('games.dialog.profile')} value={profile} placeholder={t('games.noProfiles')} options={profileOptions}
           disabled={!profileOptions.length} portalTarget={() => dialogRef.current} onChange={onProfile} />
       </label>
       <p className="help games-error" role="alert" hidden={!error}>{error}</p>
       <div className="games-dialog-footer">
-        <button type="button" onClick={onClose}>Cancel</button>
-        <button type="submit" className="primary" disabled={!profileOptions.length || adding || !choice}>Add</button>
+        <button type="button" onClick={onClose}>{t('common.cancel')}</button>
+        <button type="submit" className="primary" disabled={!profileOptions.length || adding || !choice}>{t('games.dialog.add')}</button>
       </div>
       </div>
     </form>
