@@ -36,7 +36,7 @@ describe('Spanish rendering of games', () => {
     expect(screen.getByRole('columnheader', { name: 'Nombre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Subir cs2' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Quitar cs2' })).toHaveTextContent('Quitar');
-    expect(screen.getByText('El perfil de cs2 ya no existe. Elegí otro perfil.')).toBeInTheDocument();
+    expect(screen.getByText('El perfil de cs2 ya no existe. Elige otro perfil.')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('El cambio automático no está disponible.');
     expect(screen.getByRole('button', { name: 'Copiar' })).toBeInTheDocument();
     expect(screen.getByText('Sin la app abierta')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('Spanish rendering of games', () => {
     render(<GamesPanel service={service()} />);
     await screen.findByRole('table');
     fireEvent.click(screen.getByRole('button', { name: 'Agregar un juego' }));
-    expect(await screen.findByText('No se encontraron juegos instalados. Usá Examinar abajo.')).toBeInTheDocument();
+    expect(await screen.findByText('No se encontraron juegos instalados. Usa Examinar abajo.')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Filtrar por origen' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Todos' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apps' })).toBeInTheDocument();
