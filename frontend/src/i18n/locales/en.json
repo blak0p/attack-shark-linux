@@ -128,7 +128,9 @@
     "stale_binding": "Device connection changed. Refresh the device list and select the mouse again before saving."
   },
   "common": {
-    "applying": "Applying…"
+    "applying": "Applying…",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "dpi": {
     "title": "Active DPI stage",
@@ -195,5 +197,85 @@
     "interface": "Interface",
     "battery": "Battery charge",
     "serial": "Serial identifier"
+  },
+  "remap": {
+    "actions": {
+      "off": "Off",
+      "left": "Left",
+      "right": "Right",
+      "middle": "Middle",
+      "forward": "Forward",
+      "backward": "Backward",
+      "double_click": "Double Click",
+      "fire": "Fire",
+      "media_player": "Media Player",
+      "play_pause": "Play/Pause",
+      "stop": "Stop",
+      "previous_track": "Previous Track",
+      "next_track": "Next Track",
+      "volume_up": "Volume Up",
+      "volume_down": "Volume Down",
+      "mute": "Mute",
+      "scroll_up": "Scroll Up",
+      "scroll_down": "Scroll Down",
+      "dpi_cycle": "DPI Cycle",
+      "dpi_plus": "DPI+",
+      "dpi_minus": "DPI−",
+      "browser_calculator": "Calculator",
+      "browser_email": "Email",
+      "browser_forward": "Forward",
+      "browser_backward": "Backward",
+      "browser_stop": "Stop",
+      "browser_my_computer": "My Computer",
+      "browser_refresh": "Refresh",
+      "browser_home": "Home",
+      "browser_search": "Search"
+    },
+    "playback": {
+      "times": "Repeat a set number of times",
+      "toggle": "Repeat until pressed again",
+      "hold": "Repeat while button is held"
+    },
+    "dialog": {
+      "title": "Button {{button}} macro assignment",
+      "savedMacro": "Saved macro",
+      "versionUnavailable": "Saved version unavailable",
+      "choose": "Choose a saved macro",
+      "noneCompatible": "No compatible saved macros",
+      "playbackMode": "Playback mode",
+      "intendedToggle": "Intended behavior: press again to stop. Physical playback verification pending.",
+      "intendedHold": "Intended behavior: repeat while the button is held. Physical playback verification pending.",
+      "repeat": "Repeat (1–255)"
+    },
+    "default": "Default",
+    "groups": {
+      "browser": "Browser",
+      "mouse": "Mouse Controls",
+      "multimedia": "Multimedia",
+      "basic": "Basic"
+    },
+    "macro": "Macro",
+    "libraryUnavailable": "Library unavailable. Retry in Macros.",
+    "someUnsendable": "Some macros cannot be sent. See Macros for details.",
+    "button": "Button {{n}}",
+    "buttonAction": "Button {{n}} action",
+    "summary": "Assignment summary",
+    "summaryLabel": "Remap assignment summary",
+    "summaryItem": "Button {{n}}: {{label}}",
+    "discard": "Discard remap",
+    "apply": "Apply remap",
+    "residualTitle": "Previous macro transport progress retained; playback and device persistence unverified.",
+    "deviceDetails": "Device details",
+    "status": {
+      "label": "Button remapping status",
+      "confirmed": "Remap and macro transport confirmed. Playback and device persistence unverified.",
+      "lastConfirmed": "Last remap and macro transport confirmed; current draft not confirmed. Playback and device persistence unverified.",
+      "stagedUnconfirmed": "Macro assignment staged locally; current draft not confirmed. Playback and device persistence unverified.",
+      "transportFailed": "Macro transport not confirmed; device state may be partial or unknown. Playback and device persistence unverified.",
+      "stagedNoTransport": "Macro assignment staged locally; no transport confirmation. Playback and device persistence unverified.",
+      "applied": "Button remapping applied",
+      "failed": "Button remapping failed",
+      "pending": "Remap draft pending confirmation"
+    }
   }
 }

@@ -128,7 +128,9 @@
     "stale_binding": "La conexión del dispositivo cambió. Actualizá la lista de dispositivos y elegí el mouse otra vez antes de guardar."
   },
   "common": {
-    "applying": "Aplicando…"
+    "applying": "Aplicando…",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar"
   },
   "dpi": {
     "title": "Etapa de DPI activa",
@@ -196,5 +198,85 @@
     "interface": "Interfaz",
     "battery": "Carga de la batería",
     "serial": "Número de serie"
+  },
+  "remap": {
+    "actions": {
+      "off": "Desactivado",
+      "left": "Izquierdo",
+      "right": "Derecho",
+      "middle": "Central",
+      "forward": "Adelante",
+      "backward": "Atrás",
+      "double_click": "Doble clic",
+      "fire": "Disparo",
+      "media_player": "Reproductor multimedia",
+      "play_pause": "Reproducir/Pausar",
+      "stop": "Detener",
+      "previous_track": "Pista anterior",
+      "next_track": "Pista siguiente",
+      "volume_up": "Subir volumen",
+      "volume_down": "Bajar volumen",
+      "mute": "Silenciar",
+      "scroll_up": "Desplazar arriba",
+      "scroll_down": "Desplazar abajo",
+      "dpi_cycle": "Cambiar DPI",
+      "dpi_plus": "DPI+",
+      "dpi_minus": "DPI−",
+      "browser_calculator": "Calculadora",
+      "browser_email": "Correo",
+      "browser_forward": "Adelante",
+      "browser_backward": "Atrás",
+      "browser_stop": "Detener",
+      "browser_my_computer": "Mi PC",
+      "browser_refresh": "Actualizar",
+      "browser_home": "Inicio",
+      "browser_search": "Buscar"
+    },
+    "playback": {
+      "times": "Repetir una cantidad de veces",
+      "toggle": "Repetir hasta volver a presionar",
+      "hold": "Repetir mientras se mantiene el botón"
+    },
+    "dialog": {
+      "title": "Asignación de macro al botón {{button}}",
+      "savedMacro": "Macro guardada",
+      "versionUnavailable": "Versión guardada no disponible",
+      "choose": "Elegí una macro guardada",
+      "noneCompatible": "No hay macros guardadas compatibles",
+      "playbackMode": "Modo de reproducción",
+      "intendedToggle": "Comportamiento previsto: volver a presionar para detener. Falta verificar la reproducción física.",
+      "intendedHold": "Comportamiento previsto: repetir mientras se mantiene el botón. Falta verificar la reproducción física.",
+      "repeat": "Repetir (1–255)"
+    },
+    "default": "Predeterminado",
+    "groups": {
+      "browser": "Navegador",
+      "mouse": "Controles del mouse",
+      "multimedia": "Multimedia",
+      "basic": "Básico"
+    },
+    "macro": "Macro",
+    "libraryUnavailable": "Biblioteca no disponible. Reintentá en Macros.",
+    "someUnsendable": "Algunas macros no se pueden enviar. Mirá los detalles en Macros.",
+    "button": "Botón {{n}}",
+    "buttonAction": "Acción del botón {{n}}",
+    "summary": "Resumen de asignaciones",
+    "summaryLabel": "Resumen de asignaciones de botones",
+    "summaryItem": "Botón {{n}}: {{label}}",
+    "discard": "Descartar cambios",
+    "apply": "Aplicar reasignación",
+    "residualTitle": "Se conserva el progreso previo del envío de macros; la reproducción y la persistencia en el dispositivo no están verificadas.",
+    "deviceDetails": "Detalles del dispositivo",
+    "status": {
+      "label": "Estado de la reasignación de botones",
+      "confirmed": "Reasignación y envío de macros confirmados. La reproducción y la persistencia en el dispositivo no están verificadas.",
+      "lastConfirmed": "Última reasignación y envío de macros confirmados; el borrador actual no está confirmado. La reproducción y la persistencia en el dispositivo no están verificadas.",
+      "stagedUnconfirmed": "Asignación de macro preparada localmente; el borrador actual no está confirmado. La reproducción y la persistencia en el dispositivo no están verificadas.",
+      "transportFailed": "Envío de macros sin confirmar; el estado del dispositivo puede ser parcial o desconocido. La reproducción y la persistencia en el dispositivo no están verificadas.",
+      "stagedNoTransport": "Asignación de macro preparada localmente; sin confirmación de envío. La reproducción y la persistencia en el dispositivo no están verificadas.",
+      "applied": "Reasignación de botones aplicada",
+      "failed": "Falló la reasignación de botones",
+      "pending": "Borrador de reasignación pendiente de confirmación"
+    }
   }
 }

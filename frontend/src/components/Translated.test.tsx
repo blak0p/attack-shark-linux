@@ -51,3 +51,20 @@ describe("Spanish rendering of panels", () => {
     expect(screen.getByRole("button", { name: "Cancelar restablecimiento de fábrica" })).toBeInTheDocument();
   });
 });
+
+describe("Spanish rendering of the remap panel", () => {
+  beforeEach(async () => { window.localStorage.clear(); await setLanguage("es"); });
+  afterEach(async () => { cleanup(); await setLanguage("en"); });
+
+  it("translates headings, action labels, summary and status", async () => {
+    const { ButtonRemapPanel } = await import("./panels/ButtonRemapPanel");
+    const buttons = [{ Button: 1, Action: "left", PreservedDefault: "" }, { Button: 2, Action: null, PreservedDefault: "" }];
+    const remap = { Pending: { Buttons: buttons }, Applied: { Buttons: buttons }, Actions: ["left", "mute"], Firmware: "success", Error: { Code: "" } } as never;
+    render(<ButtonRemapPanel remap={remap} ready onStage={() => {}} />);
+    expect(screen.getByRole("heading", { name: "Reasignación de botones" })).toBeInTheDocument();
+    expect(screen.getByText("Botón 1")).toBeInTheDocument();
+    expect(screen.getAllByText("Izquierdo").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Resumen de asignaciones de botones")).toHaveTextContent("Botón 1: Izquierdo, Botón 2: Predeterminado");
+    expect(screen.getByRole("status", { name: "Estado de la reasignación de botones" })).toHaveTextContent("Reasignación de botones aplicada");
+  });
+});
