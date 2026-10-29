@@ -18,3 +18,4 @@ T5 | S1,S2 | parent | pending | Docs (README language note), full check, es comp
 ## Log
 L1. User request verbatim: "quiero traducir la app a varios idiomas"
 L2. User: "ingles y español que son los mas usados"
+L3. Slice boundary: this feature starts at 8bdc4d4 (feat/profile-process-watcher). The 5706-line count vs origin/main is that branch's earlier commits, not this feature. T1 is its first slice (~250 lines).
