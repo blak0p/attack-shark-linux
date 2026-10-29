@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Window } from "@wailsio/runtime";
 import { useTranslation } from "react-i18next";
+import { LanguageSelect } from "./LanguageSelect";
 
 export function TopBar({
   title,
@@ -21,9 +22,10 @@ export function TopBar({
         <span className="brand-title">{title ?? t("topBar.title")}</span>
         {subtitle && <small>{subtitle}</small>}
       </div>
-      {center && <div className="top-bar-center">{center}</div>}
+      {center && <div className="top-bar-center">{center}<div className="top-bar-language top-bar-language-beside"><LanguageSelect /></div></div>}
       <div className="top-bar-actions">
         <div className="top-bar-children">{children}</div>
+        <div className="top-bar-language top-bar-language-actions"><LanguageSelect /></div>
         <div className="window-controls" aria-label={t("topBar.windowControls")}>
           <button type="button" className="window-control" aria-label={t("topBar.minimise")} onClick={() => { void Window.Minimise(); }}>
             <span aria-hidden="true">−</span>
