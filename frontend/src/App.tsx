@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { WorkspaceViewId } from "./components/workspace/workspace-view-context";
+import { GamesAvailableContext, type WorkspaceViewId } from "./components/workspace/workspace-view-context";
+import { GamesPanel } from "./components/games/GamesPanel";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
 import { useMacroLibrary } from "./hooks/useMacroLibrary";
 import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
@@ -103,6 +104,7 @@ export function App({ service }: { service: DesktopService }) {
 
   const [profileBusy, setProfileBusy] = useState(false);
   const [activeView, setActiveView] = useState<WorkspaceViewId>("performance");
+  const gamesAvailable = !!(service.GetWatcherSettings && service.SetWatcherSettings && service.GetProfiles);
   const unifiedUpdates = !!(service.CheckUnifiedUpdates && service.ApplyUnifiedUpdate);
   const selectedBinding = JSON.stringify(inventory?.Selected ?? null);
   const assignmentAvailable = !!snapshot && ready && !!inventory?.Selected && !inventory.Error.Code &&
@@ -121,12 +123,14 @@ export function App({ service }: { service: DesktopService }) {
   }} />;
 
   if (!snapshot) return (
+    <GamesAvailableContext.Provider value={gamesAvailable}>
     <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
       titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
       connectionStatus={<p className="connection offline">Connecting…</p>}>
       {macroWorkspace}
       <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
     </WorkspaceShell>
+    </GamesAvailableContext.Provider>
   );
 
   const errorCode = inventory?.Error.Code || snapshot.Error.Code;
@@ -202,6 +206,7 @@ export function App({ service }: { service: DesktopService }) {
   );
 
   return (
+    <GamesAvailableContext.Provider value={gamesAvailable}>
     <WorkspaceShell
       activeView={activeView}
       onNavigate={setActiveView}
@@ -426,6 +431,12 @@ export function App({ service }: { service: DesktopService }) {
         )}
       </WorkspaceView>
 
+      {/* 6. Games View */}
+      {gamesAvailable && (
+        <WorkspaceView id="games" title="Games" subtitle="Switch the mouse profile when a game starts and go back when it closes.">
+          <GamesPanel service={service} />
+        </WorkspaceView>
+      )}
       {/* 5. Device View */}
       <WorkspaceView
         id="device"
@@ -481,6 +492,7 @@ export function App({ service }: { service: DesktopService }) {
 
 
     </WorkspaceShell>
+    </GamesAvailableContext.Provider>
   );
 }
 

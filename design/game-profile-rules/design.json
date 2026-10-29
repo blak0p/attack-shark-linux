@@ -1,0 +1,10 @@
+{
+  "title": "Game profile rules",
+  "brief": "Screen where users map a game's executable name to a mouse profile, with a master switch for automatic switching. Used by the process watcher; settings are enabled flag plus an ordered list of {executable, profile} rules.",
+  "feature": "odd/tasks/per-game-profiles.md",
+  "artboards": [
+    { "file": "01-profile-dialog-section.html", "title": "Section inside the profiles dialog", "tradeoff": "Reuses the existing dialog and needs no new navigation; hidden behind the profile menu and gets long as rules grow", "width": 1024, "height": 768 },
+    { "file": "02-games-panel.html", "title": "Dedicated Games panel", "tradeoff": "Easy to find, shows rule priority and reordering; adds a new navigation entry and the most code", "width": 1024, "height": 768 },
+    { "file": "03-sentence-rules.html", "title": "Sentence-style rules", "tradeoff": "Reads like plain language and explains how to find the executable; no explicit priority control and less dense for many rules", "width": 1024, "height": 768 }
+  ]
+}

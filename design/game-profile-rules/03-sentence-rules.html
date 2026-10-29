@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sentence-style rules</title>
+<style>:root{--accent:#1d9e75;--bg:#1e1e1c;--rail:#292a27;--surface:#30312e;--raised:#393a36;--line:#4a4b46;--text:#f2f1ed;--muted:#b6b7b1;--dim:#8b8c86;--ok:#55c590;--danger:#e05f65;--accent-subtle:#244b3e;--accent-on-primary:#09261d;--border-strong:#55564f;--focus-ring:#77dabe;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--radius-md:9px}
+*{box-sizing:border-box}html,body{margin:0}body{width:1024px;height:768px;overflow:hidden;background:var(--surface);color:var(--text);font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Cantarell","Segoe UI",sans-serif}
+button,input,select{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--accent);background:var(--raised)}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-on-primary);border-color:var(--accent);font-weight:600}
+.small{font-size:11px;padding:6px 9px;background:transparent}.danger{color:#f4a5a5}
+.muted{color:var(--muted)}.help{color:var(--muted);font-size:12px;line-height:1.6;margin:0}
+.badge{background:var(--accent-subtle);border-radius:20px;padding:3px 8px;font-size:10px}
+.switch{appearance:none;-webkit-appearance:none;width:38px;height:22px;margin:0;padding:0;border:0;border-radius:20px;background:#676862;position:relative;transition:.18s;cursor:pointer;flex-shrink:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.18s}
+.switch:checked{background:var(--accent)}.switch:checked::after{transform:translateX(16px)}
+header.top{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--space-6);background:var(--bg);border-bottom:1px solid var(--line)}
+header.top h1{font-size:15px;font-weight:600;margin:0}.sel{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.sel select{width:180px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.page{padding:var(--space-6);height:704px;overflow:auto;max-width:760px;margin:0 auto}.page h2{font-size:20px;font-weight:600;margin:0 0 4px}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:var(--space-5);margin-top:var(--space-5)}
+.head{display:flex;justify-content:space-between;align-items:center;gap:16px}.head strong{font-weight:500;display:block}
+.rule{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:14px 0;border-top:1px solid var(--line)}
+.rule:first-of-type{margin-top:var(--space-4)}.rule span.w{color:var(--muted)}
+.rule input{width:190px}.rule select{width:190px}.rule .x{margin-left:auto}
+.rule.bad input{border-color:var(--danger)}.rule .msg{flex-basis:100%;color:var(--danger);font-size:12px}
+details{margin-top:var(--space-4);border-top:1px solid var(--line);padding-top:var(--space-3)}summary{cursor:pointer;color:var(--muted);font-size:13px}
+details ol{color:var(--muted);font-size:12px;line-height:1.7;padding-left:20px;margin:8px 0 0}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--space-4)}
+.preview{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+</style></head><body><header class="top"><h1>Attack Shark X6 Configurator</h1><div class="sel"><span>Profile</span><select aria-label="Active profile"><option>Automatic profile</option><option>FPS 800 DPI</option><option>macro</option></select></div></header><main class="page"><h2>Games</h2><p class="help">Describe it the way you would say it: when this game starts, use that profile.</p>
+<section class="card" aria-labelledby="h"><div class="head"><div><strong id="h">Switch profile automatically</strong><span class="help">Goes back to your previous profile when the game closes.</span></div><input id="m" class="switch" type="checkbox" checked aria-label="Switch profile automatically"></div>
+<div id="r">
+<div class="rule"><span class="w">When</span><input aria-label="Executable name" value="cs2"><span class="w">starts, use</span><select aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" selected>FPS 800 DPI</option><option value="macro" >macro</option></select><button class="small danger x">Remove</button></div>
+<div class="rule"><span class="w">When</span><input aria-label="Executable name" value="Hades.exe"><span class="w">starts, use</span><select aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" selected>macro</option></select><button class="small danger x">Remove</button></div>
+<div class="rule bad"><span class="w">When</span><input aria-label="Executable name" value="cs2" aria-invalid="true" aria-describedby="e3"><span class="w">starts, use</span><select aria-label="Profile"><option value="auto">Automatic profile</option><option value="fps" >FPS 800 DPI</option><option value="macro" >macro</option></select><button class="small danger x">Remove</button><span class="msg" id="e3" role="alert">Another rule already uses cs2. Pick a different executable.</span></div>
+</div>
+<div class="foot"><button id="add">+ Add a game</button><div class="preview"><span class="dot" aria-hidden="true"></span>Watching 3 rules</div></div>
+<details><summary>How do I find the executable name?</summary><ol><li>Open the game’s install folder.</li><li>Copy the name of the program file, such as <code>Hades.exe</code>.</li><li>Type only the name, without the folder path.</li></ol></details></section></main><script>const r=document.getElementById('r'),m=document.getElementById('m');
+r.addEventListener('click',e=>{if(e.target.matches('.x'))e.target.closest('.rule').remove()});
+document.getElementById('add').onclick=()=>{const d=document.createElement('div');d.className='rule';d.innerHTML='<span class="w">When</span><input aria-label="Executable name" placeholder="eldenring.exe"><span class="w">starts, use</span><select aria-label="Profile">'+document.querySelector('select[aria-label=Profile]').innerHTML+'</select><button class="small danger x">Remove</button>';r.append(d);d.querySelector('input').focus()};
+m.addEventListener('change',()=>document.querySelectorAll('.rule input,.rule select,.rule button,#add').forEach(c=>c.disabled=!m.checked));</script></body></html>

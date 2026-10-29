@@ -2,6 +2,7 @@
 @import "./styles/layout.css";
 @import "./styles/controls.css";
 @import "./styles/motion.css";
+@import "./styles/games.css";
 
 :root {
   color-scheme: dark;

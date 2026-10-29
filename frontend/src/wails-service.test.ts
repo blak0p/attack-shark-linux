@@ -75,6 +75,28 @@ describe("desktopService", () => {
     const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
     await expect(invoke(...args)).rejects.toBe(failure);
   });
+  it.each([
+    ['GetWatcherSettings', []], ['SetWatcherSettings', [true, [{ Executable: 'cs2', ProfileID: 'a'.repeat(32) }]]],
+  ] as const)('forwards watcher method %s and preserves outcomes and rejections', async (method, args) => {
+    const outcome = { Enabled: true, Rules: [], Error: { Code: '' } };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    const invoke = desktopService[method] as (...values: unknown[]) => Promise<unknown>;
+    expect(await invoke(...args)).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(invoke(...args)).rejects.toBe(failure);
+  });
+  it.each(['ListInstalledGames', 'PickGameFolder', 'GetLauncherPath'] as const)('forwards games method %s with no arguments and preserves outcomes and rejections', async method => {
+    const outcome = { Games: [], Path: '', Error: { Code: '' } };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    expect(await desktopService[method]()).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(desktopService[method]()).rejects.toBe(failure);
+  });
+  it('no longer exposes PickGameExecutable', () => {
+    expect('PickGameExecutable' in desktopService).toBe(false);
+  });
   it("does not check or apply updates merely by constructing the adapter", () => {
     for (const name of ["CheckUnifiedUpdates", "ApplyUnifiedUpdate", "CheckForUpdate", "ApplyVerifiedUpdate"] as const) {
       expect(bindings[name]).not.toHaveBeenCalled();
