@@ -1,30 +1,46 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
-test("language selector switches the interface, persists after a reload and stays reachable", async ({ page }) => {
+const choose = async (page: Page, trigger: string, option: string) => {
+  await page.getByRole("button", { name: trigger, exact: true }).click();
+  await page.getByRole("menuitem", { name: option, exact: true }).click();
+};
+
+test("language selector switches the interface, persists after a reload and never overlaps the top bar", async ({ page }) => {
   await page.goto("/e2e.html");
-  const select = page.getByRole("combobox", { name: "Language" });
-  await expect(select).toHaveValue("en");
+  await expect(page.getByRole("button", { name: "Language", exact: true })).toContainText("English");
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
 
-  await select.selectOption("es");
+  await choose(page, "Language", "Español");
   await expect(page.getByRole("navigation", { name: "Secciones del espacio de trabajo" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Rendimiento", exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
 
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("es");
-  await expect(page.getByRole("heading", { name: "Rendimiento", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Idioma", exact: true })).toContainText("Español");
 
-  for (const width of [1280, 640, 400]) {
+  for (const width of [1280, 900, 850, 640, 541, 540, 400]) {
     await page.setViewportSize({ width, height: 720 });
-    const box = await page.getByRole("combobox", { name: "Idioma" }).boundingBox();
-    expect(box, `selector visible at ${width}px`).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-    expect(box!.y).toBeGreaterThanOrEqual(0);
+    const language = await page.getByRole("button", { name: "Idioma", exact: true }).boundingBox();
+    expect(language, `selector visible at ${width}px`).not.toBeNull();
+    expect(language!.x).toBeGreaterThanOrEqual(0);
+    expect(language!.x + language!.width).toBeLessThanOrEqual(width);
+    const others = [
+      // Class selectors: accessible names change with the language under test.
+      page.locator(".profile-controls"),
+      page.locator(".titlebar-device select"),
+      page.locator(".window-controls"),
+      page.locator(".brand-title"),
+    ];
+    for (const other of others) {
+      const box = await other.boundingBox();
+      if (!box) continue;
+      const apart = language!.x + language!.width <= box.x || box.x + box.width <= language!.x
+        || language!.y + language!.height <= box.y || box.y + box.height <= language!.y;
+      expect(apart, `language selector overlaps a top bar control at ${width}px`).toBe(true);
+    }
   }
 
-  await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
-  await expect(page.getByRole("combobox", { name: "Language" })).toHaveValue("en");
+  await choose(page, "Idioma", "English");
+  await expect(page.getByRole("button", { name: "Language", exact: true })).toContainText("English");
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
 });

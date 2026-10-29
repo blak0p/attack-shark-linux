@@ -11,18 +11,21 @@ describe("LanguageSelect", () => {
   });
   afterEach(cleanup);
 
-  it("lists English and Spanish and shows the active language", () => {
+  it("shows the active language and lists English and Spanish in the themed menu", () => {
     render(<LanguageSelect />);
-    const select = screen.getByRole("combobox", { name: "Language" });
-    expect(select).toHaveValue("en");
-    expect(screen.getByRole("option", { name: "English" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Español" })).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "Language" });
+    expect(trigger).toHaveTextContent("English");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: "English" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Español" })).toBeInTheDocument();
   });
 
   it("switches the interface language and persists it", async () => {
     render(<LanguageSelect />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "es" } });
-    expect(await screen.findByRole("combobox", { name: "Idioma" })).toHaveValue("es");
+    fireEvent.click(screen.getByRole("button", { name: "Language" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Español" }));
+    const trigger = await screen.findByRole("button", { name: "Idioma" });
+    expect(trigger).toHaveTextContent("Español");
     expect(window.localStorage.getItem("x6.language")).toBe("es");
   });
 });

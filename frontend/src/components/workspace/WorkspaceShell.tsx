@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { LanguageSelect } from "./LanguageSelect";
 import { SectionNavigation } from "./SectionNavigation";
 import { TopBar } from "./TopBar";
 import { WorkspaceViewContext, type WorkspaceViewId } from "./workspace-view-context";
@@ -55,7 +54,6 @@ export function WorkspaceShell({
               <span>{t("shell.viaReceiver")}</span>
             </div>
           )}
-          <div className="rail-language"><LanguageSelect /></div>
         </aside>
         <main className="main" data-motion={reducedMotion ? "reduced" : "full"}>
           <WorkspaceViewContext value={{ activeView: currentView }}>
