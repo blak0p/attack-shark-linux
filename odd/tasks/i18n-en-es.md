@@ -11,7 +11,7 @@ S4. Existing tests keep passing with English as the default test language.
 ## Tasks
 T1 | S1,S2,S3 | parent | done | i18n infrastructure (i18next init, en/es JSON, language detection + persistence, selector in TopBar), with tests. Tests: 660 pass, build ok. Commit: 310304f.
 T2 | S1,S2,S4 | parent | done | Migrate App, workspace, feedback, updates components to t(). Tests: 663 pass, build ok (incl. Spanish rendering test). Commit: d1779c8.
-T3 | S1,S2,S4 | parent | pending | Migrate panels (DPI, polling, lighting, power, sleep, reset, features, device status).
+T3 | S1,S2,S4 | parent | done | Migrate panels (DPI, polling, lighting, power, sleep, reset, features, device status). Tests: 665 pass, build ok. Commit: 0092d26.
 T4 | S1,S2,S4 | parent | pending | Migrate ButtonRemap, MacroManager, Profiles, Games panels.
 T6 | S1,S2 | parent | pending | Translate hook-generated text (notices in useDesktopWorkspace, feedbackFor fallbacks). Logic compares English notice strings today (WorkspaceFeedback), so switch those to codes first.
 T5 | S1,S2 | parent | pending | Docs (README language note), full check, es completeness test.

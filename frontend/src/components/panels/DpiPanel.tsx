@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export type DpiStage = {
   index: number;
@@ -35,6 +36,7 @@ export function DpiPanel({
   onStageDPI,
   children,
 }: DpiPanelProps) {
+  const { t } = useTranslation();
   if (children) {
     return (
       <section id="dpi" className="card panel" aria-labelledby="dpi-title">
@@ -50,12 +52,12 @@ export function DpiPanel({
     <article id="dpi" className="card" aria-labelledby="dpi-title">
       <div className="card-head">
         <div>
-          <h2 id="dpi-title">Active DPI stage</h2>
+          <h2 id="dpi-title">{t("dpi.title")}</h2>
           <p className="hint">
             {activeIndex >= 0 ? (
               activeDPI != null ? (
                 <>
-                  Active DPI: {activeDPI}
+                  {t("dpi.active", { dpi: activeDPI })}
                   {activeColor && (
                     <span
                       className="color-swatch"
@@ -64,10 +66,10 @@ export function DpiPanel({
                   )}
                 </>
               ) : (
-                "Active DPI: unknown"
+                t("dpi.unknown")
               )
             ) : (
-              "No active DPI stage"
+              t("dpi.none")
             )}
           </p>
         </div>
@@ -76,7 +78,7 @@ export function DpiPanel({
         </div>
       </div>
 
-      <div className="stages" role="group" aria-label="Active stage">
+      <div className="stages" role="group" aria-label={t("dpi.activeStage")}>
         {displayStages.map(({ index, dpi }) => {
           const isSelected = index === activeIndex;
           const color = colorFor ? colorFor(index) : null;
@@ -86,12 +88,12 @@ export function DpiPanel({
               type="button"
               className={`stage${isSelected ? " selected active" : ""}`}
               aria-pressed={isSelected}
-              aria-label={`Stage ${index + 1}${isSelected ? ", active" : ""}`}
+              aria-label={isSelected ? t("dpi.stageActive", { n: index + 1 }) : t("dpi.stage", { n: index + 1 })}
               disabled={!ready}
               onClick={() => onSelectStage?.(index)}
               style={{ "--dot-color": color ?? "#3b82f6" } as CSSProperties}
             >
-              Stage {index + 1}
+              {t("dpi.stage", { n: index + 1 })}
               <b>{dpi}</b>
             </button>
           );
@@ -104,7 +106,7 @@ export function DpiPanel({
           <input
             type="range"
             className="stage-slider"
-            aria-label={`Stage ${activeStage.index + 1} DPI`}
+            aria-label={t("dpi.stageDpi", { n: activeStage.index + 1 })}
             min={DPI_MIN}
             max={DPI_MAX}
             step={DPI_STEP}

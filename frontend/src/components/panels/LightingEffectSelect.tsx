@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type { LightingEffect } from "../../desktop-contract";
 
 type LightingEffectSelectProps = {
@@ -9,6 +10,7 @@ type LightingEffectSelectProps = {
 };
 
 export function LightingEffectSelect({ effects, value, disabled = false, onChange }: LightingEffectSelectProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
   const selectedIndex = effects.findIndex((effect) => effect.Mode === value);
@@ -77,7 +79,7 @@ export function LightingEffectSelect({ effects, value, disabled = false, onChang
         type="button"
         className="lighting-effect-trigger"
         role="combobox"
-        aria-label="Lighting effect"
+        aria-label={t("lighting.effectSelect")}
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-controls={listboxId}
@@ -89,10 +91,10 @@ export function LightingEffectSelect({ effects, value, disabled = false, onChang
         }}
         onKeyDown={handleKeyDown}
       >
-        {selectedEffect?.Label ?? "Select effect"}
+        {selectedEffect?.Label ?? t("lighting.selectEffect")}
       </button>
       {open && (
-        <div className="lighting-effect-listbox" id={listboxId} role="listbox" aria-label="Lighting effect">
+        <div className="lighting-effect-listbox" id={listboxId} role="listbox" aria-label={t("lighting.effectSelect")}>
           {effects.map((effect, index) => (
             <div
               className={`lighting-effect-option${index === activeIndex ? " is-active" : ""}`}
