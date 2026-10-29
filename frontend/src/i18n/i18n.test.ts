@@ -12,6 +12,9 @@ function keys(value: Record<string, unknown>, prefix = ""): string[] {
   );
 }
 
+// Languages need different plural categories (one/many/other); compare the base keys only.
+const withoutPlural = (list: string[]) => [...new Set(list.map((key) => key.replace(/_(zero|one|two|few|many|other)$/, "")))].sort();
+
 describe("i18n", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -43,6 +46,6 @@ describe("i18n", () => {
   });
 
   it("keeps Spanish complete against the English base", () => {
-    expect(keys(es).sort()).toEqual(keys(en).sort());
+    expect(withoutPlural(keys(es))).toEqual(withoutPlural(keys(en)));
   });
 });

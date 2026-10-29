@@ -118,11 +118,82 @@
     "color": "Lighting color",
     "speed": "{{label}} speed",
     "unavailableColor": "Unavailable color {{index}}",
-    "effectControlled": "Effect controlled"
+    "effectControlled": "Effect controlled",
+    "effectSelect": "Lighting effect",
+    "selectEffect": "Select effect"
   },
   "errors": {
     "permission_denied": "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse.",
     "device_disconnected": "Mouse disconnected. Reconnect the receiver or mouse, then try again.",
     "stale_binding": "Device connection changed. Refresh the device list and select the mouse again before saving."
+  },
+  "common": {
+    "applying": "Applying…"
+  },
+  "dpi": {
+    "title": "Active DPI stage",
+    "active": "Active DPI: {{dpi}}",
+    "unknown": "Active DPI: unknown",
+    "none": "No active DPI stage",
+    "activeStage": "Active stage",
+    "stage": "Stage {{n}}",
+    "stageActive": "Stage {{n}}, active",
+    "stageDpi": "Stage {{n}} DPI"
+  },
+  "polling": {
+    "title": "Polling rate",
+    "status": "Polling status",
+    "failed": "Polling change failed",
+    "applied": "Applied {{rate}} Hz",
+    "notSaved": "Polling preference was not saved.",
+    "retry": "Retry polling persistence"
+  },
+  "power": {
+    "title": "Key response time",
+    "value": "Key response time value",
+    "status": "Key response time status",
+    "failed": "Key response time change failed",
+    "applied": "Applied {{ms}} ms",
+    "notSaved": "Key response time was not saved.",
+    "retry": "Retry key response persistence"
+  },
+  "sleep": {
+    "title": "Normal sleep",
+    "after_one": "Sleep after: {{count}} minute",
+    "after_other": "Sleep after: {{count}} minutes",
+    "duration": "Normal sleep duration",
+    "max": "60 minutes",
+    "status": "Normal sleep status",
+    "failed": "Normal sleep application failed",
+    "applied": "Applied {{minutes}} minutes",
+    "notSaved": "Sleep preference was not saved.",
+    "retry": "Retry sleep persistence"
+  },
+  "reset": {
+    "title": "Reset to factory",
+    "hint": "Restore mouse defaults.",
+    "confirmLabel": "Confirm factory reset",
+    "warning": "Restore mouse defaults and clear local profiles after acknowledgement. Onboard macros may remain.",
+    "details": "Reset details",
+    "detailsBody": "This resets DPI (active stage 2), lighting (Static DPI), sleep (0.5 minutes), key response time (4 ms), polling (1000 Hz), and default button remapping. Local profiles are cleared only after all four supported lanes acknowledge; onboard macro deletion and complete device memory erasure are unverified.",
+    "cancel": "Cancel factory reset",
+    "confirm": "Confirm factory reset"
+  },
+  "features": {
+    "title": "Mouse features",
+    "angleSnap": "Angle snap",
+    "angleSnapHint": "Straighten movement",
+    "ripple": "Ripple control",
+    "rippleHint": "Reduce jitter",
+    "lod": "Lift-off distance",
+    "lodHint": "Tracking height"
+  },
+  "status": {
+    "title": "Status",
+    "version": "Application version",
+    "devBuild": "development build",
+    "interface": "Interface",
+    "battery": "Battery charge",
+    "serial": "Serial identifier"
   }
 }

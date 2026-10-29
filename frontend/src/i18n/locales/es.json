@@ -118,11 +118,83 @@
     "color": "Color de iluminación",
     "speed": "Velocidad de {{label}}",
     "unavailableColor": "Color {{index}} no disponible",
-    "effectControlled": "Controlado por el efecto"
+    "effectControlled": "Controlado por el efecto",
+    "effectSelect": "Efecto de iluminación",
+    "selectEffect": "Elegí un efecto"
   },
   "errors": {
     "permission_denied": "Permiso denegado. Configurá el acceso udev para el dispositivo hidraw y reconectá el mouse.",
     "device_disconnected": "Mouse desconectado. Reconectá el receptor o el mouse y probá de nuevo.",
     "stale_binding": "La conexión del dispositivo cambió. Actualizá la lista de dispositivos y elegí el mouse otra vez antes de guardar."
+  },
+  "common": {
+    "applying": "Aplicando…"
+  },
+  "dpi": {
+    "title": "Etapa de DPI activa",
+    "active": "DPI activo: {{dpi}}",
+    "unknown": "DPI activo: desconocido",
+    "none": "Sin etapa de DPI activa",
+    "activeStage": "Etapa activa",
+    "stage": "Etapa {{n}}",
+    "stageActive": "Etapa {{n}}, activa",
+    "stageDpi": "DPI de la etapa {{n}}"
+  },
+  "polling": {
+    "title": "Frecuencia de sondeo",
+    "status": "Estado del sondeo",
+    "failed": "Falló el cambio de frecuencia de sondeo",
+    "applied": "Aplicado {{rate}} Hz",
+    "notSaved": "No se guardó la preferencia de sondeo.",
+    "retry": "Reintentar guardado del sondeo"
+  },
+  "power": {
+    "title": "Tiempo de respuesta de teclas",
+    "value": "Valor del tiempo de respuesta de teclas",
+    "status": "Estado del tiempo de respuesta de teclas",
+    "failed": "Falló el cambio del tiempo de respuesta de teclas",
+    "applied": "Aplicado {{ms}} ms",
+    "notSaved": "No se guardó el tiempo de respuesta de teclas.",
+    "retry": "Reintentar guardado del tiempo de respuesta"
+  },
+  "sleep": {
+    "title": "Suspensión normal",
+    "after_one": "Suspender después de: {{count}} minuto",
+    "after_many": "Suspender después de: {{count}} minutos",
+    "after_other": "Suspender después de: {{count}} minutos",
+    "duration": "Duración de la suspensión normal",
+    "max": "60 minutos",
+    "status": "Estado de la suspensión normal",
+    "failed": "Falló la aplicación de la suspensión normal",
+    "applied": "Aplicado {{minutes}} minutos",
+    "notSaved": "No se guardó la preferencia de suspensión.",
+    "retry": "Reintentar guardado de la suspensión"
+  },
+  "reset": {
+    "title": "Restablecer de fábrica",
+    "hint": "Restaura los valores predeterminados del mouse.",
+    "confirmLabel": "Confirmar restablecimiento de fábrica",
+    "warning": "Restaura los valores predeterminados del mouse y borra los perfiles locales tras la confirmación del dispositivo. Pueden quedar macros en el mouse.",
+    "details": "Detalles del restablecimiento",
+    "detailsBody": "Esto restablece el DPI (etapa activa 2), la iluminación (DPI estático), la suspensión (0,5 minutos), el tiempo de respuesta de teclas (4 ms), el sondeo (1000 Hz) y la reasignación de botones predeterminada. Los perfiles locales se borran solo cuando los cuatro canales compatibles confirman; el borrado de las macros del mouse y el borrado completo de su memoria no están verificados.",
+    "cancel": "Cancelar restablecimiento de fábrica",
+    "confirm": "Confirmar restablecimiento de fábrica"
+  },
+  "features": {
+    "title": "Funciones del mouse",
+    "angleSnap": "Ajuste de ángulo",
+    "angleSnapHint": "Endereza el movimiento",
+    "ripple": "Control de ondulación",
+    "rippleHint": "Reduce el temblor",
+    "lod": "Distancia de despegue",
+    "lodHint": "Altura de seguimiento"
+  },
+  "status": {
+    "title": "Estado",
+    "version": "Versión de la aplicación",
+    "devBuild": "compilación de desarrollo",
+    "interface": "Interfaz",
+    "battery": "Carga de la batería",
+    "serial": "Número de serie"
   }
 }

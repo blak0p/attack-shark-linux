@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { Inventory } from "../../desktop-contract";
 
 export type DeviceStatusPanelProps = {
@@ -22,6 +23,7 @@ export function DeviceStatusPanel({
   feedbackFor,
   children,
 }: DeviceStatusPanelProps) {
+  const { t } = useTranslation();
   if (children) {
     return (
       <article className="card device-status">
@@ -32,33 +34,33 @@ export function DeviceStatusPanel({
 
   return (
     <article className="card device-status">
-      <h2>Status</h2>
+      <h2>{t("status.title")}</h2>
       <div className="rows">
         <div className="row">
           <label>
-            <strong>Application version</strong>
+            <strong>{t("status.version")}</strong>
           </label>
-          <b>{applicationVersion?.trim() || "development build"}</b>
+          <b>{applicationVersion?.trim() || t("status.devBuild")}</b>
         </div>
         <div className="row">
           <label>
-            <strong>Interface</strong>
+            <strong>{t("status.interface")}</strong>
           </label>
-          <b>{connectionType || "unavailable"}</b>
-        </div>
-
-        <div className="row">
-          <label>
-            <strong>Battery charge</strong>
-          </label>
-          <b>{battery != null ? `${battery}%` : "unavailable"}</b>
+          <b>{connectionType || t("app.unavailable")}</b>
         </div>
 
         <div className="row">
           <label>
-            <strong>Serial identifier</strong>
+            <strong>{t("status.battery")}</strong>
           </label>
-          <b>{serial || "unavailable"}</b>
+          <b>{battery != null ? `${battery}%` : t("app.unavailable")}</b>
+        </div>
+
+        <div className="row">
+          <label>
+            <strong>{t("status.serial")}</strong>
+          </label>
+          <b>{serial || t("app.unavailable")}</b>
         </div>
       </div>
       {(errorCode === "permission_denied" || errorCode === "device_disconnected") && feedbackFor && (

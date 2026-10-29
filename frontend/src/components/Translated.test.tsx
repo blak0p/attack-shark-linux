@@ -30,3 +30,24 @@ describe("Spanish rendering", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Buscando actualizaciones…");
   });
 });
+
+describe("Spanish rendering of panels", () => {
+  beforeEach(async () => { window.localStorage.clear(); await setLanguage("es"); });
+  afterEach(async () => { cleanup(); await setLanguage("en"); });
+
+  it("pluralizes the sleep duration", async () => {
+    const { SleepPanel } = await import("./panels/SleepPanel");
+    const snapshot = (Pending: number) => ({ Pending, Applied: Pending, Firmware: "success", Persistence: "success", Error: { Code: "" } }) as never;
+    const { rerender } = render(<SleepPanel snapshot={snapshot(1)} ready onStage={() => {}} onRetry={() => {}} />);
+    expect(screen.getByText("Suspender después de: 1 minuto")).toBeInTheDocument();
+    rerender(<SleepPanel snapshot={snapshot(5)} ready onStage={() => {}} onRetry={() => {}} />);
+    expect(screen.getByText("Suspender después de: 5 minutos")).toBeInTheDocument();
+  });
+
+  it("translates the reset confirmation", async () => {
+    const { ResetPanel } = await import("./panels/ResetPanel");
+    render(<ResetPanel confirmation onConfirm={() => {}} onCancel={() => {}} />);
+    expect(screen.getByRole("alertdialog", { name: "Confirmar restablecimiento de fábrica" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancelar restablecimiento de fábrica" })).toBeInTheDocument();
+  });
+});
