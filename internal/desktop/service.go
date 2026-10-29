@@ -240,6 +240,7 @@ type Service struct {
 	watcherSettings     watcherComponent
 	gameCatalog         gameComponent
 	launcher            launcherComponent
+	autostart           autostartComponent
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {

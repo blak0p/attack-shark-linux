@@ -86,7 +86,8 @@ func (s x6InventorySource) ProfileValid(ctx context.Context, candidate transport
 
 func main() {
 	exitCode := runCLI(os.Args[1:], cliDependencies{
-		startWails: startWails,
+		startWails: func() error { return startDesktop(false) },
+		startTray:  func() error { return startDesktop(true) },
 		reset:      emergencyReset,
 		launch:     launchWithProfile,
 	})
@@ -143,7 +144,9 @@ func acquireAppLock(path string, attempts int, delay time.Duration) (*applock.Lo
 	return nil, err
 }
 
-func startWails() error {
+// startDesktop runs the app. In tray mode (the login start) no window is created
+// when the tray is on and a tray host exists; the tray Open entry creates it.
+func startDesktop(trayMode bool) error {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
@@ -200,17 +203,26 @@ func startWails() error {
 	service.AttachGameCatalog(scanInstalledGames)
 	service.AttachGamePicker(newGamePicker(app))
 	service.AttachLauncherPath(launcherPath)
+	attachAutostart(service, launcherPath)
 	service.AttachListener(passive, wailsEventSink{app: app})
 	service.StartListener(listenCtx)
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "Attack Shark X6 Configurator",
-		Width:  1024,
-		Height: 768,
-	})
-	window.SetURL("/")
-	window.Center()
-	installTray(app, window, service)
+	var manager *trayManager
+	windows := &lazyWindow{create: func() *application.WebviewWindow {
+		window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Title:  "Attack Shark X6 Configurator",
+			Width:  1024,
+			Height: 768,
+		})
+		window.SetURL("/")
+		window.Center()
+		hookClose(window, manager)
+		return window
+	}}
+	manager = installTray(app, windows, service)
+	if !startWithoutWindow(trayMode, service.GetWatcherSettings().Tray, trayHostAvailable()) {
+		windows.get()
+	}
 
 	if err := app.Run(); err != nil {
 		return err

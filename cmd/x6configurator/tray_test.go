@@ -104,3 +104,19 @@ func TestTrayManagerOnCloseQuitsWhenOffUsingCurrentValue(t *testing.T) {
 		t.Fatalf("off after on: %v, want quit", got)
 	}
 }
+
+func TestStartWithoutWindow(t *testing.T) {
+	cases := []struct {
+		trayMode, trayOn, host, want bool
+	}{
+		{true, true, true, true},   // login start with a working tray: no window
+		{true, false, true, false}, // setting was turned off since: show the window
+		{true, true, false, false}, // no tray host: never invisible
+		{false, true, true, false}, // a normal launch always opens the window
+	}
+	for _, c := range cases {
+		if got := startWithoutWindow(c.trayMode, c.trayOn, c.host); got != c.want {
+			t.Errorf("startWithoutWindow(%+v) = %v, want %v", c, got, c.want)
+		}
+	}
+}

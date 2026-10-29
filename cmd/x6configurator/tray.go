@@ -50,6 +50,13 @@ func closeAction(trayOn, hostAvailable bool) closeDecision {
 	}
 }
 
+// startWithoutWindow decides whether a launch creates no window at all. Only the
+// login start (--tray) can skip it, and only when the tray setting is still on
+// and a tray host exists, so the app is never invisible and unrecoverable.
+func startWithoutWindow(trayMode, trayOn, hostAvailable bool) bool {
+	return trayMode && trayOn && hostAvailable
+}
+
 const statusNotifierWatcher = "org.kde.StatusNotifierWatcher"
 
 // trayHostAvailable reports whether a StatusNotifier host owns its well-known
@@ -109,10 +116,28 @@ func (m *trayManager) syncLocked(want bool) {
 	}
 }
 
+// lazyWindow creates the main window on first use, so a tray-only start holds
+// no WebKit view until the user opens the app.
+type lazyWindow struct {
+	mu     sync.Mutex
+	window *application.WebviewWindow
+	create func() *application.WebviewWindow
+}
+
+func (l *lazyWindow) get() *application.WebviewWindow {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.window == nil {
+		l.window = l.create()
+	}
+	return l.window
+}
+
 // installTray wires the tray into the running app. It is thin Wails glue and
 // is only compile-checked; it has not been exercised on a real desktop.
-func installTray(app *application.App, window *application.WebviewWindow, service *desktop.Service) {
+func installTray(app *application.App, windows *lazyWindow, service *desktop.Service) *trayManager {
 	open := func() {
+		window := windows.get()
 		window.Show()
 		window.UnMinimise()
 		window.Focus()
@@ -128,6 +153,13 @@ func installTray(app *application.App, window *application.WebviewWindow, servic
 		tray.OnClick(open)
 		return tray
 	})
+	service.AddWatcherChangeHandler(func(s configstore.WatcherSettings) { manager.Apply(s.Tray) })
+	manager.Apply(service.GetWatcherSettings().Tray)
+	return manager
+}
+
+// hookClose applies the tray close decision to window.
+func hookClose(window *application.WebviewWindow, manager *trayManager) {
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		switch manager.OnClose() {
 		case closeHide:
@@ -138,6 +170,4 @@ func installTray(app *application.App, window *application.WebviewWindow, servic
 			window.Minimise()
 		}
 	})
-	service.AddWatcherChangeHandler(func(s configstore.WatcherSettings) { manager.Apply(s.Tray) })
-	manager.Apply(service.GetWatcherSettings().Tray)
 }
