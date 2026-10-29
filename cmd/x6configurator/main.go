@@ -197,6 +197,9 @@ func startWails() error {
 		},
 	})
 
+	service.AttachGameCatalog(scanInstalledGames)
+	service.AttachGamePicker(newGamePicker(app))
+	service.AttachLauncherPath(launcherPath)
 	service.AttachListener(passive, wailsEventSink{app: app})
 	service.StartListener(listenCtx)
 

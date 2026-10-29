@@ -38,6 +38,7 @@ func (a serviceProfileSwitcher) Switch(id string) error {
 	if result := a.service.SwitchProfile(id); result.Error.Code != "" {
 		return fmt.Errorf("%w: %s", errSwitchRefused, result.Error.Code)
 	}
+	slog.Info("process watcher switched profile", "profile_id", id)
 	return nil
 }
 

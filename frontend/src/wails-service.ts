@@ -4,7 +4,7 @@ import * as bindings from "../../cmd/x6configurator/frontend/bindings/github.com
 import type { Action, EventType, Macro as GeneratedMacro } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
 import type { RemapSnapshot as GeneratedRemapSnapshot } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 import { RemapAction as GeneratedRemapAction, type RemapConfig as GeneratedRemapConfig } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models";
-import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig, ProfilesService, ProfileSnapshot, WatcherService, WatcherSettingsSnapshot, WatcherRule } from "./desktop-contract";
+import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig, ProfilesService, ProfileSnapshot, WatcherService, WatcherSettingsSnapshot, WatcherRule, GamesService } from "./desktop-contract";
 
 const bindingRemap = (config: RemapConfig): GeneratedRemapConfig => ({
   Buttons: config.Buttons.map((button) => {
@@ -70,7 +70,13 @@ const profileCall = (method: keyof ProfilesService, ...args: string[]): Promise<
 const watcherCall = (method: keyof WatcherService, ...args: unknown[]): Promise<WatcherSettingsSnapshot> =>
   Call.ByName(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
 
-export const desktopService: DesktopService & ProfilesService & WatcherService = {
+const gamesCall = <T,>(method: keyof GamesService): Promise<T> =>
+  Call.ByName(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`);
+
+export const desktopService: DesktopService & ProfilesService & WatcherService & GamesService = {
+  GetLauncherPath: () => gamesCall('GetLauncherPath'),
+  ListInstalledGames: () => gamesCall('ListInstalledGames'),
+  PickGameFolder: () => gamesCall('PickGameFolder'),
   GetWatcherSettings: () => watcherCall('GetWatcherSettings'),
   SetWatcherSettings: (enabled: boolean, rules: WatcherRule[]) => watcherCall('SetWatcherSettings', enabled, rules),
   GetProfiles: () => profileCall('GetProfiles'),
