@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GamesService, ProfileSnapshot, ProfilesService, WatcherRule, WatcherService, WatcherSettingsSnapshot } from '../../desktop-contract';
+import type { AutostartService, GamesService, ProfileSnapshot, ProfilesService, WatcherRule, WatcherService, WatcherSettingsSnapshot } from '../../desktop-contract';
 import '../../styles/games.css';
 import { GnomeSelect } from '../panels/GnomeSelect';
 import { AddGameDialog } from './AddGameDialog';
 
+const autostartError = 'Could not change the start at login.';
 const watcherErrors: Record<string, string> = {
   invalid_watcher_settings: 'That rule is not valid. Use the executable name only, without a path.',
   watcher_unavailable: 'Automatic switching is not available.',
@@ -17,10 +18,11 @@ export const quoteLauncherPath = (path: string) =>
 export const launchCommand = (name: string, launcher = 'attack-shark-linux') =>
   `${launcher === 'attack-shark-linux' ? launcher : quoteLauncherPath(launcher)} --profile "${shellQuote(name)}" -- %command%`;
 
-export function GamesPanel({ service }: { service: Partial<WatcherService> & Partial<ProfilesService> & Partial<GamesService> }) {
+export function GamesPanel({ service }: { service: Partial<WatcherService> & Partial<AutostartService> & Partial<ProfilesService> & Partial<GamesService> }) {
   const [settings, setSettings] = useState<WatcherSettingsSnapshot>();
   const [profiles, setProfiles] = useState<ProfileSnapshot['Profiles']>([]);
   const [activeID, setActiveID] = useState('');
+  const [loginStart, setLoginStart] = useState<boolean>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -37,6 +39,9 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
       if (!current) return;
       setSettings(next); setError(watcherErrors[next.Error.Code] ?? next.Error.Code);
     }).catch(() => { if (current) setError(watcherErrors.watcher_unavailable); });
+    void service.GetAutostart?.().then(next => {
+      if (current && !next.Error.Code) setLoginStart(next.Enabled);
+    }).catch(() => {});
     void service.GetProfiles?.().then(next => {
       if (!current) return;
       setProfiles(next.Profiles); setActiveID(next.ActiveID);
@@ -79,6 +84,17 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
       setError(code ? watcherErrors[code] ?? code : '');
     } catch {
       setError(watcherErrors.watcher_unavailable);
+    } finally { lock.current = false; setBusy(false); }
+  };
+  const toggleLoginStart = async (value: boolean) => {
+    if (lock.current || !service.SetAutostartEnabled) return;
+    lock.current = true; setBusy(true); setError('');
+    try {
+      const next = await service.SetAutostartEnabled(value);
+      setLoginStart(next.Enabled);
+      setError(next.Error.Code ? autostartError : '');
+    } catch {
+      setError(autostartError);
     } finally { lock.current = false; setBusy(false); }
   };
   const move = (index: number, delta: number) => {
@@ -124,6 +140,12 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
           <span className="help">When you close the window, the app keeps running in the system tray so the watcher stays active. Quit it from the tray menu.</span></div>
         <input className="switch" type="checkbox" aria-label="Keep running in the tray" checked={settings?.Tray ?? false}
           disabled={!loaded || busy} onChange={event => void toggleTray(event.target.checked)} />
+      </div>}
+      {service.SetAutostartEnabled && <div className="games-cardrow">
+        <div><strong>Start in the tray when I log in</strong>
+          <span className="help">Starts the app in the system tray when you log in. If the tray switch above is off, the window opens instead.</span></div>
+        <input className="switch" type="checkbox" aria-label="Start in the tray when I log in" checked={loginStart ?? false}
+          disabled={!loaded || busy || loginStart === undefined} onChange={event => void toggleLoginStart(event.target.checked)} />
       </div>}
       {loaded && off && <p className="help games-offnote">Automatic switching is off. Your rules are saved and will apply when you turn it on.</p>}
     </section>

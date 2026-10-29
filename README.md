@@ -228,6 +228,23 @@ profile back.
   restore is skipped if the app was opened during the game.
 - Switching to the already-active profile rewrites it.
 
+## Tray and start at login
+
+Two switches in the Games panel keep automatic profile switching alive without
+an open window:
+
+- **Keep running in the tray**: closing the window hides it and the app keeps
+  running with a tray icon (menu: Open, Quit). Without a system tray on your
+  desktop the window is minimised instead. The tray needs a StatusNotifier host
+  (for example a tray module in your bar on Hyprland).
+- **Start in the tray when I log in**: writes
+  `~/.config/autostart/attack-shark-linux.desktop`, which runs
+  `attack-shark-linux --tray`. That start creates no window when the tray
+  switch is on and a tray exists; otherwise the window opens as usual. Turning
+  the switch off removes the file. The entry points at the launcher path shown
+  in the panel, so for an AppImage, switch it off and on again after moving the
+  file.
+
 ## Emergency recovery
 
 If an applied configuration leaves the mouse unusable, run the headless factory

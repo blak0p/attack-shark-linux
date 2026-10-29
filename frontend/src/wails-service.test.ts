@@ -87,6 +87,15 @@ describe("desktopService", () => {
     const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
     await expect(invoke(...args)).rejects.toBe(failure);
   });
+  it.each([['GetAutostart', []], ['SetAutostartEnabled', [true]], ['SetAutostartEnabled', [false]]] as const)('forwards autostart method %s and preserves outcomes and rejections', async (method, args) => {
+    const outcome = { Enabled: true, Error: { Code: '' } };
+    runtime.Call.ByName.mockResolvedValueOnce(outcome);
+    const invoke = desktopService[method] as (...values: unknown[]) => Promise<unknown>;
+    expect(await invoke(...args)).toBe(outcome);
+    expect(runtime.Call.ByName).toHaveBeenLastCalledWith(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`, ...args);
+    const failure = new Error('native failure'); runtime.Call.ByName.mockRejectedValueOnce(failure);
+    await expect(invoke(...args)).rejects.toBe(failure);
+  });
   it.each(['ListInstalledGames', 'PickGameFolder', 'GetLauncherPath'] as const)('forwards games method %s with no arguments and preserves outcomes and rejections', async method => {
     const outcome = { Games: [], Path: '', Error: { Code: '' } };
     runtime.Call.ByName.mockResolvedValueOnce(outcome);

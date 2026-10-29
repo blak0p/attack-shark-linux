@@ -484,3 +484,67 @@ it('rule edits after toggling the tray still send the full rules list', async ()
   expect(lastSet(s)).toEqual([true, [rules3[1], rules3[0], rules3[2]]]);
   await waitFor(() => expect(screen.getByRole('checkbox', { name: trayName })).toBeChecked());
 });
+
+const loginName = 'Start in the tray when I log in';
+const loginHelp = 'Starts the app in the system tray when you log in. If the tray switch above is off, the window opens instead.';
+const auto = (enabled: boolean, code = '') => ({ Enabled: enabled, Error: { Code: code } });
+function loginFixture(stored: boolean) {
+  const s = fixture();
+  let value = stored;
+  const GetAutostart = vi.fn(async () => auto(value));
+  const SetAutostartEnabled = vi.fn(async (next: boolean) => { value = next; return auto(next); });
+  return Object.assign(s, { GetAutostart, SetAutostartEnabled });
+}
+
+it('shows the login start row with the stored value and helper text below the tray switch', async () => {
+  for (const stored of [true, false]) {
+    cleanup();
+    await show(Object.assign(loginFixture(stored), { SetTrayEnabled: vi.fn() }) as never);
+    const box = await screen.findByRole('checkbox', { name: loginName });
+    await waitFor(() => (stored ? expect(box).toBeChecked() : expect(box).not.toBeChecked()));
+    expect(screen.getByText(loginName, { selector: 'strong' })).toBeVisible();
+    expect(screen.getByText(loginHelp)).toBeVisible();
+    const tray = screen.getByRole('checkbox', { name: 'Keep running in the tray' });
+    expect(tray.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});
+
+it('toggling the login start sends the exact boolean and renders the returned state', async () => {
+  const s = loginFixture(false);
+  await show(s as never);
+  const box = await screen.findByRole('checkbox', { name: loginName });
+  fireEvent.click(box);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: loginName })).toBeChecked());
+  expect(s.SetAutostartEnabled).toHaveBeenCalledOnce();
+  expect(s.SetAutostartEnabled).toHaveBeenCalledWith(true);
+  fireEvent.click(screen.getByRole('checkbox', { name: loginName }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: loginName })).not.toBeChecked());
+  expect(s.SetAutostartEnabled).toHaveBeenLastCalledWith(false);
+  expect(s.SetWatcherSettings).not.toHaveBeenCalled();
+});
+
+it('a login start error keeps the stored value and shows the alert', async () => {
+  const s = loginFixture(false);
+  s.SetAutostartEnabled.mockResolvedValueOnce(auto(false, 'autostart_unavailable'));
+  await show(s as never);
+  fireEvent.click(await screen.findByRole('checkbox', { name: loginName }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not change the start at login.');
+  expect(screen.getByRole('checkbox', { name: loginName })).not.toBeChecked();
+});
+
+it('a rejected login start call shows the alert and keeps the stored value', async () => {
+  const s = loginFixture(true);
+  s.SetAutostartEnabled.mockRejectedValueOnce(new Error('boom'));
+  await show(s as never);
+  const box = await screen.findByRole('checkbox', { name: loginName });
+  await waitFor(() => expect(box).toBeChecked());
+  fireEvent.click(box);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not change the start at login.');
+  expect(screen.getByRole('checkbox', { name: loginName })).toBeChecked();
+});
+
+it('hides the login start row when the service has no autostart methods', async () => {
+  await show();
+  expect(screen.queryByRole('checkbox', { name: loginName })).not.toBeInTheDocument();
+  expect(screen.queryByText(loginHelp)).not.toBeInTheDocument();
+});
