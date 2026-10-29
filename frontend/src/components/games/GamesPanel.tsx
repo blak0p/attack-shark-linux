@@ -69,6 +69,18 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
       return false;
     } finally { lock.current = false; setBusy(false); }
   };
+  const toggleTray = async (value: boolean) => {
+    if (lock.current || !service.SetTrayEnabled) return;
+    lock.current = true; setBusy(true); setError('');
+    try {
+      const next = await service.SetTrayEnabled(value);
+      setSettings(next);
+      const code = next.Error.Code;
+      setError(code ? watcherErrors[code] ?? code : '');
+    } catch {
+      setError(watcherErrors.watcher_unavailable);
+    } finally { lock.current = false; setBusy(false); }
+  };
   const move = (index: number, delta: number) => {
     const next = [...rules];
     [next[index], next[index + delta]] = [next[index + delta], next[index]];
@@ -107,6 +119,12 @@ export function GamesPanel({ service }: { service: Partial<WatcherService> & Par
         <input className="switch" type="checkbox" aria-label="Switch profile automatically" checked={enabled}
           disabled={!loaded || busy} onChange={event => void persist(event.target.checked, rules)} />
       </div>
+      {service.SetTrayEnabled && <div className="games-cardrow">
+        <div><strong>Keep running in the tray</strong>
+          <span className="help">When you close the window, the app keeps running in the system tray so the watcher stays active. Quit it from the tray menu.</span></div>
+        <input className="switch" type="checkbox" aria-label="Keep running in the tray" checked={settings?.Tray ?? false}
+          disabled={!loaded || busy} onChange={event => void toggleTray(event.target.checked)} />
+      </div>}
       {loaded && off && <p className="help games-offnote">Automatic switching is off. Your rules are saved and will apply when you turn it on.</p>}
     </section>
     <section className="games-card" role="region" aria-labelledby="games-rules-title">

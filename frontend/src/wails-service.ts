@@ -79,6 +79,7 @@ export const desktopService: DesktopService & ProfilesService & WatcherService &
   PickGameFolder: () => gamesCall('PickGameFolder'),
   GetWatcherSettings: () => watcherCall('GetWatcherSettings'),
   SetWatcherSettings: (enabled: boolean, rules: WatcherRule[]) => watcherCall('SetWatcherSettings', enabled, rules),
+  SetTrayEnabled: (enabled: boolean) => watcherCall('SetTrayEnabled', enabled),
   GetProfiles: () => profileCall('GetProfiles'),
   CreateProfile: name => profileCall('CreateProfile', name),
   RenameProfile: (id, name) => profileCall('RenameProfile', id, name),

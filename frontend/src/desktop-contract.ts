@@ -53,10 +53,11 @@ export type ProfilesService = {
   DismissProfileNotice(): Promise<ProfileSnapshot>;
 };
 export type WatcherRule = { Executable: string; Folder?: string; Name?: string; ProfileID: string };
-export type WatcherSettingsSnapshot = { Enabled: boolean; Rules: WatcherRule[]; Error: { Code: string } };
+export type WatcherSettingsSnapshot = { Enabled: boolean; Rules: WatcherRule[]; Tray?: boolean; Error: { Code: string } };
 export type WatcherService = {
   GetWatcherSettings(): Promise<WatcherSettingsSnapshot>;
   SetWatcherSettings(enabled: boolean, rules: WatcherRule[]): Promise<WatcherSettingsSnapshot>;
+  SetTrayEnabled(enabled: boolean): Promise<WatcherSettingsSnapshot>;
 };
 export type InstalledGame = { Name: string; Source: 'Steam' | 'Heroic' | 'App'; Folder: string; Executable: string; IsGame: boolean };
 export type GameListSnapshot = { Games: InstalledGame[]; Error: { Code: string } };

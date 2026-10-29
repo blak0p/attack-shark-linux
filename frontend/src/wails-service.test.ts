@@ -77,8 +77,9 @@ describe("desktopService", () => {
   });
   it.each([
     ['GetWatcherSettings', []], ['SetWatcherSettings', [true, [{ Executable: 'cs2', ProfileID: 'a'.repeat(32) }]]],
+    ['SetTrayEnabled', [true]], ['SetTrayEnabled', [false]],
   ] as const)('forwards watcher method %s and preserves outcomes and rejections', async (method, args) => {
-    const outcome = { Enabled: true, Rules: [], Error: { Code: '' } };
+    const outcome = { Enabled: true, Rules: [], Tray: false, Error: { Code: '' } };
     runtime.Call.ByName.mockResolvedValueOnce(outcome);
     const invoke = desktopService[method] as (...values: unknown[]) => Promise<unknown>;
     expect(await invoke(...args)).toBe(outcome);
