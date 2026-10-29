@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n";
 import { OperationFeedback } from "../OperationFeedback";
 import { GnomeSelect } from "./GnomeSelect";
 import { captureInput, startTake, stopTake, type DelayPolicy, type Take } from "../../macros/recorder";
@@ -12,8 +14,8 @@ type Library = ReturnType<typeof useMacroLibrary>;
 
 // Presentation only: retain the original physical identity in the draft.
 function keyboardLabel(code?: string) {
-  if (!code) return "Keyboard (missing identity)";
-  return `Key ${code.replace(/^(Key|Digit)(?=[A-Z0-9]$)/, "")}`;
+  if (!code) return i18n.t("macro.keyboardMissing");
+  return i18n.t("macro.key", { key: code.replace(/^(Key|Digit)(?=[A-Z0-9]$)/, "") });
 }
 
 // Display-only grouping: never reconstruct or normalize the draft's raw events.
@@ -32,12 +34,12 @@ function timeline(events: NonNullable<Library["draft"]>["events"]) {
   return rows;
 }
 
-const mouseButtons: { button: number; type: Macro["events"][number]["type"]; label: string }[] = [
-  { button: 0, type: "mouse_left", label: "Left mouse" },
-  { button: 2, type: "mouse_right", label: "Right mouse" },
-  { button: 1, type: "mouse_middle", label: "Middle mouse" },
-  { button: 3, type: "mouse_back", label: "Back mouse" },
-  { button: 4, type: "mouse_forward", label: "Forward mouse" },
+const mouseButtons: { button: number; type: Macro["events"][number]["type"]; nameKey: string }[] = [
+  { button: 0, type: "mouse_left", nameKey: "macro.mouse.left" },
+  { button: 2, type: "mouse_right", nameKey: "macro.mouse.right" },
+  { button: 1, type: "mouse_middle", nameKey: "macro.mouse.middle" },
+  { button: 3, type: "mouse_back", nameKey: "macro.mouse.back" },
+  { button: 4, type: "mouse_forward", nameKey: "macro.mouse.forward" },
 ];
 
 export function MacroManagerPanel({
@@ -61,6 +63,7 @@ function LocalMacroManager({ service }: { service: MacroLibraryService }) {
 }
 
 function MacroManagerEditor({ library, service, feedbackManaged = false }: { library: Library; service: MacroLibraryService; feedbackManaged?: boolean }) {
+  const { t } = useTranslation();
   const { macros, draft, loading, loaded, reading, busy, error, confirmation, notice, validationError } = library;
   const unavailable = busy || reading || loading || confirmation;
   const [clickType, setClickType] = useState<Macro["events"][number]["type"]>("mouse_left");
@@ -104,7 +107,7 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
     const events = stopTake(current.take);
     const appended = current.finish(current.token, events);
     const presses = events.filter(event => event.action === "down").length;
-    setTakeStatus(appended ? `${presses} ${presses === 1 ? "press" : "presses"}` : "Recording ended; the draft changed, so no events were delivered.");
+    setTakeStatus(appended ? t("macro.presses", { count: presses }) : t("macro.recordingEnded"));
     setPressCount(0);
   };
   useEffect(() => () => {
@@ -129,7 +132,7 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
   const upload = (file?: File) => {
     if (!file || editorDisabled) return;
     void library.importFile(async () => {
-      if (file.size > MAX_MACRO_FILE_BYTES) throw new Error("Macro JSON file is too large (local file safety budget: 1 MiB).");
+      if (file.size > MAX_MACRO_FILE_BYTES) throw new Error(t("macro.fileTooLarge"));
       return file.text();
     });
   };
@@ -154,13 +157,13 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
 
   return (
     <div className="macro-manager" aria-busy={busy}>
-      <article className="card macro-library" aria-label="Macro library">
+      <article className="card macro-library" aria-label={t("macro.library")}>
         <div className="card-head">
-          <h2>Macro library</h2>
-          <button type="button" className="button primary" disabled={navigationDisabled} onClick={() => { cancelFocus(); library.newMacro(); }}>New macro</button>
+          <h2>{t("macro.library")}</h2>
+          <button type="button" className="button primary" disabled={navigationDisabled} onClick={() => { cancelFocus(); library.newMacro(); }}>{t("macro.new")}</button>
         </div>
 
-        {!loading && loaded && macros.length === 0 && <p className="hint">No macros in your library yet.</p>}
+        {!loading && loaded && macros.length === 0 && <p className="hint">{t("macro.empty")}</p>}
         <div className="macro-cards">
           {macros.map((macro) => (
             <button
@@ -169,25 +172,25 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
               className="macro-card"
               disabled={navigationDisabled}
               aria-pressed={draft?.id === macro.id}
-              aria-label={`${macro.name} · ${macro.events.length} events`}
+              aria-label={`${macro.name} · ${t("macro.events", { n: macro.events.length })}`}
               onClick={() => { cancelFocus(); library.select(macro.id); }}
             >
               <strong>{macro.name}</strong>
-              <span>{macro.events.length} events · Local library</span>
+              <span>{t("macro.events", { n: macro.events.length })} · {t("macro.localLibrary")}</span>
             </button>
           ))}
         </div>
-        {error && !loading && <button type="button" className="button" disabled={editorDisabled} onClick={library.reload}>Retry library</button>}
+        {error && !loading && <button type="button" className="button" disabled={editorDisabled} onClick={library.reload}>{t("macro.retry")}</button>}
       </article>
 
-      <article className="card macro-detail" aria-label="Macro details">
+      <article className="card macro-detail" aria-label={t("macro.details")}>
         <header className="macro-editor-head">
           <div>
-            <p className="macro-kicker">Macro editor</p>
-            <h2>{draft?.name.trim() || "Untitled macro"}</h2>
+            <p className="macro-kicker">{t("macro.editor")}</p>
+            <h2>{draft?.name.trim() || t("macro.untitled")}</h2>
           </div>
           <details className="macro-options">
-            <summary>Macro options</summary>
+            <summary>{t("macro.options")}</summary>
             <div className="macro-options-body">
               <div className="macro-file-import">
                 <input
@@ -195,7 +198,7 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                   type="file"
                   accept=".json,application/json"
                   style={{ display: "none" }}
-                  aria-label="Import macro JSON"
+                  aria-label={t("macro.importJson")}
                   disabled={editorDisabled}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
@@ -209,20 +212,20 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                   disabled={editorDisabled}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Import JSON
+                  {t("macro.importButton")}
                 </button>
               </div>
-              <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>Export saved macro</button>
+              <button type="button" className="button" disabled={editorDisabled || !library.savedMacro} onClick={download}>{t("macro.export")}</button>
             </div>
           </details>
         </header>
 
 
         {!draft ? (
-          <p className="macro-empty">Select a macro or create a new one.</p>
+          <p className="macro-empty">{t("macro.select")}</p>
         ) : (
           <>
-            <label className="macro-name">Macro name
+            <label className="macro-name">{t("macro.name")}
               <input
                 className="input"
                 value={draft.name}
@@ -230,31 +233,31 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                 onChange={(event) => library.rename(event.target.value)}
               />
             </label>
-            <section className="macro-recorder" aria-label="Local recording">
-              <div className="macro-recorder-head"><h3>Record</h3><span className={`macro-record-indicator${library.recordingActive ? " active" : ""}`} aria-hidden="true">{library.recordingActive ? "● Recording" : "○ Ready"}</span></div>
+            <section className="macro-recorder" aria-label={t("macro.recording")}>
+              <div className="macro-recorder-head"><h3>{t("macro.record")}</h3><span className={`macro-record-indicator${library.recordingActive ? " active" : ""}`} aria-hidden="true">{library.recordingActive ? t("macro.indicatorRecording") : t("macro.indicatorReady")}</span></div>
               <div className="macro-record-toolbar">
               <div className="macro-policy">
-                <label htmlFor={policyID}>Recording delay</label>
-                <GnomeSelect id={policyID} aria-label="Recording delay" value={policy} disabled={editorDisabled}
+                <label htmlFor={policyID}>{t("macro.delay")}</label>
+                <GnomeSelect id={policyID} aria-label={t("macro.delay")} value={policy} disabled={editorDisabled}
                   options={[
-                    { value: "minimum", label: "Minimum · 0 local ms", direct: true },
-                    { value: "fixed", label: "Default · 10 ms", direct: true },
-                    { value: "recorded", label: "Recorded · between presses", direct: true },
+                    { value: "minimum", label: t("macro.delayMin"), direct: true },
+                    { value: "fixed", label: t("macro.delayDefault"), direct: true },
+                    { value: "recorded", label: t("macro.delayRecorded"), direct: true },
                   ]}
                   onChange={value => setPolicy(value as DelayPolicy)} />
               </div>
-              <button ref={startRef} aria-label="Start recording" type="button" className="button primary" disabled={editorDisabled} onClick={() => {
+              <button ref={startRef} aria-label={t("macro.start")} type="button" className="button primary" disabled={editorDisabled} onClick={() => {
                 cancelFocus();
                 const token = library.beginRecording();
                 if (!token) return;
                 session.current = { take: startTake(policy), token, finish: library.finishRecording };
                 setTakeStatus(""); setPressCount(0);
                 captureRef.current?.focus();
-              }}><span aria-hidden="true">● </span>Record</button>
-              <button type="button" aria-label="Stop recording" className="button" disabled={!library.recordingActive} onClick={stop}><span aria-hidden="true">■ </span>Stop</button>
+              }}><span aria-hidden="true">● </span>{t("macro.record")}</button>
+              <button type="button" aria-label={t("macro.stop")} className="button" disabled={!library.recordingActive} onClick={stop}><span aria-hidden="true">■ </span>{t("macro.stopLabel")}</button>
               </div>
-              <p id="macro-capture-help" className="macro-sr-only">Press keys or click here.</p>
-              <div ref={captureRef} className="macro-capture" role="region" aria-label="Local input capture" aria-describedby="macro-capture-help" tabIndex={0}
+              <p id="macro-capture-help" className="macro-sr-only">{t("macro.captureHelp")}</p>
+              <div ref={captureRef} className="macro-capture" role="region" aria-label={t("macro.capture")} aria-describedby="macro-capture-help" tabIndex={0}
                 onBlur={stop}
                 onKeyDown={event => {
                   if (event.target !== event.currentTarget || (event.code === "Tab" && !captureTab) || !event.code.trim() || event.repeat) return;
@@ -276,16 +279,16 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                   if (event.target === event.currentTarget && button && capture({ type: button.type, action: "up" })) event.preventDefault();
                 }}
                 onContextMenu={event => { if (session.current && event.target === event.currentTarget) event.preventDefault(); }}
-              >{library.recordingActive ? `Recording · ${pressCount} ${pressCount === 1 ? "press" : "presses"}` : "⌨ / 🖱"}</div>
+              >{library.recordingActive ? t("macro.recordingCount", { count: pressCount }) : "⌨ / 🖱"}</div>
               {takeStatus && <p role="status">{takeStatus}</p>}
               <details className="macro-record-options">
-                <summary>Recording options</summary>
-                <label><input type="checkbox" checked={captureTab} disabled={editorDisabled} onChange={event => setCaptureTab(event.target.checked)} />Record Tab</label>
+                <summary>{t("macro.recordingOptions")}</summary>
+                <label><input type="checkbox" checked={captureTab} disabled={editorDisabled} onChange={event => setCaptureTab(event.target.checked)} />{t("macro.recordTab")}</label>
               </details>
             </section>
-            <section className="macro-composer" aria-label="Complete click composer">
-              <h3>Add a complete click</h3>
-              <div className="macro-click-types" role="group" aria-label="Click type">
+            <section className="macro-composer" aria-label={t("macro.composer")}>
+              <h3>{t("macro.addClickTitle")}</h3>
+              <div className="macro-click-types" role="group" aria-label={t("macro.clickType")}>
                 {mouseButtons.map((button) => (
                   <button
                     key={button.type}
@@ -295,7 +298,7 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                     disabled={editorDisabled}
                     onClick={() => setClickType(button.type)}
                   >
-                    {button.label.replace(" mouse", "")} click
+                    {t("macro.click", { button: t(button.nameKey) })}
                   </button>
                 ))}
               </div>
@@ -310,25 +313,25 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                   ])
                 }
               >
-                Add click
+                {t("macro.addClick")}
               </button>
             </section>
-            <section className="macro-timeline" aria-label="Sequence">
+            <section className="macro-timeline" aria-label={t("macro.sequence")}>
               <div className="macro-sequence-head">
-                <h3>Sequence</h3>
-                <span className="hint">{draft.events.filter(event => event.action === "down").length} {draft.events.filter(event => event.action === "down").length === 1 ? "press" : "presses"}</span>
+                <h3>{t("macro.sequence")}</h3>
+                <span className="hint">{t("macro.presses", { count: draft.events.filter(event => event.action === "down").length })}</span>
               </div>
-              <ol aria-label="Ordered timeline">
+              <ol aria-label={t("macro.timeline")}>
                 {rows.map(({ index, count }, position) => {
                   const event = draft.events[index];
                   const label = event.type === "keyboard" ? keyboardLabel(event.key_code)
-                    : mouseButtons.find((button) => button.type === event.type)?.label.replace(" mouse", "") ?? event.type;
+                    : (() => { const found = mouseButtons.find((button) => button.type === event.type); return found ? t(found.nameKey) : event.type; })();
                   return (
                     <li key={index}>
                       <span className="macro-step">{String(position + 1).padStart(2, "0")}</span>
                       <div>
-                        <strong>{label}{event.type === "keyboard" ? "" : count === 2 ? " click" : ` · ${event.action}`}</strong>
-                        <small aria-label="Press / release delay">{`↓ ${event.action === "down" ? `${event.delay_ms} ms` : "—"} / ↑ ${count === 2 ? `${draft.events[index + 1].delay_ms} ms` : event.action === "up" ? `${event.delay_ms} ms` : "—"}`}</small>
+                        <strong>{event.type === "keyboard" ? label : count === 2 ? t("macro.clickLabel", { label }) : `${label} · ${t(`macro.action.${event.action}`)}`}</strong>
+                        <small aria-label={t("macro.pressReleaseDelay")}>{`↓ ${event.action === "down" ? `${event.delay_ms} ms` : "—"} / ↑ ${count === 2 ? `${draft.events[index + 1].delay_ms} ms` : event.action === "up" ? `${event.delay_ms} ms` : "—"}`}</small>
                       </div>
                     </li>
                   );
@@ -336,8 +339,8 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
               </ol>
               {!rows.length && <p className="macro-empty">—</p>}
               <p className={`macro-compatibility${compatible ? " compatible" : ""}`}
-                title={compatible ? "Playback remains unverified." : admission.reason}>
-                {compatible ? "✓ Ready to assign" : "⚠ Local only"}
+                title={compatible ? t("macro.unverified") : admission.reason}>
+                {compatible ? t("macro.ready") : t("macro.localOnly")}
               </p>
             </section>
             <div className="macro-actions macro-save-footer">
@@ -347,7 +350,7 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                 disabled={editorDisabled || !draft.name.trim() || !!validationError}
                 onClick={library.save}
               >
-                Save to library
+                {t("macro.save")}
               </button>
               {draft.id && (
                 <button
@@ -356,16 +359,16 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
                   disabled={editorDisabled}
                   onClick={library.requestDelete}
                 >
-                  Delete macro
+                  {t("macro.delete")}
                 </button>
               )}
             </div>
             {confirmation && (
-              <div role="dialog" aria-modal="false" aria-label="Delete macro confirmation" className="group">
-                <p>Delete “{draft.name}” from the local library? This cannot be undone.</p>
+              <div role="dialog" aria-modal="false" aria-label={t("macro.deleteConfirmLabel")} className="group">
+                <p>{t("macro.deleteConfirm", { name: draft.name })}</p>
                 <div className="macro-actions">
-                  <button type="button" className="button" disabled={busy} onClick={library.cancelDelete}>Cancel</button>
-                  <button type="button" className="button danger" disabled={busy} onClick={library.deleteMacro}>Confirm delete</button>
+                  <button type="button" className="button" disabled={busy} onClick={library.cancelDelete}>{t("common.cancel")}</button>
+                  <button type="button" className="button danger" disabled={busy} onClick={library.deleteMacro}>{t("macro.confirmDelete")}</button>
                 </div>
               </div>
             )}
@@ -373,10 +376,10 @@ function MacroManagerEditor({ library, service, feedbackManaged = false }: { lib
         )}
         {validationError && <p role="alert" className="macro-error">{validationError}</p>}
         {!feedbackManaged && <OperationFeedback scope="local-library" busy={busy || loading || reading} results={[{
-          id: "library", label: "Macros", version: notice, error,
-          success: notice === "Saved to library. No device changes made." ? "Saved"
-            : notice === "Imported as a new local macro. No device changes made." ? "Imported"
-            : notice === "Macro deleted from library." ? "Deleted" : undefined,
+          id: "library", label: t("feedback.labels.macros"), version: notice, error,
+          success: notice === "Saved to library. No device changes made." ? t("feedback.saved")
+            : notice === "Imported as a new local macro. No device changes made." ? t("feedback.imported")
+            : notice === "Macro deleted from library." ? t("feedback.deleted") : undefined,
         }]} />}
       </article>
     </div>
