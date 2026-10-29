@@ -39,6 +39,6 @@ describe('Spanish rendering of profile controls', () => {
     expect(screen.getByRole('dialog', { name: 'Crear perfil' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nombre del perfil'), { target: { value: 'Gaming' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar acción del perfil' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe un perfil con ese nombre. Elegí otro nombre.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe un perfil con ese nombre. Elige otro nombre.');
   });
 });
