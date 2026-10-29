@@ -38,6 +38,7 @@ func (a serviceProfileSwitcher) Switch(id string) error {
 	if result := a.service.SwitchProfile(id); result.Error.Code != "" {
 		return fmt.Errorf("%w: %s", errSwitchRefused, result.Error.Code)
 	}
+	slog.Info("process watcher switched profile", "profile_id", id)
 	return nil
 }
 
@@ -67,7 +68,7 @@ func (c *watcherController) Apply(settings configstore.WatcherSettings) {
 	}
 	rules := make([]procwatch.Rule, len(settings.Rules))
 	for i, r := range settings.Rules {
-		rules[i] = procwatch.Rule{Executable: r.Executable, ProfileID: r.ProfileID}
+		rules[i] = procwatch.Rule{Executable: r.Executable, Folder: r.Folder, ProfileID: r.ProfileID}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

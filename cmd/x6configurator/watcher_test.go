@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -157,5 +160,46 @@ func TestProfileSwitcherAdapter(t *testing.T) {
 	sw.snapshot = desktop.ProfileSnapshot{Error: desktop.Error{Code: desktop.ProfileUnavailable}}
 	if got := adapter.ActiveID(); got != "" {
 		t.Fatalf("ActiveID with unavailable profiles = %q, want empty", got)
+	}
+}
+
+func TestProfileSwitcherAdapterLogsEachSwitch(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+
+	sw := newFakeSwitcher()
+	adapter := serviceProfileSwitcher{service: sw}
+	if err := adapter.Switch(idGame); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "process watcher switched profile") || !strings.Contains(got, idGame) {
+		t.Fatalf("success not logged: %q", got)
+	}
+
+	buf.Reset()
+	sw.switchResult = map[string]desktop.ProfileSnapshot{idWork: {Error: desktop.Error{Code: desktop.ApplyFailed}}}
+	if err := adapter.Switch(idWork); err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(buf.String(), "switched profile") {
+		t.Fatalf("a refused switch must not be logged as success: %q", buf.String())
+	}
+}
+
+func TestWatcherControllerPassesFolderToProcwatch(t *testing.T) {
+	runner := &fakeRunner{}
+	c := newWatcherController(runner.run)
+	defer c.Stop()
+
+	c.Apply(configstore.WatcherSettings{Enabled: true, Rules: []configstore.WatcherRule{
+		{Folder: "/games/T", Name: "T", ProfileID: idGame}, {Executable: "b", ProfileID: idWork},
+	}})
+
+	waitFor(t, "the watcher to start", func() bool { return len(runner.started()) == 1 })
+	want := []procwatch.Rule{{Folder: "/games/T", ProfileID: idGame}, {Executable: "b", ProfileID: idWork}}
+	if got := runner.started()[0].rules; !reflect.DeepEqual(got, want) {
+		t.Fatalf("rules = %v, want %v", got, want)
 	}
 }

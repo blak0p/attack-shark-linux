@@ -44,9 +44,46 @@ func TestScanCollectsNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"game", "game.bin", "--flag", "wine64-preloader", "Hades.exe", "-windowed"} {
-		if !got[want] {
-			t.Errorf("missing %q in %v", want, got)
+		if !got.Names[want] {
+			t.Errorf("missing %q in %v", want, got.Names)
 		}
+	}
+}
+
+func setCwd(t *testing.T, root, pid, target string) {
+	t.Helper()
+	if err := os.Symlink(target, filepath.Join(root, pid, "cwd")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanCollectsPaths(t *testing.T) {
+	root := t.TempDir()
+	addProc(t, root, "100", "game", "/games/Native/game.bin", "/games/Native/game.bin", "--data=/ignored/flag")
+	addProc(t, root, "200", "wine64-preloader", "/usr/bin/wine64-preloader",
+		`Z:\mnt\Juegos\Hades\Hades.exe`, "-windowed")
+	setCwd(t, root, "200", "/mnt/Juegos/Hades")
+	addProc(t, root, "300", "kate", "/usr/bin/kate", "kate", "/games/Doc/notes.txt")
+	addProc(t, root, "400", "proton", "/usr/bin/python3", "python3", "/p/proton", "run", "/lib/Game2/Game2.EXE", `C:\prefix\Other.exe`, "relative/Thing.exe")
+	got, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"/games/Native/game.bin":      true,
+		"/usr/bin/wine64-preloader":   true,
+		"/mnt/Juegos/Hades/Hades.exe": true,
+		"/mnt/Juegos/Hades":           true,
+		"/usr/bin/kate":               true,
+		"/usr/bin/python3":            true,
+		"/lib/Game2/Game2.EXE":        true,
+	}
+	have := map[string]bool{}
+	for _, p := range got.Paths {
+		have[p] = true
+	}
+	if !reflect.DeepEqual(have, want) {
+		t.Fatalf("paths = %v, want %v", have, want)
 	}
 }
 
@@ -64,7 +101,7 @@ func TestScanSkipsBadEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, map[string]bool{"ok": true}) {
+	if !reflect.DeepEqual(got.Names, map[string]bool{"ok": true}) || len(got.Paths) != 0 {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -85,17 +122,21 @@ func (f *fakeSwitcher) Switch(id string) error {
 	return nil
 }
 
-func run(names ...string) map[string]bool {
+func run(names ...string) Running {
 	m := map[string]bool{}
 	for _, n := range names {
 		m[n] = true
 	}
-	return m
+	return Running{Names: m}
 }
 
-var rules = []Rule{{"a.exe", "A"}, {"b.exe", "B"}}
+func runIn(paths ...string) Running {
+	return Running{Names: map[string]bool{}, Paths: paths}
+}
 
-func mustTick(t *testing.T, w *Watcher, m map[string]bool) {
+var rules = []Rule{{Executable: "a.exe", ProfileID: "A"}, {Executable: "b.exe", ProfileID: "B"}}
+
+func mustTick(t *testing.T, w *Watcher, m Running) {
 	t.Helper()
 	if err := w.Tick(m); err != nil {
 		t.Fatal(err)
@@ -194,5 +235,86 @@ func TestUnknownPreviousProfileIsNotRestored(t *testing.T) {
 	mustTick(t, w, run())
 	if !reflect.DeepEqual(sw.calls, []string{"A"}) {
 		t.Fatalf("calls %v, want only the apply: there is nothing known to restore", sw.calls)
+	}
+}
+
+func TestFolderRuleMatchesAnyPathInsideTheFolder(t *testing.T) {
+	folder := "/mnt/Juegos/SteamLibrary/steamapps/common/Terraria"
+	for name, path := range map[string]string{
+		"file inside":   folder + "/Terraria.bin.x86_64",
+		"nested file":   folder + "/Content/tool.exe",
+		"folder itself": folder,
+	} {
+		sw := &fakeSwitcher{active: "base"}
+		w := NewWatcher(sw, []Rule{{Folder: folder, ProfileID: "T"}})
+		mustTick(t, w, runIn(path))
+		if !reflect.DeepEqual(sw.calls, []string{"T"}) {
+			t.Errorf("%s: calls %v", name, sw.calls)
+		}
+	}
+}
+
+func TestFolderRuleIgnoresSiblingsAndPrefixes(t *testing.T) {
+	folder := "/games/Terraria"
+	for _, path := range []string{"/games/Terraria2/x", "/games/TerrariaMod", "/games", "/other/games/Terraria/x"} {
+		sw := &fakeSwitcher{active: "base"}
+		w := NewWatcher(sw, []Rule{{Folder: folder + "/", ProfileID: "T"}})
+		mustTick(t, w, runIn(path))
+		if len(sw.calls) != 0 {
+			t.Errorf("%s matched: calls %v", path, sw.calls)
+		}
+	}
+}
+
+func TestFolderRuleFollowsSymlinkedFolder(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	sw := &fakeSwitcher{active: "base"}
+	w := NewWatcher(sw, []Rule{{Folder: link, ProfileID: "T"}})
+	mustTick(t, w, runIn(real+"/game"))
+	mustTick(t, w, runIn(link+"/game"))
+	if !reflect.DeepEqual(sw.calls, []string{"T"}) {
+		t.Fatalf("calls %v", sw.calls)
+	}
+}
+
+func TestFolderRuleRestoresWhenNothingRunsInsideAnymore(t *testing.T) {
+	sw := &fakeSwitcher{active: "base"}
+	w := NewWatcher(sw, []Rule{{Folder: "/games/T", ProfileID: "T"}})
+	mustTick(t, w, runIn("/games/T/x"))
+	mustTick(t, w, runIn("/games/T/x"))
+	mustTick(t, w, runIn("/elsewhere"))
+	if !reflect.DeepEqual(sw.calls, []string{"T", "base"}) {
+		t.Fatalf("calls %v", sw.calls)
+	}
+}
+
+func TestFolderAndExecutableRulesShareOrderAndHandOver(t *testing.T) {
+	sw := &fakeSwitcher{active: "base"}
+	w := NewWatcher(sw, []Rule{{Folder: "/games/T", ProfileID: "T"}, {Executable: "emu", ProfileID: "E"}})
+	both := Running{Names: map[string]bool{"emu": true}, Paths: []string{"/games/T/x"}}
+	mustTick(t, w, both)
+	if !reflect.DeepEqual(sw.calls, []string{"T"}) {
+		t.Fatalf("first rule must win: %v", sw.calls)
+	}
+	mustTick(t, w, run("emu"))
+	mustTick(t, w, run())
+	if !reflect.DeepEqual(sw.calls, []string{"T", "E", "base"}) {
+		t.Fatalf("calls %v", sw.calls)
+	}
+}
+
+func TestRuleWithoutExecutableOrFolderNeverMatches(t *testing.T) {
+	sw := &fakeSwitcher{active: "base"}
+	w := NewWatcher(sw, []Rule{{ProfileID: "X"}})
+	mustTick(t, w, Running{Names: map[string]bool{"": true, "a": true}, Paths: []string{"/", "/a"}})
+	if len(sw.calls) != 0 {
+		t.Fatalf("calls %v", sw.calls)
 	}
 }

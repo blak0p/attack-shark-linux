@@ -12,8 +12,31 @@ const (
 	WatcherUnavailable     ErrorCode = "watcher_unavailable"
 )
 
-// WatcherRule is the desktop view of a configstore rule.
-type WatcherRule = configstore.WatcherRule
+// WatcherRule is the desktop view of a configstore rule. It has no JSON tags
+// so the frontend sees PascalCase keys like every other desktop type; the
+// on-disk names live on configstore.WatcherRule.
+type WatcherRule struct {
+	Executable string
+	Folder     string
+	Name       string
+	ProfileID  string
+}
+
+func rulesFromStore(in []configstore.WatcherRule) []WatcherRule {
+	out := make([]WatcherRule, 0, len(in))
+	for _, r := range in {
+		out = append(out, WatcherRule{Executable: r.Executable, Folder: r.Folder, Name: r.Name, ProfileID: r.ProfileID})
+	}
+	return out
+}
+
+func rulesToStore(in []WatcherRule) []configstore.WatcherRule {
+	out := make([]configstore.WatcherRule, 0, len(in))
+	for _, r := range in {
+		out = append(out, configstore.WatcherRule{Executable: r.Executable, Folder: r.Folder, Name: r.Name, ProfileID: r.ProfileID})
+	}
+	return out
+}
 
 // WatcherSettingsSnapshot carries the stored settings plus an optional error.
 type WatcherSettingsSnapshot struct {
@@ -64,8 +87,7 @@ func watcherError(err error) ErrorCode {
 }
 
 func watcherSnapshot(settings configstore.WatcherSettings, code ErrorCode) WatcherSettingsSnapshot {
-	rules := append([]WatcherRule{}, settings.Rules...)
-	return WatcherSettingsSnapshot{Enabled: settings.Enabled, Rules: rules, Error: Error{Code: code}}
+	return WatcherSettingsSnapshot{Enabled: settings.Enabled, Rules: rulesFromStore(settings.Rules), Error: Error{Code: code}}
 }
 
 // GetWatcherSettings reads the stored settings; a missing file yields defaults.
@@ -91,7 +113,7 @@ func (s *Service) SetWatcherSettings(enabled bool, rules []WatcherRule) WatcherS
 	if store == nil {
 		return watcherSnapshot(configstore.WatcherSettings{}, WatcherUnavailable)
 	}
-	if err := store.Save(configstore.WatcherSettings{Enabled: enabled, Rules: rules}); err != nil {
+	if err := store.Save(configstore.WatcherSettings{Enabled: enabled, Rules: rulesToStore(rules)}); err != nil {
 		stored, _ := store.Load()
 		return watcherSnapshot(stored, watcherError(err))
 	}

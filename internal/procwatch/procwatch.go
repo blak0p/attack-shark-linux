@@ -12,16 +12,31 @@ import (
 	"time"
 )
 
-// Scan returns the set of executable names running under procRoot: each
-// pid's comm, the basename of its exe link target and the basename of every
-// cmdline argument (split on / and \ so Wine/Proton paths count).
-// Unreadable or vanished pids and non-numeric entries are skipped.
-func Scan(procRoot string) (map[string]bool, error) {
+// Running is what Scan observed: executable names and absolute paths.
+type Running struct {
+	Names map[string]bool
+	Paths []string
+}
+
+// Scan returns the names and paths running under procRoot. Names: each pid's
+// comm, the basename of its exe link target and the basename of every cmdline
+// argument (split on / and \ so Wine/Proton paths count). Paths: the exe and
+// cwd link targets, plus absolute cmdline arguments that are argument 0 or end
+// in .exe; Wine drive-Z arguments are converted to Unix paths, other drives
+// and relative arguments are ignored. Unreadable or vanished pids and
+// non-numeric entries are skipped.
+func Scan(procRoot string) (Running, error) {
 	entries, err := os.ReadDir(procRoot)
 	if err != nil {
-		return nil, err
+		return Running{}, err
 	}
 	names := map[string]bool{}
+	var paths []string
+	addPath := func(p string) {
+		if p != "" {
+			paths = append(paths, filepath.Clean(p))
+		}
+	}
 	for _, e := range entries {
 		if _, err := strconv.Atoi(e.Name()); err != nil {
 			continue
@@ -32,14 +47,33 @@ func Scan(procRoot string) (map[string]bool, error) {
 		}
 		if exe, err := os.Readlink(filepath.Join(dir, "exe")); err == nil {
 			add(names, baseName(exe))
+			addPath(exe)
+		}
+		if cwd, err := os.Readlink(filepath.Join(dir, "cwd")); err == nil {
+			addPath(cwd)
 		}
 		if cmd, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
-			for _, arg := range bytes.Split(cmd, []byte{0}) {
+			for i, arg := range bytes.Split(cmd, []byte{0}) {
 				add(names, baseName(string(arg)))
+				if p, ok := argPath(string(arg)); ok &&
+					(i == 0 || strings.HasSuffix(strings.ToLower(p), ".exe")) {
+					addPath(p)
+				}
 			}
 		}
 	}
-	return names, nil
+	return Running{Names: names, Paths: paths}, nil
+}
+
+// argPath returns the absolute Unix path an argument denotes, if any.
+func argPath(arg string) (string, bool) {
+	if len(arg) >= 3 && (arg[0] == 'z' || arg[0] == 'Z') && arg[1] == ':' && (arg[2] == '\\' || arg[2] == '/') {
+		return strings.ReplaceAll(arg[2:], `\`, "/"), true
+	}
+	if strings.HasPrefix(arg, "/") {
+		return arg, true
+	}
+	return "", false
 }
 
 func add(names map[string]bool, name string) {
@@ -55,10 +89,47 @@ func baseName(p string) string {
 	return p
 }
 
-// Rule maps an executable name (exact, case-sensitive) to a profile ID.
+// Rule maps a game folder, or an executable name when Folder is empty (exact,
+// case-sensitive), to a profile ID. A rule with neither never matches.
 type Rule struct {
 	Executable string
+	Folder     string
 	ProfileID  string
+}
+
+// compiledRule is a Rule with its folder precomputed (cleaned, plus the
+// symlink-resolved form when it differs).
+type compiledRule struct {
+	Rule
+	dirs []string
+}
+
+func compile(r Rule) compiledRule {
+	c := compiledRule{Rule: r}
+	if r.Folder == "" {
+		return c
+	}
+	clean := filepath.Clean(r.Folder)
+	c.dirs = []string{clean}
+	if real, err := filepath.EvalSymlinks(clean); err == nil && real != clean {
+		c.dirs = append(c.dirs, real)
+	}
+	return c
+}
+
+func (c compiledRule) matches(run Running) bool {
+	if c.Folder != "" {
+		for _, d := range c.dirs {
+			prefix := strings.TrimSuffix(d, "/") + "/"
+			for _, p := range run.Paths {
+				if p == d || strings.HasPrefix(p, prefix) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return c.Executable != "" && run.Names[c.Executable]
 }
 
 // Switcher reads and changes the active profile.
@@ -70,32 +141,36 @@ type Switcher interface {
 // Watcher is a tick-driven state machine; it starts no goroutines.
 type Watcher struct {
 	sw    Switcher
-	rules []Rule
+	rules []compiledRule
 
 	active   bool
-	exe      string // executable that triggered the current profile
-	setID    string // profile the watcher last switched to
-	previous string // profile to restore when no game is left
+	current  compiledRule // rule that triggered the current profile
+	setID    string       // profile the watcher last switched to
+	previous string       // profile to restore when no game is left
 }
 
 func NewWatcher(sw Switcher, rules []Rule) *Watcher {
-	return &Watcher{sw: sw, rules: append([]Rule(nil), rules...)}
+	w := &Watcher{sw: sw}
+	for _, r := range rules {
+		w.rules = append(w.rules, compile(r))
+	}
+	return w
 }
 
-func (w *Watcher) match(running map[string]bool) (Rule, bool) {
+func (w *Watcher) match(running Running) (compiledRule, bool) {
 	for _, r := range w.rules {
-		if running[r.Executable] {
+		if r.matches(running) {
 			return r, true
 		}
 	}
-	return Rule{}, false
+	return compiledRule{}, false
 }
 
 // Tick advances the state machine with the currently running names. A Switch
 // error leaves the state unchanged, so the next tick retries.
-func (w *Watcher) Tick(running map[string]bool) error {
+func (w *Watcher) Tick(running Running) error {
 	if w.active {
-		if running[w.exe] {
+		if w.current.matches(running) {
 			return nil
 		}
 		if w.sw.ActiveID() != w.setID {
@@ -105,7 +180,7 @@ func (w *Watcher) Tick(running map[string]bool) error {
 			if err := w.sw.Switch(r.ProfileID); err != nil {
 				return err
 			}
-			w.exe, w.setID = r.Executable, r.ProfileID
+			w.current, w.setID = r, r.ProfileID
 			return nil
 		} else {
 			// An unknown previous profile (it could not be read) cannot be restored.
@@ -126,7 +201,7 @@ func (w *Watcher) Tick(running map[string]bool) error {
 	if err := w.sw.Switch(r.ProfileID); err != nil {
 		return err
 	}
-	w.active, w.exe, w.setID, w.previous = true, r.Executable, r.ProfileID, prev
+	w.active, w.current, w.setID, w.previous = true, r, r.ProfileID, prev
 	return nil
 }
 

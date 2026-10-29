@@ -19,13 +19,19 @@ var ErrInvalidWatcherSettings = errors.New("invalid watcher settings")
 const (
 	maxWatcherRules      = 64
 	maxWatcherExecutable = 255
+	maxWatcherName       = 255
+	maxWatcherFolder     = 4096
 )
 
 var watcherProfileID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// WatcherRule maps a bare executable name to a profile ID.
+// WatcherRule maps either a bare executable name or an install folder to a
+// profile ID. Exactly one of Executable and Folder is set. Name is the display
+// name; folder rules default it to the folder base name.
 type WatcherRule struct {
-	Executable string `json:"executable"`
+	Executable string `json:"executable,omitempty"`
+	Folder     string `json:"folder,omitempty"`
+	Name       string `json:"name,omitempty"`
 	ProfileID  string `json:"profile_id"`
 }
 
@@ -109,30 +115,59 @@ func (w *WatcherStore) Save(settings WatcherSettings) error {
 	return nil
 }
 
-// normalizeWatcherSettings trims executables, validates every rule and returns
-// a copy that shares no memory with the input.
+// normalizeWatcherSettings trims and cleans every rule, validates it and
+// returns a copy that shares no memory with the input.
 func normalizeWatcherSettings(in WatcherSettings) (WatcherSettings, error) {
 	if len(in.Rules) > maxWatcherRules {
 		return WatcherSettings{}, fmt.Errorf("%w: more than %d rules", ErrInvalidWatcherSettings, maxWatcherRules)
 	}
 	out := WatcherSettings{Enabled: in.Enabled, Rules: make([]WatcherRule, 0, len(in.Rules))}
-	seen := make(map[string]bool, len(in.Rules))
+	seenExecutable := make(map[string]bool, len(in.Rules))
+	seenFolder := make(map[string]bool, len(in.Rules))
 	for i, rule := range in.Rules {
 		exe := strings.TrimSpace(rule.Executable)
+		folder := strings.TrimSpace(rule.Folder)
+		name := strings.TrimSpace(rule.Name)
 		switch {
+		case exe != "" && folder != "":
+			return WatcherSettings{}, fmt.Errorf("%w: rule %d: set either executable or folder, not both", ErrInvalidWatcherSettings, i)
+		case folder != "":
+			switch {
+			case len(folder) > maxWatcherFolder:
+				return WatcherSettings{}, fmt.Errorf("%w: rule %d: folder exceeds %d bytes", ErrInvalidWatcherSettings, i, maxWatcherFolder)
+			case strings.Contains(folder, "\x00"):
+				return WatcherSettings{}, fmt.Errorf("%w: rule %d: folder contains NUL", ErrInvalidWatcherSettings, i)
+			case !filepath.IsAbs(folder):
+				return WatcherSettings{}, fmt.Errorf("%w: rule %d: folder must be an absolute path", ErrInvalidWatcherSettings, i)
+			}
+			folder = filepath.Clean(folder)
+			if seenFolder[folder] {
+				return WatcherSettings{}, fmt.Errorf("%w: rule %d: duplicate folder %q", ErrInvalidWatcherSettings, i, folder)
+			}
+			seenFolder[folder] = true
+			if name == "" {
+				name = filepath.Base(folder)
+			}
 		case exe == "":
 			return WatcherSettings{}, fmt.Errorf("%w: rule %d: executable is blank", ErrInvalidWatcherSettings, i)
 		case len(exe) > maxWatcherExecutable:
 			return WatcherSettings{}, fmt.Errorf("%w: rule %d: executable exceeds %d bytes", ErrInvalidWatcherSettings, i, maxWatcherExecutable)
 		case strings.ContainsAny(exe, "/\\\x00"):
 			return WatcherSettings{}, fmt.Errorf("%w: rule %d: executable must be a bare name", ErrInvalidWatcherSettings, i)
-		case seen[exe]:
+		case seenExecutable[exe]:
 			return WatcherSettings{}, fmt.Errorf("%w: rule %d: duplicate executable %q", ErrInvalidWatcherSettings, i, exe)
+		default:
+			seenExecutable[exe] = true
+		}
+		switch {
+		case len(name) > maxWatcherName:
+			return WatcherSettings{}, fmt.Errorf("%w: rule %d: name exceeds %d bytes", ErrInvalidWatcherSettings, i, maxWatcherName)
+		case strings.Contains(name, "\x00"):
+			return WatcherSettings{}, fmt.Errorf("%w: rule %d: name contains NUL", ErrInvalidWatcherSettings, i)
 		case !watcherProfileID.MatchString(rule.ProfileID):
 			return WatcherSettings{}, fmt.Errorf("%w: rule %d: profile ID must be 32 lowercase hex characters", ErrInvalidWatcherSettings, i)
 		}
-		seen[exe] = true
-		out.Rules = append(out.Rules, WatcherRule{Executable: exe, ProfileID: rule.ProfileID})
+		out.Rules = append(out.Rules, WatcherRule{Executable: exe, Folder: folder, Name: name, ProfileID: rule.ProfileID})
 	}
 	return out, nil
 }

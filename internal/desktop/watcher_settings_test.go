@@ -1,9 +1,11 @@
 package desktop
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -56,7 +58,7 @@ func TestSetWatcherSettingsPersistsAndCallsHandlerOnce(t *testing.T) {
 	if got.Error.Code != "" || !got.Enabled || !reflect.DeepEqual(got.Rules, rules) {
 		t.Fatalf("set = %#v", got)
 	}
-	want := configstore.WatcherSettings{Enabled: true, Rules: rules}
+	want := configstore.WatcherSettings{Enabled: true, Rules: rulesToStore(rules)}
 	if len(seen) != 1 || !reflect.DeepEqual(seen[0], want) {
 		t.Fatalf("handler = %#v", seen)
 	}
@@ -133,5 +135,63 @@ func TestWatcherChangeHandlerMayReadSettings(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("deadlock: the handler could not read the settings")
+	}
+}
+
+func TestWatcherSettingsFolderRuleRoundTripAndInvalid(t *testing.T) {
+	s, path := newWatcherService(t)
+	got := s.SetWatcherSettings(true, []WatcherRule{{Folder: "/games/T/", ProfileID: watcherHexA}})
+	want := []WatcherRule{{Folder: "/games/T", Name: "T", ProfileID: watcherHexA}}
+	if got.Error.Code != "" || !reflect.DeepEqual(got.Rules, want) {
+		t.Fatalf("set = %#v", got)
+	}
+	if again := s.GetWatcherSettings(); !reflect.DeepEqual(again.Rules, want) {
+		t.Fatalf("get = %#v", again)
+	}
+	before, _ := os.ReadFile(path)
+	bad := s.SetWatcherSettings(true, []WatcherRule{{Executable: "a", Folder: "/g", ProfileID: watcherHexA}})
+	if bad.Error.Code != InvalidWatcherSettings || !reflect.DeepEqual(bad.Rules, want) {
+		t.Fatalf("bad = %#v", bad)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatal("file changed on rejection")
+	}
+}
+
+func TestWatcherSettingsJSONUsesPascalCaseKeys(t *testing.T) {
+	s, _ := newWatcherService(t)
+	s.SetWatcherSettings(true, []WatcherRule{{Executable: "game.exe", Name: "G", ProfileID: watcherHexA}})
+	encoded, err := json.Marshal(s.GetWatcherSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct{ Rules []map[string]any }
+	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded.Rules) != 1 {
+		t.Fatalf("decode %s: %v", encoded, err)
+	}
+	keys := make([]string, 0, 4)
+	for k := range decoded.Rules[0] {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if !reflect.DeepEqual(keys, []string{"Executable", "Folder", "Name", "ProfileID"}) {
+		t.Fatalf("keys = %v in %s", keys, encoded)
+	}
+}
+
+func TestSetWatcherSettingsAcceptsFrontendJSON(t *testing.T) {
+	s, _ := newWatcherService(t)
+	var rules []WatcherRule
+	input := `[{"Executable":"game.exe","ProfileID":"` + watcherHexA + `"}]`
+	if err := json.Unmarshal([]byte(input), &rules); err != nil {
+		t.Fatal(err)
+	}
+	got := s.SetWatcherSettings(true, rules)
+	want := []WatcherRule{{Executable: "game.exe", ProfileID: watcherHexA}}
+	if got.Error.Code != "" || !reflect.DeepEqual(got.Rules, want) {
+		t.Fatalf("set = %#v", got)
+	}
+	if again := s.GetWatcherSettings(); !reflect.DeepEqual(again.Rules, want) {
+		t.Fatalf("get = %#v", again)
 	}
 }
