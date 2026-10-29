@@ -61,7 +61,9 @@ export type WatcherService = {
 export type InstalledGame = { Name: string; Source: 'Steam' | 'Heroic' | 'App'; Folder: string; Executable: string; IsGame: boolean };
 export type GameListSnapshot = { Games: InstalledGame[]; Error: { Code: string } };
 export type PickResult = { Path: string; Name: string; Cancelled: boolean; Error: { Code: string } };
+export type LauncherPathSnapshot = { Path: string; Error: { Code: string } };
 export type GamesService = {
+  GetLauncherPath(): Promise<LauncherPathSnapshot>;
   ListInstalledGames(): Promise<GameListSnapshot>;
   PickGameFolder(): Promise<PickResult>;
 };

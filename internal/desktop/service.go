@@ -239,6 +239,7 @@ type Service struct {
 	update              *updateState
 	watcherSettings     watcherComponent
 	gameCatalog         gameComponent
+	launcher            launcherComponent
 }
 
 func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {

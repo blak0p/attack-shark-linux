@@ -74,6 +74,7 @@ const gamesCall = <T,>(method: keyof GamesService): Promise<T> =>
   Call.ByName(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`);
 
 export const desktopService: DesktopService & ProfilesService & WatcherService & GamesService = {
+  GetLauncherPath: () => gamesCall('GetLauncherPath'),
   ListInstalledGames: () => gamesCall('ListInstalledGames'),
   PickGameFolder: () => gamesCall('PickGameFolder'),
   GetWatcherSettings: () => watcherCall('GetWatcherSettings'),
