@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from 'react-dom';
+import { useTranslation } from "react-i18next";
+import { i18n } from "../i18n";
 
 let feedbackHost: HTMLDivElement | undefined;
 let feedbackUsers = 0;
@@ -11,7 +13,7 @@ export function FeedbackPortal({ children }: { children: ReactNode }) {
       feedbackHost = document.createElement('div');
       feedbackHost.className = 'operation-feedback';
       feedbackHost.setAttribute('role', 'region');
-      feedbackHost.setAttribute('aria-label', 'Operation feedback');
+      feedbackHost.setAttribute('aria-label', i18n.t('feedback.region'));
       feedbackHost.setAttribute('aria-live', 'polite');
       document.body.appendChild(feedbackHost);
     }
@@ -35,8 +37,9 @@ export type FeedbackResult = {
   saveFailed?: boolean;
 };
 
-export function ProgressIndicator({ label = "Working…" }: { label?: string }) {
-  return <><span className="pending-spinner" aria-hidden="true" /><span>{label}</span></>;
+export function ProgressIndicator({ label }: { label?: string }) {
+  const { t } = useTranslation();
+  return <><span className="pending-spinner" aria-hidden="true" /><span>{label ?? t("feedback.working")}</span></>;
 }
 
 // Presentation only. A snapshot is not an operation: seed initial versions silently.
@@ -47,6 +50,7 @@ export function OperationFeedback({ scope, busy = false, quiet = false, results 
   quiet?: boolean;
   results: FeedbackResult[];
 }) {
+  const { t } = useTranslation();
   const previous = useRef<{ scope: string; results: Map<string, FeedbackResult> } | undefined>(undefined);
   const serial = useRef(0);
   const [confirmation, setConfirmation] = useState<{ id: number; scope: string; message: string }>();
@@ -76,7 +80,7 @@ export function OperationFeedback({ scope, busy = false, quiet = false, results 
     if (prior?.scope !== scope || changed.some(result => result.error)) setConfirmation(undefined);
     const completed = changed.filter(result => result.success && !result.error).at(-1);
     if (completed && !quiet) setConfirmation({
-      id: ++serial.current, scope, message: prior?.results.get(completed.id)?.saveFailed ? "Saved" : completed.success!,
+      id: ++serial.current, scope, message: prior?.results.get(completed.id)?.saveFailed ? t("feedback.saved") : completed.success!,
     });
   }, [scope, signature]);
 
@@ -88,12 +92,12 @@ export function OperationFeedback({ scope, busy = false, quiet = false, results 
 
   const message = confirmation?.scope === scope ? confirmation.message : undefined;
   return <FeedbackPortal>
-    {(busy || message) && <div key={busy ? "pending" : confirmation?.id} className="feedback-message" role="status" aria-live="polite" aria-label="Operation status">
+    {(busy || message) && <div key={busy ? "pending" : confirmation?.id} className="feedback-message" role="status" aria-live="polite" aria-label={t("feedback.status")}>
       {busy ? <ProgressIndicator /> : <><span aria-hidden="true">✓</span><span>{message}</span></>}
     </div>}
     {groupFailures(failures).map(group => <div key={group.map(result => result.id).join()} role="alert" className="feedback-message feedback-error">
       <span><b>{group.map(result => result.label).join(", ")}</b>: {group[0].error}</span>
-      {group[0].retry && <button type="button" className="button" disabled={busy} onClick={group[0].retry}>Retry</button>}
+      {group[0].retry && <button type="button" className="button" disabled={busy} onClick={group[0].retry}>{t("feedback.retry")}</button>}
     </div>)}
   </FeedbackPortal>;
 }
@@ -115,12 +119,12 @@ export function settingsResult(id: string, label: string, snapshot: {
   const error = snapshot?.Firmware === "failed"
     ? feedbackFor(snapshot.Error.Code || "application_failed")
     : snapshot?.Persistence === "failed"
-      ? "Applied to mouse; local save failed."
+      ? i18n.t("feedback.saveFailed")
       : snapshot?.Error.Code ? feedbackFor(snapshot.Error.Code) : undefined;
   return {
     id, label,
     version: JSON.stringify([snapshot?.Applied, snapshot?.Firmware, snapshot?.Persistence, snapshot?.Error.Code]),
-    success: snapshot?.Firmware === "success" ? "Applied" : undefined,
+    success: snapshot?.Firmware === "success" ? i18n.t("feedback.applied") : undefined,
     initialized: !!snapshot,
     saveFailed: snapshot?.Firmware === "success" && snapshot?.Persistence === "failed",
     error, retry: snapshot?.RetryAvailable ? retry : undefined,

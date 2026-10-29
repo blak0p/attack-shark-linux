@@ -9,5 +9,120 @@
     "windowControls": "Controles de ventana",
     "minimise": "Minimizar ventana",
     "close": "Cerrar ventana"
+  },
+  "feedback": {
+    "region": "Estado de las operaciones",
+    "working": "Trabajando…",
+    "status": "Estado de la operación",
+    "retry": "Reintentar",
+    "applied": "Aplicado",
+    "saved": "Guardado",
+    "sent": "Enviado",
+    "imported": "Importado",
+    "deleted": "Eliminado",
+    "reset": "Restablecido",
+    "saveFailed": "Aplicado al mouse; falló el guardado local.",
+    "uploadFailed": "Falló la carga.",
+    "devicePartial": "El estado del dispositivo puede ser parcial o desconocido.",
+    "labels": {
+      "buttons": "Botones",
+      "mouseSettings": "Ajustes del mouse",
+      "pollingRate": "Frecuencia de sondeo",
+      "keyResponse": "Tiempo de respuesta de teclas",
+      "sleep": "Suspensión",
+      "lighting": "Iluminación",
+      "macros": "Macros",
+      "device": "Dispositivo"
+    }
+  },
+  "updateBanner": {
+    "ready": "La versión {{version}} está lista.",
+    "apply": "Actualizar y reiniciar",
+    "failed": "Falló la actualización: {{error}}"
+  },
+  "nav": {
+    "sections": "Secciones del espacio de trabajo",
+    "performance": "Rendimiento",
+    "lighting": "Iluminación",
+    "controls": "Controles",
+    "remapping": "Reasignación de botones",
+    "macros": "Macros",
+    "games": "Juegos",
+    "device": "Dispositivo"
+  },
+  "shell": {
+    "subtitle": "Mouse gamer",
+    "available": "Dispositivo disponible",
+    "viaReceiver": "Conectado mediante receptor"
+  },
+  "updates": {
+    "title": "Actualizaciones",
+    "checking": "Buscando actualizaciones…",
+    "applying": "Aplicando actualizaciones…",
+    "requestFailed": "Falló la solicitud de actualización: {{error}}",
+    "details": "Detalles de la actualización",
+    "guidance": "Guía de configuración de permisos USB de confianza",
+    "check": "Buscar actualizaciones",
+    "apply": "Aplicar actualizaciones",
+    "relaunch": "Reiniciar la app",
+    "relaunchError": "Reinicio: {{error}}",
+    "explainPolicy": "Solo son elegibles las políticas USB ausentes o las oficiales reconocidas que estén desactualizadas. Las reglas personalizadas se conservan. Los cambios USB usan un único diálogo de autorización del sistema; esta app nunca pide una contraseña. El reemplazo del AppImage queda en tu usuario. La configuración inicial es aparte y la hacés vos; la app nunca instala el helper.",
+    "explainApply": "Aplicar actualizaciones reintenta solo las operaciones elegibles que quedaron sin terminar. Una política ya escrita no se vuelve a escribir; un error de recarga igual requiere revisión. Reiniciar la app pide un reinicio, no una segunda instalación.",
+    "target": {
+      "both": "AppImage y permisos USB (udev)",
+      "app": "AppImage",
+      "policy": "Permisos USB (udev)",
+      "failed": "Falló la búsqueda de actualizaciones"
+    },
+    "app": {
+      "relaunchFailed": "AppImage reemplazado; falló el reinicio.",
+      "restartDeferred": "AppImage reemplazado; el reinicio puede demorarse. Usá Reiniciar la app de forma explícita.",
+      "restartRequested": "AppImage reemplazado; se pidió el reinicio, sin confirmar.",
+      "error": "AppImage: {{error}}",
+      "available": "Hay una versión {{version}} del AppImage disponible."
+    },
+    "policy": {
+      "updated": "Permisos USB actualizados.",
+      "reloadFailed": "Política USB escrita; falló la recarga o la activación.",
+      "reloaded": "Política USB escrita y recarga completada; reconectá el mouse si hace falta.",
+      "error": "Permisos USB: {{error}}"
+    },
+    "policyState": {
+      "current": "Los permisos USB están al día.",
+      "missing": "Faltan los permisos USB.",
+      "outdated": "Hay una actualización oficial de permisos USB disponible.",
+      "custom": "Se conservan los permisos USB personalizados; no se sobrescriben automáticamente.",
+      "unavailable": "La actualización de permisos USB no está disponible en esta versión.",
+      "error": "No se pudieron inspeccionar los permisos USB.",
+      "unknown": "El estado de los permisos USB es desconocido."
+    }
+  },
+  "app": {
+    "serial": "Serie {{serial}}",
+    "unavailable": "no disponible",
+    "wirelessSubtitle": "Mouse gamer inalámbrico",
+    "connecting": "Conectando…",
+    "mouseDevice": "Mouse",
+    "selectMouse": "Elegí un mouse",
+    "deviceUnavailable": "Dispositivo no disponible",
+    "batteryUnavailable": "Batería no disponible",
+    "battery": "Batería {{percent}}%",
+    "gamesSubtitle": "Cambiá el perfil del mouse cuando arranca un juego y volvé al anterior cuando se cierra.",
+    "inventory": "Inventario de dispositivos",
+    "connection": "Conexión: {{connection}}",
+    "notEligible": "no elegible",
+    "receiverUnavailable": "Receptor detectado, configuración no disponible."
+  },
+  "lighting": {
+    "effect": "Efecto",
+    "color": "Color de iluminación",
+    "speed": "Velocidad de {{label}}",
+    "unavailableColor": "Color {{index}} no disponible",
+    "effectControlled": "Controlado por el efecto"
+  },
+  "errors": {
+    "permission_denied": "Permiso denegado. Configurá el acceso udev para el dispositivo hidraw y reconectá el mouse.",
+    "device_disconnected": "Mouse desconectado. Reconectá el receptor o el mouse y probá de nuevo.",
+    "stale_binding": "La conexión del dispositivo cambió. Actualizá la lista de dispositivos y elegí el mouse otra vez antes de guardar."
   }
 }

@@ -9,5 +9,120 @@
     "windowControls": "Window controls",
     "minimise": "Minimise window",
     "close": "Close window"
+  },
+  "feedback": {
+    "region": "Operation feedback",
+    "working": "Working…",
+    "status": "Operation status",
+    "retry": "Retry",
+    "applied": "Applied",
+    "saved": "Saved",
+    "sent": "Sent",
+    "imported": "Imported",
+    "deleted": "Deleted",
+    "reset": "Reset",
+    "saveFailed": "Applied to mouse; local save failed.",
+    "uploadFailed": "Upload failed.",
+    "devicePartial": "Device state may be partial or unknown.",
+    "labels": {
+      "buttons": "Buttons",
+      "mouseSettings": "Mouse settings",
+      "pollingRate": "Polling rate",
+      "keyResponse": "Key response time",
+      "sleep": "Sleep",
+      "lighting": "Lighting",
+      "macros": "Macros",
+      "device": "Device"
+    }
+  },
+  "updateBanner": {
+    "ready": "Version {{version}} is ready.",
+    "apply": "Update and restart",
+    "failed": "Update failed: {{error}}"
+  },
+  "nav": {
+    "sections": "Workspace sections",
+    "performance": "Performance",
+    "lighting": "Lighting",
+    "controls": "Controls",
+    "remapping": "Button remapping",
+    "macros": "Macros",
+    "games": "Games",
+    "device": "Device"
+  },
+  "shell": {
+    "subtitle": "Gaming Mouse",
+    "available": "Device available",
+    "viaReceiver": "Connected via receiver"
+  },
+  "updates": {
+    "title": "Updates",
+    "checking": "Checking for updates…",
+    "applying": "Applying updates…",
+    "requestFailed": "Update request failed: {{error}}",
+    "details": "Update details",
+    "guidance": "Trusted USB permissions setup guidance",
+    "check": "Check for updates",
+    "apply": "Apply updates",
+    "relaunch": "Relaunch app",
+    "relaunchError": "Relaunch: {{error}}",
+    "explainPolicy": "Only missing or recognized official outdated USB policies are eligible. Custom rules are preserved. USB changes use one system authorization dialog; this app never collects a password. AppImage replacement stays user-local. Setup is separate and user-led; the app never installs the helper.",
+    "explainApply": "Apply updates retries unfinished eligible operations only. A written policy is not written again; a reload error still needs inspection. Relaunch app requests a restart, not a second installation.",
+    "target": {
+      "both": "AppImage and USB permissions (udev)",
+      "app": "AppImage",
+      "policy": "USB permissions (udev)",
+      "failed": "Update check failed"
+    },
+    "app": {
+      "relaunchFailed": "AppImage replaced; relaunch failed.",
+      "restartDeferred": "AppImage replaced; restart may be deferred. Use Relaunch app explicitly.",
+      "restartRequested": "AppImage replaced; restart requested, not confirmed.",
+      "error": "AppImage: {{error}}",
+      "available": "AppImage version {{version}} is available."
+    },
+    "policy": {
+      "updated": "USB permissions updated.",
+      "reloadFailed": "USB policy written; reload or activation failed.",
+      "reloaded": "USB policy written and reload completed; reconnect the mouse if needed.",
+      "error": "USB permissions: {{error}}"
+    },
+    "policyState": {
+      "current": "USB permissions are current.",
+      "missing": "USB permissions are missing.",
+      "outdated": "An official USB permissions update is available.",
+      "custom": "Custom USB permissions preserved; no automatic overwrite.",
+      "unavailable": "USB permissions update unavailable for this release.",
+      "error": "USB permissions could not be inspected.",
+      "unknown": "USB permissions status is unknown."
+    }
+  },
+  "app": {
+    "serial": "Serial {{serial}}",
+    "unavailable": "unavailable",
+    "wirelessSubtitle": "Wireless Gaming Mouse",
+    "connecting": "Connecting…",
+    "mouseDevice": "Mouse device",
+    "selectMouse": "Select a mouse",
+    "deviceUnavailable": "Device unavailable",
+    "batteryUnavailable": "Battery unavailable",
+    "battery": "Battery {{percent}}%",
+    "gamesSubtitle": "Switch the mouse profile when a game starts and go back when it closes.",
+    "inventory": "Device inventory",
+    "connection": "Connection: {{connection}}",
+    "notEligible": "not eligible",
+    "receiverUnavailable": "Receiver detected, configuration unavailable."
+  },
+  "lighting": {
+    "effect": "Effect",
+    "color": "Lighting color",
+    "speed": "{{label}} speed",
+    "unavailableColor": "Unavailable color {{index}}",
+    "effectControlled": "Effect controlled"
+  },
+  "errors": {
+    "permission_denied": "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse.",
+    "device_disconnected": "Mouse disconnected. Reconnect the receiver or mouse, then try again.",
+    "stale_binding": "Device connection changed. Refresh the device list and select the mouse again before saving."
   }
 }
