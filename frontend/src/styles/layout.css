@@ -227,6 +227,17 @@ aside, .workspace-rail {
   font-size: 12px;
 }
 
+.rail-language {
+  padding-top: 8px;
+}
+
+.rail-language select {
+  width: 100%;
+  min-height: 0;
+  height: 32px;
+  padding-block: 4px;
+}
+
 .connection b {
   display: block;
   margin-bottom: 2px;
@@ -378,6 +389,16 @@ main, .main {
 
   .device-name, .connection {
     display: none;
+  }
+
+  .rail-language {
+    flex: none;
+    margin-left: auto;
+    padding: 0;
+  }
+
+  .rail-language select {
+    width: auto;
   }
 
   .nav, .workspace-rail a {
