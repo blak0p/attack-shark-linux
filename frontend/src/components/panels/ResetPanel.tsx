@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export type ResetPanelProps = {
   confirmation: boolean;
@@ -17,13 +18,14 @@ export function ResetPanel({
   onCancel,
   children,
 }: ResetPanelProps) {
+  const { t } = useTranslation();
   return (
     <article id="reset" className="card" aria-labelledby="reset-title">
       <div className="card-head">
         <div>
-          <h2 id="reset-title">Reset to factory</h2>
+          <h2 id="reset-title">{t("reset.title")}</h2>
           <p className="hint" style={{ margin: "3px 0 0" }}>
-            Restore mouse defaults.
+            {t("reset.hint")}
           </p>
         </div>
         {children ?? (
@@ -33,7 +35,7 @@ export function ResetPanel({
             disabled={!ready}
             onClick={onRequestReset}
           >
-            Reset to factory
+            {t("reset.title")}
           </button>
         )}
       </div>
@@ -41,22 +43,22 @@ export function ResetPanel({
       {confirmation && (
         <div
           role="alertdialog"
-          aria-label="Confirm factory reset"
+          aria-label={t("reset.confirmLabel")}
           className="group"
           style={{ marginTop: 14 }}
         >
-          <p>Restore mouse defaults and clear local profiles after acknowledgement. Onboard macros may remain.</p>
-          <details className="group"><summary>Reset details</summary>
+          <p>{t("reset.warning")}</p>
+          <details className="group"><summary>{t("reset.details")}</summary>
           <p style={{ margin: 0 }}>
-            This resets DPI (active stage 2), lighting (Static DPI), sleep (0.5 minutes), key response time (4 ms), polling (1000 Hz), and default button remapping. Local profiles are cleared only after all four supported lanes acknowledge; onboard macro deletion and complete device memory erasure are unverified.
+            {t("reset.detailsBody")}
           </p>
           </details>
           <div className="actions">
             <button type="button" className="button" onClick={onCancel}>
-              Cancel factory reset
+              {t("reset.cancel")}
             </button>
             <button type="button" className="button primary" onClick={onConfirm}>
-              Confirm factory reset
+              {t("reset.confirm")}
             </button>
           </div>
         </div>

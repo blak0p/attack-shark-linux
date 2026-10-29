@@ -96,6 +96,7 @@ const watcherResult = () => ({ ...structuredClone(watcher), Error: { Code: '' } 
 const service = {
   GetWatcherSettings: async () => watcherResult(),
   GetLauncherPath: async () => ({ Path: '/home/user/My Apps/x6.AppImage', Error: { Code: '' } }),
+  GetAutostart: async () => ({ Enabled: false, Error: { Code: '' } }),
   ListInstalledGames: async () => ({ Games: structuredClone(gameCatalog), Error: { Code: '' } }),
   PickGameFolder: async () => cancelled,
   SetWatcherSettings: async (enabled: boolean, rules: FakeRule[]) => {

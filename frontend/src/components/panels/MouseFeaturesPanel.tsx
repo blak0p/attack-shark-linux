@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export type MouseFeaturesPanelProps = {
   angleSnap?: boolean;
@@ -21,28 +22,29 @@ export function MouseFeaturesPanel({
   onLiftDistanceChange,
   children,
 }: MouseFeaturesPanelProps) {
+  const { t } = useTranslation();
   if (children) {
     return (
-      <div className="group" role="group" aria-label="Mouse features">
+      <div className="group" role="group" aria-label={t("features.title")}>
         {children}
       </div>
     );
   }
 
   return (
-    <div className="group" role="group" aria-label="Mouse features">
-      <h2>Mouse features</h2>
+    <div className="group" role="group" aria-label={t("features.title")}>
+      <h2>{t("features.title")}</h2>
       <div className="rows">
         <div className="row">
           <label htmlFor="angle-snap-toggle">
-            <strong>Angle snap</strong>
-            <span>Straighten movement</span>
+            <strong>{t("features.angleSnap")}</strong>
+            <span>{t("features.angleSnapHint")}</span>
           </label>
           <input
             id="angle-snap-toggle"
             className="switch"
             type="checkbox"
-            aria-label="Angle snap"
+            aria-label={t("features.angleSnap")}
             checked={angleSnap}
             disabled={disabled}
             onChange={(event) => onAngleSnapChange?.(event.target.checked)}
@@ -50,14 +52,14 @@ export function MouseFeaturesPanel({
         </div>
         <div className="row">
           <label htmlFor="ripple-control-toggle">
-            <strong>Ripple control</strong>
-            <span>Reduce jitter</span>
+            <strong>{t("features.ripple")}</strong>
+            <span>{t("features.rippleHint")}</span>
           </label>
           <input
             id="ripple-control-toggle"
             className="switch"
             type="checkbox"
-            aria-label="Ripple control"
+            aria-label={t("features.ripple")}
             checked={rippleControl}
             disabled={disabled}
             onChange={(event) => onRippleControlChange?.(event.target.checked)}
@@ -65,13 +67,13 @@ export function MouseFeaturesPanel({
         </div>
         <div className="row">
           <label htmlFor="lod-select">
-            <strong>Lift-off distance</strong>
-            <span>Tracking height</span>
+            <strong>{t("features.lod")}</strong>
+            <span>{t("features.lodHint")}</span>
           </label>
           <select
             id="lod-select"
             className="select"
-            aria-label="Lift-off distance"
+            aria-label={t("features.lod")}
             value={String(liftDistance)}
             disabled={disabled}
             onChange={(event) => onLiftDistanceChange?.(Number(event.target.value))}

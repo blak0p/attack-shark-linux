@@ -1,20 +1,22 @@
 import { useContext } from "react";
+import { useTranslation } from "react-i18next";
 import { GamesAvailableContext, type WorkspaceViewId } from "./workspace-view-context";
 
-const sections: Array<{ id: WorkspaceViewId; label: string; glyph: string }> = [
-  { id: "performance", label: "Performance", glyph: "◉" },
-  { id: "lighting", label: "Lighting", glyph: "☼" },
-  { id: "controls", label: "Controls", glyph: "⌁" },
-  { id: "remapping", label: "Button remapping", glyph: "↺" },
-  { id: "macros", label: "Macros", glyph: "≡" },
-  { id: "games", label: "Games", glyph: "▶" },
-  { id: "device", label: "Device", glyph: "▣" },
+const sections: Array<{ id: WorkspaceViewId; labelKey: string; glyph: string }> = [
+  { id: "performance", labelKey: "nav.performance", glyph: "◉" },
+  { id: "lighting", labelKey: "nav.lighting", glyph: "☼" },
+  { id: "controls", labelKey: "nav.controls", glyph: "⌁" },
+  { id: "remapping", labelKey: "nav.remapping", glyph: "↺" },
+  { id: "macros", labelKey: "nav.macros", glyph: "≡" },
+  { id: "games", labelKey: "nav.games", glyph: "▶" },
+  { id: "device", labelKey: "nav.device", glyph: "▣" },
 ];
 
 export function SectionNavigation({ activeView, onNavigate }: { activeView: WorkspaceViewId; onNavigate(view: WorkspaceViewId): void }) {
+  const { t } = useTranslation();
   const gamesAvailable = useContext(GamesAvailableContext);
   return (
-    <nav aria-label="Workspace sections">
+    <nav aria-label={t("nav.sections")}>
       {sections.filter((section) => section.id !== "games" || gamesAvailable).map((section) => (
         <a
           key={section.id}
@@ -29,7 +31,7 @@ export function SectionNavigation({ activeView, onNavigate }: { activeView: Work
           }}
         >
           <span className="glyph" aria-hidden="true">{section.glyph}</span>
-          {section.label}
+          {t(section.labelKey)}
         </a>
       ))}
     </nav>

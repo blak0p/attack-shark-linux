@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 export type PowerSettingsPanelProps = {
   feedbackManaged?: boolean;
   value: number;
@@ -25,17 +27,18 @@ export function PowerSettingsPanel({
   onChange,
   onRetry,
 }: PowerSettingsPanelProps) {
+  const { t } = useTranslation();
   return (
     <div className="group">
       <div className="card-head">
-        <h2>Key response time</h2>
-        <span aria-label="Key response time value">{value} ms</span>
+        <h2>{t("power.title")}</h2>
+        <span aria-label={t("power.value")}>{value} ms</span>
       </div>
       <div className="range-row">
         <span>2 ms</span>
         <input
           type="range"
-          aria-label="Key response time"
+          aria-label={t("power.title")}
           min="2"
           max="25"
           step="1"
@@ -45,19 +48,19 @@ export function PowerSettingsPanel({
         />
         <span>25 ms</span>
       </div>
-      {!feedbackManaged && <div className="power-settings-state status" role="status" aria-label="Key response time status">
+      {!feedbackManaged && <div className="power-settings-state status" role="status" aria-label={t("power.status")}>
         {firmwareStatus === "pending"
-          ? "Applying…"
+          ? t("common.applying")
           : firmwareStatus === "failed"
           ? <>
-              Key response time change failed
+              {t("power.failed")}
               {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
             </>
-          : `Applied ${appliedValue ?? value} ms`}
-        {persistenceStatus === "failed" && <span> Key response time was not saved.</span>}
+          : t("power.applied", { ms: appliedValue ?? value })}
+        {persistenceStatus === "failed" && <span> {t("power.notSaved")}</span>}
         {retryAvailable && (
           <button type="button" className="button" style={{ marginLeft: 8 }} onClick={onRetry}>
-            Retry key response persistence
+            {t("power.retry")}
           </button>
         )}
       </div>}

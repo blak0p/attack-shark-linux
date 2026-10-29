@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "./i18n";
 import { GamesAvailableContext, type WorkspaceViewId } from "./components/workspace/workspace-view-context";
 import { GamesPanel } from "./components/games/GamesPanel";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
@@ -32,14 +34,14 @@ export type {
   Snapshot,
 } from "./desktop-contract";
 
-const identityLabel = (device: Device) => `Serial ${device.ID.Serial || "unavailable"}`;
+const identityLabel = (device: Device) => i18n.t("app.serial", { serial: device.ID.Serial || i18n.t("app.unavailable") });
 const feedbackFor = (code: string) =>
   code === "permission_denied"
-    ? "Permission denied. Configure udev access for the hidraw device, then reconnect the mouse."
+    ? i18n.t("errors.permission_denied")
     : code === "device_disconnected"
-    ? "Mouse disconnected. Reconnect the receiver or mouse, then try again."
+    ? i18n.t("errors.device_disconnected")
     : code === "stale_binding"
-    ? "Device connection changed. Refresh the device list and select the mouse again before saving."
+    ? i18n.t("errors.stale_binding")
     : code.replaceAll("_", " ");
 const SWATCH_COLORS = ["#00FF00", "#FE5EF9", "#FF7F00", "#FFFF00"];
 
@@ -51,7 +53,7 @@ const lightingSlots = (
 ): LightingSlot[] => {
   if (!effect)
     return Array.from({ length: 5 }, (_, index) => ({
-      label: `Unavailable color ${index + 1}`,
+      label: i18n.t("lighting.unavailableColor", { index: index + 1 }),
       disabled: true,
     }));
   const interactive = effect.ColorTemplates.slice(0, 4).map((template) => ({
@@ -61,7 +63,7 @@ const lightingSlots = (
     disabled: false,
   }));
   const fallback = (index: number): LightingSlot => ({
-    label: `Unavailable color ${index + 1}`,
+    label: i18n.t("lighting.unavailableColor", { index: index + 1 }),
     color: SWATCH_COLORS[index],
     disabled: true,
   });
@@ -71,7 +73,7 @@ const lightingSlots = (
       fallback(interactive.length + index)
     ),
     {
-      label: "Effect controlled",
+      label: i18n.t("lighting.effectControlled"),
       color: appliedColors?.length ? `rgb(${appliedColors[0].join(", ")})` : undefined,
       disabled: true,
     },
@@ -82,6 +84,7 @@ const speedFill = (index: number, count: number) =>
   count > 1 ? `${Math.round((index / (count - 1)) * 100)}%` : "0%";
 
 export function App({ service }: { service: DesktopService }) {
+  const { t } = useTranslation();
   const { model, actions } = useDesktopWorkspace(service);
   const macroLibrary = useMacroLibrary(service);
   const {
@@ -112,7 +115,7 @@ export function App({ service }: { service: DesktopService }) {
   const assignmentScope = useMemo(() => ({ service, selectedBinding, assignmentAvailable }), [service, selectedBinding, assignmentAvailable]);
 
   const macroWorkspace = (
-    <WorkspaceView key="macros" id="macros" title="Macros">
+    <WorkspaceView key="macros" id="macros" title={t("nav.macros")}>
       <MacroManagerPanel service={service} library={macroLibrary} feedbackManaged />
     </WorkspaceView>
   );
@@ -124,11 +127,11 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return (
     <GamesAvailableContext.Provider value={gamesAvailable}>
-    <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle="Wireless Gaming Mouse"
-      titlebar={<TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
-      connectionStatus={<p className="connection offline">Connecting…</p>}>
+    <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle={t("app.wirelessSubtitle")}
+      titlebar={<TopBar subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
+      connectionStatus={<p className="connection offline">{t("app.connecting")}</p>}>
       {macroWorkspace}
-      <WorkspaceView id="performance" title="Performance"><div aria-busy="true" /></WorkspaceView>
+      <WorkspaceView id="performance" title={t("nav.performance")}><div aria-busy="true" /></WorkspaceView>
     </WorkspaceShell>
     </GamesAvailableContext.Provider>
   );
@@ -165,19 +168,19 @@ export function App({ service }: { service: DesktopService }) {
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
   const titlebarElement = (
-    <TopBar title="Mouse configuration" subtitle="Attack Shark X6" center={
+    <TopBar subtitle="Attack Shark X6" center={
       <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />}>
       {eligibleDevices.length > 1 && (
         <label className="titlebar-device">
-          <span>Mouse device</span>
+          <span>{t("app.mouseDevice")}</span>
           <select
             className="select"
-            aria-label="Mouse device"
+            aria-label={t("app.mouseDevice")}
             value={inventory?.Selected?.ID.Serial ?? ""}
             onChange={(event) => actions.selectDevice(event.target.value)}
           >
             <option value="" disabled>
-              Select a mouse
+              {t("app.selectMouse")}
             </option>
             {eligibleDevices.map((device) => (
               <option key={device.ID.Serial} value={device.ID.Serial}>
@@ -199,9 +202,9 @@ export function App({ service }: { service: DesktopService }) {
     >
       <b>
         <span className={`dot${connected ? "" : " offline"}`} aria-hidden="true" />
-        {connected ? "Device available" : "Device unavailable"}
+        {connected ? t("shell.available") : t("app.deviceUnavailable")}
       </b>
-      <span>{snapshot.Battery == null ? "Battery unavailable" : `Battery ${snapshot.Battery}%`}</span>
+      <span>{snapshot.Battery == null ? t("app.batteryUnavailable") : t("app.battery", { percent: snapshot.Battery })}</span>
     </div>
   );
 
@@ -213,7 +216,7 @@ export function App({ service }: { service: DesktopService }) {
       busy={automaticApplyBusy || profileBusy}
       feedback={feedback}
       deviceName="Attack Shark X6"
-      deviceSubtitle="Wireless Gaming Mouse"
+      deviceSubtitle={t("app.wirelessSubtitle")}
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}
     >
@@ -225,7 +228,7 @@ export function App({ service }: { service: DesktopService }) {
       {/* 1. Performance View */}
       <WorkspaceView
         id="performance"
-        title="Performance"
+        title={t("nav.performance")}
       >
         <div className="stack">
           <DpiPanel
@@ -268,14 +271,14 @@ export function App({ service }: { service: DesktopService }) {
       {/* 2. Lighting View */}
       <WorkspaceView
         id="lighting"
-        title="Lighting"
+        title={t("nav.lighting")}
       >
         {lighting && (
           <LightingPanel>
             <article className="card">
-              <h2 id="lighting-title">Effect</h2>
+              <h2 id="lighting-title">{t("lighting.effect")}</h2>
               <label className="lighting-effect-select">
-                <span className="sr-only">Effect</span>
+                <span className="sr-only">{t("lighting.effect")}</span>
                 <LightingEffectSelect
                   effects={lighting.Effects}
                   value={lighting.Pending.Mode}
@@ -291,14 +294,14 @@ export function App({ service }: { service: DesktopService }) {
             </article>
 
             <article className="card">
-              <h2>Lighting color</h2>
+              <h2>{t("lighting.color")}</h2>
 
               {lightingEffect && lightingEffect.SpeedVariants.length > 1 && (
                 <div className="range-row" style={{ marginBottom: 14 }}>
-                  <span>{lightingEffect.Label} speed</span>
+                  <span>{t("lighting.speed", { label: lightingEffect.Label })}</span>
                   <input
                     type="range"
-                    aria-label={`${lightingEffect.Label} speed`}
+                    aria-label={t("lighting.speed", { label: lightingEffect.Label })}
                     min={0}
                     max={lightingEffect.SpeedVariants.length - 1}
                     step={1}
@@ -326,11 +329,11 @@ export function App({ service }: { service: DesktopService }) {
               )}
 
               <fieldset className="lighting-colors" disabled={!ready}>
-                <legend style={{ fontWeight: 600, marginBottom: 8 }}>Lighting color</legend>
+                <legend style={{ fontWeight: 600, marginBottom: 8 }}>{t("lighting.color")}</legend>
                 <div
                   className="lighting-options"
                   role="radiogroup"
-                  aria-label="Lighting color"
+                  aria-label={t("lighting.color")}
                 >
                   {slots.map((slot, index) => (
                     <label
@@ -375,7 +378,7 @@ export function App({ service }: { service: DesktopService }) {
       {/* 3. Controls View */}
       <WorkspaceView
         id="controls"
-        title="Controls"
+        title={t("nav.controls")}
       >
         <article className="card">
           <MouseFeaturesPanel
@@ -409,7 +412,7 @@ export function App({ service }: { service: DesktopService }) {
       {/* 4. Button Remapping View */}
       <WorkspaceView
         id="remapping"
-        title="Button remapping"
+        title={t("nav.remapping")}
       >
         {remap && (
           <ButtonRemapPanel
@@ -433,14 +436,14 @@ export function App({ service }: { service: DesktopService }) {
 
       {/* 6. Games View */}
       {gamesAvailable && (
-        <WorkspaceView id="games" title="Games" subtitle="Switch the mouse profile when a game starts and go back when it closes.">
+        <WorkspaceView id="games" title={t("nav.games")} subtitle={t("app.gamesSubtitle")}>
           <GamesPanel service={service} />
         </WorkspaceView>
       )}
       {/* 5. Device View */}
       <WorkspaceView
         id="device"
-        title="Device"
+        title={t("nav.device")}
       >
         <div className="stack">
           <DeviceStatusPanel
@@ -454,8 +457,8 @@ export function App({ service }: { service: DesktopService }) {
 
           {inventory && (
             <article className="card">
-              <h2>Device inventory</h2>
-              <div aria-label="Device inventory" className="rows">
+              <h2>{t("app.inventory")}</h2>
+              <div aria-label={t("app.inventory")} className="rows">
                 {inventory.Devices.map((device) => (
                   <div
                     className="inventory-device row"
@@ -464,8 +467,8 @@ export function App({ service }: { service: DesktopService }) {
                     <span>{identityLabel(device)}</span>
                     {!device.Eligible && (
                       <div>
-                        <span style={{ marginRight: 8 }}>{`Connection: ${device.Connection || "unavailable"}`}</span>
-                        <span>{device.Warning || "not eligible"}</span>
+                        <span style={{ marginRight: 8 }}>{t("app.connection", { connection: device.Connection || t("app.unavailable") })}</span>
+                        <span>{device.Warning || t("app.notEligible")}</span>
                       </div>
                     )}
                   </div>
@@ -476,7 +479,7 @@ export function App({ service }: { service: DesktopService }) {
 
           {inventory && !ready && (
             <p className="configuration-state status" role="status">
-              Receiver detected, configuration unavailable.
+              {t("app.receiverUnavailable")}
             </p>
           )}
 
