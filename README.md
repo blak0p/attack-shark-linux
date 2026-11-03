@@ -32,6 +32,10 @@ Go + [Wails v3](https://wails.io) (backend) and React + Vite (frontend).
   devices retain it only for the current session.
 - **Serialless X6 sessions** — identifies and configures dongles without a
   usable serial.
+- **English and Spanish interface** — follows the system language by default;
+  switch it any time from the language selector next to the profile controls in the top bar. The choice is
+  remembered. Messages that come from the Go backend (for example the tray menu)
+  are not translated yet.
 
 ## Screenshots
 

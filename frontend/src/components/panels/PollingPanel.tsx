@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { PollingSnapshot } from "../../desktop-contract";
 
 export type PollingPanelProps = {
@@ -22,6 +23,7 @@ export function PollingPanel({
   feedbackFor,
   children,
 }: PollingPanelProps) {
+  const { t } = useTranslation();
   if (children) {
     return (
       <section id="polling" className="card panel-section">
@@ -36,8 +38,8 @@ export function PollingPanel({
 
   return (
     <article id="polling" className="card" aria-labelledby="polling-title">
-      <h2 id="polling-title">Polling rate</h2>
-      <div className="segmented" role="radiogroup" aria-label="Polling rate">
+      <h2 id="polling-title">{t("polling.title")}</h2>
+      <div className="segmented" role="radiogroup" aria-label={t("polling.title")}>
         {rates.map((rate) => {
           const isSelected = snapshot.Desired === rate;
           const displayLabel = rate >= 1000 ? "1,000 Hz" : `${rate} Hz`;
@@ -57,24 +59,24 @@ export function PollingPanel({
           );
         })}
       </div>
-      {!feedbackManaged && <div className="status" role="status" aria-label="Polling status">
+      {!feedbackManaged && <div className="status" role="status" aria-label={t("polling.status")}>
         {snapshot.Firmware === "pending" ? (
           <>
             <span className="pending-spinner" aria-hidden="true" />
-            Applying…
+            {t("common.applying")}
           </>
         ) : snapshot.Firmware === "failed" ? (
           <>
-            Polling change failed
+            {t("polling.failed")}
             {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
           </>
         ) : (
-          <>Applied {snapshot.Applied} Hz</>
+          <>{t("polling.applied", { rate: snapshot.Applied })}</>
         )}
-        {snapshot.Persistence === "failed" && <span> Polling preference was not saved.</span>}
+        {snapshot.Persistence === "failed" && <span> {t("polling.notSaved")}</span>}
         {snapshot.RetryAvailable && (
           <button type="button" className="button" style={{ marginLeft: 8 }} onClick={onRetry}>
-            Retry polling persistence
+            {t("polling.retry")}
           </button>
         )}
       </div>}

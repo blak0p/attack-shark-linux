@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { NormalSleepSnapshot } from "../../desktop-contract";
 
 type SleepPanelProps = {
@@ -11,17 +12,18 @@ type SleepPanelProps = {
 };
 
 export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedbackFor, feedbackManaged = false }: SleepPanelProps) {
+  const { t } = useTranslation();
   return (
     <article id="normal-sleep" className="card" aria-labelledby="sleep-title">
-      <h2 id="sleep-title">Normal sleep</h2>
+      <h2 id="sleep-title">{t("sleep.title")}</h2>
       <p className="hint">
-        Sleep after: {snapshot.Pending} {snapshot.Pending === 1 ? "minute" : "minutes"}
+        {t("sleep.after", { count: snapshot.Pending })}
       </p>
       <div className="range-row">
         <span>0.5</span>
         <input
           type="range"
-          aria-label="Normal sleep duration"
+          aria-label={t("sleep.duration")}
           min="0.5"
           max="60"
           step="0.5"
@@ -29,21 +31,21 @@ export function SleepPanel({ snapshot, ready, onStage, onRetry, errorCode, feedb
           disabled={!ready}
           onChange={(event) => onStage(Number(event.target.value))}
         />
-        <span>60 minutes</span>
+        <span>{t("sleep.max")}</span>
       </div>
-      {!feedbackManaged && <div className="status" role="status" aria-label="Normal sleep status">
+      {!feedbackManaged && <div className="status" role="status" aria-label={t("sleep.status")}>
         {snapshot.Firmware === "pending"
-          ? "Applying…"
+          ? t("common.applying")
           : snapshot.Firmware === "failed"
           ? <>
-              Normal sleep application failed
+              {t("sleep.failed")}
               {errorCode && feedbackFor && <>: <span role="alert">{feedbackFor(errorCode)}</span></>}
             </>
-          : `Applied ${snapshot.Applied} minutes`}
-        {snapshot.Persistence === "failed" && <span> Sleep preference was not saved.</span>}
+          : t("sleep.applied", { minutes: snapshot.Applied })}
+        {snapshot.Persistence === "failed" && <span> {t("sleep.notSaved")}</span>}
         {snapshot.RetryAvailable && (
           <button type="button" className="button" style={{ marginLeft: 8 }} onClick={onRetry}>
-            Retry sleep persistence
+            {t("sleep.retry")}
           </button>
         )}
       </div>}

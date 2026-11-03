@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n";
 import type { Macro, MacroDraft, MacroPlaybackMode, MacroProgress, RemapAction as Action } from "../../desktop-contract";
 import { deviceAdmission } from "../../macros/device-admission";
 import { GnomeSelect, type GnomeSelectOption } from "./GnomeSelect";
@@ -20,39 +22,7 @@ type Remap = {
 
 const compatible = (macro: Macro) => deviceAdmission(macro.events).eligible;
 
-const labelFor = (action: Action) =>
-  ({
-    off: "Off",
-    left: "Left",
-    right: "Right",
-    middle: "Middle",
-    forward: "Forward",
-    backward: "Backward",
-    double_click: "Double Click",
-    fire: "Fire",
-    media_player: "Media Player",
-    play_pause: "Play/Pause",
-    stop: "Stop",
-    previous_track: "Previous Track",
-    next_track: "Next Track",
-    volume_up: "Volume Up",
-    volume_down: "Volume Down",
-    mute: "Mute",
-    scroll_up: "Scroll Up",
-    scroll_down: "Scroll Down",
-    dpi_cycle: "DPI Cycle",
-    dpi_plus: "DPI+",
-    dpi_minus: "DPI−",
-    browser_calculator: "Calculator",
-    browser_email: "Email",
-    browser_forward: "Forward",
-    browser_backward: "Backward",
-    browser_stop: "Stop",
-    browser_my_computer: "My Computer",
-    browser_refresh: "Refresh",
-    browser_home: "Home",
-    browser_search: "Search",
-  })[action];
+const labelFor = (action: Action) => i18n.t(`remap.actions.${action}`);
 
 const isMultimedia = (action: Action) => ["media_player", "play_pause", "stop", "previous_track", "next_track", "volume_up", "volume_down", "mute"].includes(action);
 const isMouseControls = (action: Action) => ["scroll_up", "scroll_down", "dpi_cycle", "dpi_plus", "dpi_minus"].includes(action);
@@ -97,11 +67,7 @@ const normalizeDrafts = (draftsMap?: Record<number, MacroDraft>, single?: MacroD
   return [];
 };
 
-const playbackLabels = [
-  "Repeat a set number of times",
-  "Repeat until pressed again",
-  "Repeat while button is held",
-] as const;
+const playbackKeys = ["remap.playback.times", "remap.playback.toggle", "remap.playback.hold"] as const;
 
 function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, macros, available, onCancel, onConfirm }: {
   button: number;
@@ -113,6 +79,7 @@ function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, 
   onCancel(): void;
   onConfirm(id: string, repeat: number, mode: MacroPlaybackMode): void;
 }) {
+  const { t } = useTranslation();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleID = useId();
   const [id, setID] = useState(initialID);
@@ -141,33 +108,33 @@ function MacroAssignmentDialog({ button, initialID, initialRepeat, initialMode, 
         if (event.key === "Escape") { event.preventDefault(); onCancel(); }
       }}>
       <form onSubmit={(event) => { event.preventDefault(); if (valid) onConfirm(id, count, mode); }}>
-        <h2 id={titleID}>Button {button} macro assignment</h2>
+        <h2 id={titleID}>{t("remap.dialog.title", { button })}</h2>
         <label>
-          <span>Saved macro</span>
-          <GnomeSelect aria-label="Saved macro" value={id} disabled={!available || !macros.length}
+          <span>{t("remap.dialog.savedMacro")}</span>
+          <GnomeSelect aria-label={t("remap.dialog.savedMacro")} value={id} disabled={!available || !macros.length}
             portalTarget={() => dialogRef.current}
-            placeholder={id && !macros.some((macro) => macro.id === id) ? "Saved version unavailable"
-              : macros.length ? "Choose a saved macro" : "No compatible saved macros"}
+            placeholder={id && !macros.some((macro) => macro.id === id) ? t("remap.dialog.versionUnavailable")
+              : macros.length ? t("remap.dialog.choose") : t("remap.dialog.noneCompatible")}
             options={macros.map((macro) => ({ value: macro.id, label: macro.name, direct: true }))}
             onChange={setID} />
         </label>
         <label>
-          <span>Playback mode</span>
-          <GnomeSelect aria-label="Playback mode" value={String(mode)} disabled={!available}
+          <span>{t("remap.dialog.playbackMode")}</span>
+          <GnomeSelect aria-label={t("remap.dialog.playbackMode")} value={String(mode)} disabled={!available}
             portalTarget={() => dialogRef.current}
-            options={playbackLabels.map((label, value) => ({ value: String(value), label, direct: true }))}
+            options={playbackKeys.map((key, value) => ({ value: String(value), label: t(key), direct: true }))}
             onChange={(value) => setMode(Number(value) as MacroPlaybackMode)} />
         </label>
-        {mode === 1 && <p className="hint">Intended behavior: press again to stop. Physical playback verification pending.</p>}
-        {mode === 2 && <p className="hint">Intended behavior: repeat while the button is held. Physical playback verification pending.</p>}
+        {mode === 1 && <p className="hint">{t("remap.dialog.intendedToggle")}</p>}
+        {mode === 2 && <p className="hint">{t("remap.dialog.intendedHold")}</p>}
         {mode === 0 && <label>
-          <span>Repeat (1–255)</span>
-          <input className="input" aria-label="Repeat (1–255)" type="number" min={1} max={255} step={1}
+          <span>{t("remap.dialog.repeat")}</span>
+          <input className="input" aria-label={t("remap.dialog.repeat")} type="number" min={1} max={255} step={1}
             value={repeat} disabled={!available} onChange={(event) => setRepeat(event.target.value)} />
         </label>}
         <div className="actions">
-          <button className="button" type="button" onClick={onCancel}>Cancel</button>
-          <button className="button primary" type="submit" disabled={!valid}>Confirm</button>
+          <button className="button" type="button" onClick={onCancel}>{t("common.cancel")}</button>
+          <button className="button primary" type="submit" disabled={!valid}>{t("common.confirm")}</button>
         </div>
       </form>
     </dialog>
@@ -209,6 +176,7 @@ export function ButtonRemapPanel({
   assignmentAvailable?: boolean;
   onConsumeIntent?(token: number): void;
 }) {
+  const { t } = useTranslation();
   const isAvailable = ready && assignmentAvailable;
   const [macroDialog, setMacroDialog] = useState<{ button: number; id: string; repeat: number; mode: MacroPlaybackMode; scope: unknown } | null>(null);
 
@@ -220,9 +188,9 @@ export function ButtonRemapPanel({
     const draft = getButtonMacroDraft(remap, button.Button);
     if (draft) {
       return draft.Mode === 1 || draft.Mode === 2
-        ? `${draft.Name} — ${playbackLabels[draft.Mode]}` : `${draft.Name} × ${draft.Repeat}`;
+        ? `${draft.Name} — ${t(playbackKeys[draft.Mode])}` : `${draft.Name} × ${draft.Repeat}`;
     }
-    return button.Action ? labelFor(button.Action) : button.PreservedDefault || "Default";
+    return button.Action ? labelFor(button.Action) : button.PreservedDefault || t("remap.default");
   };
 
   const compatibleMacros = libraryReady && isAvailable ? macros.filter(compatible) : [];
@@ -231,12 +199,12 @@ export function ButtonRemapPanel({
     const actionOptions: GnomeSelectOption[] = remap.Actions.map((action) => ({
       value: action,
       label: labelFor(action),
-      group: isBrowser(action) ? "Browser" : isMouseControls(action) ? "Mouse Controls" : isMultimedia(action) ? "Multimedia" : "Basic",
+      group: isBrowser(action) ? t("remap.groups.browser") : isMouseControls(action) ? t("remap.groups.mouse") : isMultimedia(action) ? t("remap.groups.multimedia") : t("remap.groups.basic"),
       disabled: button.Button === 1 && (isMultimedia(action) || isMouseControls(action)),
     }));
 
     return [...actionOptions, {
-      value: "macro", label: "Macro", direct: true,
+      value: "macro", label: t("remap.macro"), direct: true,
       disabled: !libraryReady || !onStageMacro,
     }];
   };
@@ -268,10 +236,10 @@ export function ButtonRemapPanel({
         }
       }}
     >
-      <h2 id="button-remap-title">Button remapping</h2>
+      <h2 id="button-remap-title">{t("nav.remapping")}</h2>
 
-      {!libraryReady && <p className="hint">Library unavailable. Retry in Macros.</p>}
-      {libraryReady && macros.some(macro => !compatible(macro)) && <p className="hint">Some macros cannot be sent. See Macros for details.</p>}
+      {!libraryReady && <p className="hint">{t("remap.libraryUnavailable")}</p>}
+      {libraryReady && macros.some(macro => !compatible(macro)) && <p className="hint">{t("remap.someUnsendable")}</p>}
       {!feedbackManaged && error && <p role="alert">{error}</p>}
 
       {remap.Pending.Buttons.map((button) => {
@@ -283,7 +251,7 @@ export function ButtonRemapPanel({
           <div className="binding remap-binding" key={button.Button}>
             <div>
               <b>
-                Button {button.Button}
+                {t("remap.button", { n: button.Button })}
                 {button.PreservedDefault ? ` (${button.PreservedDefault})` : ""}
               </b>
               <span>
@@ -292,7 +260,7 @@ export function ButtonRemapPanel({
             </div>
             <div className="remap-button-controls">
               <GnomeSelect
-                aria-label={`Button ${button.Button} action`}
+                aria-label={t("remap.buttonAction", { n: button.Button })}
                 disabled={!isAvailable}
                 value={selectValue}
                 placeholder={assignedLabel}
@@ -337,47 +305,45 @@ export function ButtonRemapPanel({
         document.body,
       )}
 
-      <details className="group"><summary>Assignment summary</summary>
-      <p aria-label="Remap assignment summary" className="hint" style={{ marginTop: 14 }}>
+      <details className="group"><summary>{t("remap.summary")}</summary>
+      <p aria-label={t("remap.summaryLabel")} className="hint" style={{ marginTop: 14 }}>
         {remap.Pending.Buttons.map(
           (button) =>
-            `Button ${button.Button}: ${
-              assignmentLabel(button)
-            }`
+            t("remap.summaryItem", { n: button.Button, label: assignmentLabel(button) })
         ).join(", ")}
       </p>
       </details>
 
       <div className="actions">
         <button type="button" className="button" disabled={!isAvailable} onClick={onDiscard}>
-          Discard remap
+          {t("remap.discard")}
         </button>
         <button type="button" className="button primary" disabled={!isAvailable} onClick={onApply}>
-          Apply remap
+          {t("remap.apply")}
         </button>
       </div>
 
-      {residualMacroProgress && <p className="hint" title="Previous macro transport progress retained; playback and device persistence unverified.">Device state may be partial or unknown.</p>}
-      {(!feedbackManaged || macroTransport) && <details className="group" open={!feedbackManaged}><summary>Device details</summary>
-      <div className="status" role="status" aria-label="Button remapping status">
+      {residualMacroProgress && <p className="hint" title={t("remap.residualTitle")}>{t("feedback.devicePartial")}</p>}
+      {(!feedbackManaged || macroTransport) && <details className="group" open={!feedbackManaged}><summary>{t("remap.deviceDetails")}</summary>
+      <div className="status" role="status" aria-label={t("remap.status.label")}>
         {macroTransport
           ? remap.Firmware === "success"
             ? draftMatchesApplied
-              ? "Remap and macro transport confirmed. Playback and device persistence unverified."
+              ? t("remap.status.confirmed")
               : appliedDrafts.length > 0
-                ? "Last remap and macro transport confirmed; current draft not confirmed. Playback and device persistence unverified."
-                : "Macro assignment staged locally; current draft not confirmed. Playback and device persistence unverified."
+                ? t("remap.status.lastConfirmed")
+                : t("remap.status.stagedUnconfirmed")
             : remap.Firmware === "failed"
-            ? "Macro transport not confirmed; device state may be partial or unknown. Playback and device persistence unverified."
-            : "Macro assignment staged locally; no transport confirmation. Playback and device persistence unverified."
+            ? t("remap.status.transportFailed")
+            : t("remap.status.stagedNoTransport")
           : remap.Firmware === "success"
-          ? "Button remapping applied"
+          ? t("remap.status.applied")
           : remap.Firmware === "failed"
           ? <>
-              Button remapping failed
+              {t("remap.status.failed")}
               {remap.Error.Code && feedbackFor && <>: <span role="alert">{feedbackFor(remap.Error.Code)}</span></>}
             </>
-          : "Remap draft pending confirmation"}
+          : t("remap.status.pending")}
       </div>
       </details>}
     </article>

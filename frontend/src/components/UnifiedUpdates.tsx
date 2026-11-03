@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { UnifiedUpdateInfo } from "../desktop-contract";
 
-const policyMessages: Record<string, string> = {
-  current: "USB permissions are current.",
-  missing: "USB permissions are missing.",
-  outdated: "An official USB permissions update is available.",
-  custom: "Custom USB permissions preserved; no automatic overwrite.",
-  unavailable: "USB permissions update unavailable for this release.",
-  error: "USB permissions could not be inspected.",
-};
+const policyStates = ["current", "missing", "outdated", "custom", "unavailable", "error"];
 
 const policyEligible = (info: UnifiedUpdateInfo) => !info.PolicyInstalled &&
   (info.PolicyState === "missing" || info.PolicyState === "outdated");
@@ -19,6 +13,7 @@ export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApp
   info?: UnifiedUpdateInfo; checking: boolean; applying: boolean; error: string;
   onCheck(): void; onApply(): void;
 }) {
+  const { t } = useTranslation();
   const failed = !!(error || info?.AppError || info?.PolicyError || info?.RelaunchError);
   const unfinished = !!info && actionable(info);
   const completed = !!info?.PolicyInstalled && !failed && !unfinished && !applying;
@@ -39,38 +34,38 @@ export function UnifiedUpdates({ info, checking, applying, error, onCheck, onApp
   if (!failed && !applying && (!info || (!unfinished && !info.PolicyInstalled) || (completed && dismissed && !checking))) return null;
   const appTarget = !!info && (info.AppAvailable || info.AppInstalled || !!info.AppError);
   const policyTarget = !!info && (policyEligible(info) || info.PolicyInstalled || !!info.PolicyError);
-  return <section className="update-window" aria-label="Updates">
+  return <section className="update-window" aria-label={t("updates.title")}>
     <article className="card unified-updates" aria-labelledby="updates-title">
-      <h2 id="updates-title" tabIndex={-1}>Updates</h2>
-      <p>{appTarget && policyTarget ? "AppImage and USB permissions (udev)" : appTarget ? "AppImage" : policyTarget ? "USB permissions (udev)" : "Update check failed"}</p>
-      {checking && <p role="status">Checking for updates…</p>}
-      {applying && <p role="status">Applying updates…</p>}
-      {error && <p role="alert">Update request failed: {error}</p>}
+      <h2 id="updates-title" tabIndex={-1}>{t("updates.title")}</h2>
+      <p>{appTarget && policyTarget ? t("updates.target.both") : appTarget ? t("updates.target.app") : policyTarget ? t("updates.target.policy") : t("updates.target.failed")}</p>
+      {checking && <p role="status">{t("updates.checking")}</p>}
+      {applying && <p role="status">{t("updates.applying")}</p>}
+      {error && <p role="alert">{t("updates.requestFailed", { error })}</p>}
       {info && <>
-        {info.AppInstalled && <p>{info.RelaunchError ? "AppImage replaced; relaunch failed." : info.PolicyError
-          ? "AppImage replaced; restart may be deferred. Use Relaunch app explicitly."
-          : "AppImage replaced; restart requested, not confirmed."}</p>}
-        {info.AppError && <p role="alert">AppImage: {info.AppError}</p>}
-        {info.PolicyInstalled && <p>{completed ? "USB permissions updated." : info.PolicyError ? "USB policy written; reload or activation failed."
-          : "USB policy written and reload completed; reconnect the mouse if needed."}</p>}
-        {info.PolicyError && <p role="alert">USB permissions: {info.PolicyError}</p>}
-        {info.RelaunchError && <p role="alert">Relaunch: {info.RelaunchError}</p>}
-        {info.PolicyError && <p><a href="https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup" target="_blank" rel="noreferrer">Trusted USB permissions setup guidance</a></p>}
+        {info.AppInstalled && <p>{info.RelaunchError ? t("updates.app.relaunchFailed") : info.PolicyError
+          ? t("updates.app.restartDeferred")
+          : t("updates.app.restartRequested")}</p>}
+        {info.AppError && <p role="alert">{t("updates.app.error", { error: info.AppError })}</p>}
+        {info.PolicyInstalled && <p>{completed ? t("updates.policy.updated") : info.PolicyError ? t("updates.policy.reloadFailed")
+          : t("updates.policy.reloaded")}</p>}
+        {info.PolicyError && <p role="alert">{t("updates.policy.error", { error: info.PolicyError })}</p>}
+        {info.RelaunchError && <p role="alert">{t("updates.relaunchError", { error: info.RelaunchError })}</p>}
+        {info.PolicyError && <p><a href="https://github.com/blak0p/attack-shark-linux/blob/main/docs/linux-usb-prerequisites.md#one-time-authenticated-usb-permissions-setup" target="_blank" rel="noreferrer">{t("updates.guidance")}</a></p>}
       </>}
       <details>
-        <summary>Update details</summary>
+        <summary>{t("updates.details")}</summary>
         {info && <>
-          {info.AppAvailable && !info.AppInstalled && <p>AppImage version {info.Version} is available.</p>}
-          <p>{policyMessages[info.PolicyState] ?? "USB permissions status is unknown."}</p>
+          {info.AppAvailable && !info.AppInstalled && <p>{t("updates.app.available", { version: info.Version })}</p>}
+          <p>{policyStates.includes(info.PolicyState) ? t(`updates.policyState.${info.PolicyState}`) : t("updates.policyState.unknown")}</p>
         </>}
-        <p>Only missing or recognized official outdated USB policies are eligible. Custom rules are preserved. USB changes use one system authorization dialog; this app never collects a password. AppImage replacement stays user-local. Setup is separate and user-led; the app never installs the helper.</p>
-        {info && actionable(info) && <p>Apply updates retries unfinished eligible operations only. A written policy is not written again; a reload error still needs inspection. Relaunch app requests a restart, not a second installation.</p>}
+        <p>{t("updates.explainPolicy")}</p>
+        {info && actionable(info) && <p>{t("updates.explainApply")}</p>}
       </details>
       <div className="update-actions">
         {info && actionable(info) && <button type="button" className="button primary" disabled={checking || applying} onClick={onApply}>
-          {info.AppInstalled && !policyEligible(info) ? "Relaunch app" : "Apply updates"}
+          {info.AppInstalled && !policyEligible(info) ? t("updates.relaunch") : t("updates.apply")}
         </button>}
-        <button type="button" className="button" disabled={checking || applying} onClick={onCheck}>Check for updates</button>
+        <button type="button" className="button" disabled={checking || applying} onClick={onCheck}>{t("updates.check")}</button>
       </div>
     </article>
   </section>;

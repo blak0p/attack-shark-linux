@@ -12,6 +12,7 @@ By participating, you agree to uphold its terms.
 - [Setup](#setup)
 - [Development workflow](#development-workflow)
 - [Tests](#tests)
+- [Translations](#translations)
 - [Project structure](#project-structure)
 - [Commit conventions](#commit-conventions)
 - [Pull request process](#pull-request-process)
@@ -126,6 +127,23 @@ remain unchanged.
   (behavior-first), plus focused integration tests where relevant.
 - The `probe` build tag gates hardware-probe tooling — do not run it in CI.
 - hidraw tests use a fake device; tests that need the real dongle are manual.
+
+## Translations
+
+The interface uses [i18next](https://www.i18next.com). English is the base
+language and the fallback; Spanish is the second locale.
+
+- Strings live in `frontend/src/i18n/locales/<lang>.json`. Both files must have
+  the same keys (only plural suffixes such as `_one`, `_many` and `_other` may
+  differ); `frontend/src/i18n/i18n.test.ts` fails when a key is missing.
+- In components, call `const { t } = useTranslation()` before any early return.
+  Outside components, use `i18n.t` from `frontend/src/i18n`.
+- Do not translate user data (profile, game and macro names), backend error
+  codes or the generated Steam launch command.
+- Never reword the English text while migrating: existing tests pin it.
+- To add a language, create `<lang>.json`, add its code to `supportedLanguages`
+  and its label to the `language` group in every locale file, and add a
+  rendering test like the ones in `frontend/src/components/Translated.test.tsx`.
 
 ## Project structure
 
