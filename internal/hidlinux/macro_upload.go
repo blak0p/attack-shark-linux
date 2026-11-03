@@ -90,7 +90,8 @@ func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Bind
 }
 
 // SendX6MacroAssignmentBound owns report08 and the whole report09 batch under
-// one command lock. It never retries or rolls back a possibly mutated device.
+// one command lock. Only report08 is resent when the receiver drops it; the
+// report09 batch is never retried and nothing is rolled back.
 func (b *HidrawBackend) SendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click) (mouse.MacroProgress, error) {
 	return b.sendX6MacroAssignmentBound(ctx, binding, assignment, click, waitMacroChunk)
 }
@@ -261,7 +262,9 @@ func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, b
 	if err = write(report); err != nil {
 		return progress, err
 	}
-	if err = b.awaitMacroStatus(ctx, node, binding, 8); err != nil {
+	// report08 is a whole settings report, so it gets the same resend as the
+	// plain remap command. The report09 chunks below are never resent.
+	if _, _, err = b.awaitACKWithResend(ctx, node, binding, report, func(r []byte) bool { return !x6.MatchesRemapACK(r) }); err != nil {
 		return progress, err
 	}
 	progress.Assignment = mouse.MacroAssignmentACKConfirmed

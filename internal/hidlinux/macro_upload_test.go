@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,18 +20,24 @@ import (
 
 type macroNode struct {
 	*commandHidrawNode
-	writes  [][]byte
-	failAt  int
-	short   bool
-	onWrite func(int)
+	// writesMu guards writes: the command's reader goroutine calls Read while
+	// a resend may be writing.
+	writesMu sync.Mutex
+	writes   [][]byte
+	failAt   int
+	short    bool
+	onWrite  func(int)
 }
 
 func (n *macroNode) SendFeatureReport(r []byte) (int, error) {
+	n.writesMu.Lock()
 	n.writes = append(n.writes, append([]byte(nil), r...))
+	count := len(n.writes)
+	n.writesMu.Unlock()
 	if n.onWrite != nil {
-		n.onWrite(len(n.writes))
+		n.onWrite(count)
 	}
-	if len(n.writes) == n.failAt {
+	if count == n.failAt {
 		if n.short {
 			return len(r) - 1, nil
 		}
@@ -39,7 +46,10 @@ func (n *macroNode) SendFeatureReport(r []byte) (int, error) {
 	return len(r), nil
 }
 func (n *macroNode) Read(p []byte) (int, error) {
-	if len(n.writes) != 3 && !(len(n.writes) == 1 && n.writes[0][0] == 8) && !(len(n.writes) >= 4 && n.writes[0][0] == 8) {
+	n.writesMu.Lock()
+	ready := len(n.writes) == 3 || (len(n.writes) == 1 && n.writes[0][0] == 8) || (len(n.writes) >= 4 && n.writes[0][0] == 8)
+	n.writesMu.Unlock()
+	if !ready {
 		return 0, errors.New("read before all chunks")
 	}
 	return n.commandHidrawNode.Read(p)
@@ -232,7 +242,7 @@ func TestCompositeLocalACKAndCancellationGuards(t *testing.T) {
 	for _, ack := range [][]byte{{3, 0x10, 0x50, 0, 9}, {3, 0x10, 0x50, 1, 8}, {3, 0x10, 0x1e, 0, 0xaa}} {
 		b, binding, n, _ := macroFixture(t, [][]byte{ack})
 		p, err := b.sendX6MultiMacroLocalAssignmentBound(context.Background(), binding, x6.DefaultRemapConfig(), localUploadItems(), noMacroWait)
-		if err == nil || len(n.writes) != 1 || p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentUnknown}) {
+		if err == nil || !onlyReport08(n.writes) || p != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentUnknown}) {
 			t.Fatal(p, err)
 		}
 	}
@@ -421,6 +431,21 @@ func macroFixture(t *testing.T, reports [][]byte) (*HidrawBackend, mouse.Binding
 }
 func noMacroWait(context.Context, time.Duration) error { return nil }
 
+// onlyReport08 reports whether something was written and every write was the
+// report08 assignment (the first write or its resends), so no report09 chunk
+// went out before the assignment ACK.
+func onlyReport08(writes [][]byte) bool {
+	if len(writes) == 0 {
+		return false
+	}
+	for _, w := range writes {
+		if !reflect.DeepEqual(w, writes[0]) || w[0] != 8 {
+			return false
+		}
+	}
+	return true
+}
+
 var macroACK = []byte{3, 0x10, 0x50, 0, 9}
 var macroClick = macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
 
@@ -503,7 +528,7 @@ func TestCompositeSequenceGuards(t *testing.T) {
 	for _, ack := range [][]byte{{3, 0x10, 0x50, 0, 9}, {3, 0x10, 0x1e, 0, 0xaa}} {
 		b, binding, n, _ := macroFixture(t, [][]byte{ack})
 		p, err := b.sendX6MacroSequenceAssignmentBound(context.Background(), binding, a, s, noMacroWait)
-		if err == nil || len(n.writes) != 1 || p.Upload != mouse.MacroUploadNotStarted {
+		if err == nil || !onlyReport08(n.writes) || p.Upload != mouse.MacroUploadNotStarted {
 			t.Fatal(p, err)
 		}
 	}
@@ -631,7 +656,7 @@ func TestCompositeMacroPhaseGuards(t *testing.T) {
 	for _, ack := range [][]byte{{3, 0x10, 0x1e, 0, 0xaa}, {3, 0x10, 0x50, 1, 8}, {3, 0x10, 0x50, 0, 9}} {
 		b, binding, n, _ := macroFixture(t, [][]byte{ack})
 		p, err := b.sendX6MacroAssignmentBound(context.Background(), binding, x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}, macroClick, noMacroWait)
-		if err == nil || len(n.writes) != 1 || p.Assignment != mouse.MacroAssignmentUnknown || p.Upload != mouse.MacroUploadNotStarted {
+		if err == nil || !onlyReport08(n.writes) || p.Assignment != mouse.MacroAssignmentUnknown || p.Upload != mouse.MacroUploadNotStarted {
 			t.Fatalf("%+v %v", p, err)
 		}
 	}
