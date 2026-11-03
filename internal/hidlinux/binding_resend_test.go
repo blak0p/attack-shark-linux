@@ -23,6 +23,7 @@ type scriptedNode struct {
 	closed  chan struct{}
 	once    sync.Once
 	script  map[int][][]byte
+	written [][]byte
 }
 
 func newScriptedNode(script map[int][][]byte) *scriptedNode {
@@ -41,6 +42,7 @@ func (n *scriptedNode) Close() error { n.once.Do(func() { close(n.closed) }); re
 func (n *scriptedNode) SendFeatureReport(r []byte) (int, error) {
 	n.mu.Lock()
 	n.writes++
+	n.written = append(n.written, append([]byte(nil), r...))
 	reports := n.script[n.writes]
 	n.mu.Unlock()
 	for _, r := range reports {
@@ -49,6 +51,11 @@ func (n *scriptedNode) SendFeatureReport(r []byte) (int, error) {
 	return len(r), nil
 }
 func (n *scriptedNode) writeCount() int { n.mu.Lock(); defer n.mu.Unlock(); return n.writes }
+func (n *scriptedNode) payloads() [][]byte {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([][]byte(nil), n.written...)
+}
 
 var (
 	rejectMotion = []byte{0x03, 0x10, 0xff, 0xff, 0x00}
