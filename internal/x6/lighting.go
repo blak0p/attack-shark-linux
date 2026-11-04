@@ -26,6 +26,8 @@ type LightingEffect struct {
 	DefaultTemplateID LightingTemplateID
 	SpeedVariants     []LightingSpeedVariant
 	ColorTemplates    []LightingColorTemplate
+	// CustomColor reports that LightingSelection.Color is accepted.
+	CustomColor bool
 }
 
 const (
@@ -56,11 +58,14 @@ const (
 var lightingEffects = []LightingEffect{
 	{Mode: LightingOff, Label: "Off", DefaultTemplateID: LightingTemplateOff},
 	{Mode: LightingFixed, Label: "Fixed", DefaultTemplateID: LightingTemplateFixedGreen, ColorTemplates: []LightingColorTemplate{{TemplateID: LightingTemplateFixedGreen, CSSColor: "#00FF00"}}},
+	// The device reads report bytes 6-8 as RGB (confirmed on hardware), so each
+	// CSSColor is those bytes in order. Template IDs keep their historical
+	// BGR-derived names because stored profiles reference them.
 	{Mode: LightingBreathing, Label: "Breathing", DefaultTemplateID: LightingTemplateBreathingGreen, ColorTemplates: []LightingColorTemplate{
 		{TemplateID: LightingTemplateBreathingGreen, CSSColor: "#00FF00"},
-		{TemplateID: LightingTemplateBreathingFE5EF9, CSSColor: "#FE5EF9"},
-		{TemplateID: LightingTemplateBreathingFF7F00, CSSColor: "#FF7F00"},
-		{TemplateID: LightingTemplateBreathingFFFF00, CSSColor: "#FFFF00"},
+		{TemplateID: LightingTemplateBreathingFE5EF9, CSSColor: "#F95EFE"},
+		{TemplateID: LightingTemplateBreathingFF7F00, CSSColor: "#007FFF"},
+		{TemplateID: LightingTemplateBreathingFFFF00, CSSColor: "#00FFFF"},
 	}},
 	{Mode: LightingStaticDPI, Label: "Static DPI", DefaultTemplateID: LightingTemplateStaticDPIDefault},
 	{Mode: LightingNeon, Label: "Neon", DefaultTemplateID: LightingTemplateNeonOne, SpeedVariants: []LightingSpeedVariant{{TemplateID: LightingTemplateNeonOne}, {TemplateID: LightingTemplateNeonTwo}}},
@@ -75,6 +80,9 @@ func LightingEffects() []LightingEffect {
 		effects[i] = effect
 		effects[i].SpeedVariants = append([]LightingSpeedVariant(nil), effect.SpeedVariants...)
 		effects[i].ColorTemplates = append([]LightingColorTemplate(nil), effect.ColorTemplates...)
+	}
+	for i := range effects {
+		effects[i].CustomColor = protocol.SupportsCustomColor(effects[i].Mode)
 	}
 	return effects
 }
