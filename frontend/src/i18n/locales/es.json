@@ -116,6 +116,7 @@
   "lighting": {
     "effect": "Efecto",
     "color": "Color de iluminación",
+    "customColor": "Color personalizado",
     "speed": "Velocidad de {{label}}",
     "effectSelect": "Efecto de iluminación",
     "selectEffect": "Elige un efecto"

@@ -160,10 +160,10 @@ const debounceSnapshot = (overrides = {}) => ({ Desired: 8, Applied: 8, Persiste
   Applied: null,
   Effects: [
     { Mode: 0x00, Label: "Off", DefaultTemplateID: "off", SpeedVariants: [], ColorTemplates: [] },
-    { Mode: 0x10, Label: "Fixed", DefaultTemplateID: "fixed-green", SpeedVariants: [], ColorTemplates: [{ TemplateID: "fixed-green", CSSColor: "#00FF00" }] },
-    { Mode: 0x20, Label: "Breathing", DefaultTemplateID: "breathing-green", SpeedVariants: [], ColorTemplates: [
-      { TemplateID: "breathing-green", CSSColor: "#00FF00" }, { TemplateID: "breathing-fe5ef9", CSSColor: "#FE5EF9" },
-      { TemplateID: "breathing-ff7f00", CSSColor: "#FF7F00" }, { TemplateID: "breathing-ffff00", CSSColor: "#FFFF00" },
+    { Mode: 0x10, Label: "Fixed", DefaultTemplateID: "fixed-green", SpeedVariants: [], CustomColor: true, ColorTemplates: [{ TemplateID: "fixed-green", CSSColor: "#00FF00" }] },
+    { Mode: 0x20, Label: "Breathing", DefaultTemplateID: "breathing-green", SpeedVariants: [], CustomColor: true, ColorTemplates: [
+      { TemplateID: "breathing-green", CSSColor: "#00FF00" }, { TemplateID: "breathing-fe5ef9", CSSColor: "#F95EFE" },
+      { TemplateID: "breathing-ff7f00", CSSColor: "#007FFF" }, { TemplateID: "breathing-ffff00", CSSColor: "#00FFFF" },
     ] },
     { Mode: 0x50, Label: "Static DPI", DefaultTemplateID: "static-dpi-default", SpeedVariants: [], ColorTemplates: [] },
     { Mode: 0x30, Label: "Neon", DefaultTemplateID: "neon-one", SpeedVariants: [{ TemplateID: "neon-one" }, { TemplateID: "neon-two" }], ColorTemplates: [] },
@@ -1058,14 +1058,13 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.getByRole("option", { name: "Fixed" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Breathing DPI" })).toBeInTheDocument();
     fireEvent.click(effect);
-    expect(screen.getByRole("group", { name: "Lighting color" })).toBeInTheDocument();
-    expect(screen.getAllByRole("radio", { name: "#00FF00" })).toHaveLength(1);
+    expect(screen.getByLabelText("Custom color")).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "#00FF00" })).not.toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: /speed/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(document.querySelector('input[type="color"]')).not.toBeInTheDocument();
 
     await chooseLightingEffect("Breathing");
-    await waitFor(() => expect(screen.getAllByRole("radio", { name: /#00FF00|#FE5EF9|#FF7F00|#FFFF00/ })).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByRole("radio", { name: /#00FF00|#F95EFE|#007FFF|#00FFFF/ })).toHaveLength(4));
     await chooseLightingEffect("Neon");
     await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x30, TemplateID: "neon-one" }));
     expect(screen.getByRole("slider", { name: "Neon speed" })).toBeInTheDocument();
@@ -1076,10 +1075,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    const group = await screen.findByRole("group", { name: "Lighting color" });
-    expect(group.querySelectorAll("input[type='radio']")).toHaveLength(1);
-    expect(screen.getByRole("radio", { name: "#00FF00" })).toBeEnabled();
-    expect([...document.querySelectorAll("input[name='lighting-color']")].filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(0);
+    // Fixed has a single preset, which the custom color picker already covers.
+    await screen.findByLabelText("Custom color");
+    expect(document.querySelectorAll("input[name='lighting-color']")).toHaveLength(0);
 
     await chooseLightingEffect("Breathing");
     await waitFor(() => expect(screen.getByRole("group", { name: "Lighting color" }).querySelectorAll("input[type='radio']")).toHaveLength(4));
@@ -1090,7 +1088,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     const service = serviceFor(snapshot());
     const { container } = render(<App service={service} />);
 
-    await screen.findByRole("group", { name: "Lighting color" });
+    await screen.findByLabelText("Custom color");
     const lighting = container.querySelector("#lighting")!;
     expect([...lighting.querySelectorAll("h2, legend, span:not(.sr-only)")].filter((node) => node.textContent === "Lighting color")).toHaveLength(1);
     expect([...lighting.querySelectorAll("h2, legend, span:not(.sr-only)")].filter((node) => node.textContent === "Effect")).toHaveLength(1);
@@ -1100,7 +1098,7 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    await screen.findByRole("group", { name: "Lighting color" });
+    await screen.findByLabelText("Custom color");
     for (const label of ["Off", "Neon", "Color Breathing", "Static DPI", "Breathing DPI"]) {
       await chooseLightingEffect(label);
       await waitFor(() => expect(screen.queryByRole("group", { name: "Lighting color" })).not.toBeInTheDocument());
@@ -1116,6 +1114,37 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.queryByRole("group", { name: "Lighting color" })).not.toBeInTheDocument();
     expect(document.querySelectorAll("input[name='lighting-color']")).toHaveLength(0);
     expect(unknown.StageLighting).not.toHaveBeenCalled();
+  });
+
+  it("offers a custom color picker only for custom-color effects and stages it in uppercase", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    const picker = await screen.findByLabelText("Custom color") as HTMLInputElement;
+    expect(picker.type).toBe("color");
+    expect(picker.value).toBe("#00ff00");
+    // WebKitGTK does not paint the native color input, so a swatch shows it.
+    expect((picker.parentElement!.querySelector(".lighting-custom-swatch") as HTMLElement).style.backgroundColor).toBe("rgb(0, 255, 0)");
+    fireEvent.change(picker, { target: { value: "#ff7f00" } });
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x10, TemplateID: "fixed-green", Color: "#FF7F00" }));
+
+    await chooseLightingEffect("Breathing");
+    await waitFor(() => expect(screen.getByLabelText("Custom color")).toBeInTheDocument());
+    await chooseLightingEffect("Neon");
+    await waitFor(() => expect(screen.queryByLabelText("Custom color")).not.toBeInTheDocument());
+  });
+
+  it("shows a pending custom color in the picker and clears it when a preset is chosen", async () => {
+    const service = serviceFor(snapshot(), {
+      GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot({ Pending: { Mode: 0x20, TemplateID: "breathing-green", Color: "#123456" } })),
+    });
+    render(<App service={service} />);
+
+    const picker = await screen.findByLabelText("Custom color") as HTMLInputElement;
+    expect(picker.value).toBe("#123456");
+    expect([...document.querySelectorAll("input[name='lighting-color']")].some((radio) => (radio as HTMLInputElement).checked)).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: "#007FFF" }));
+    await waitFor(() => expect(service.StageLighting).toHaveBeenCalledWith({ Mode: 0x20, TemplateID: "breathing-ff7f00" }));
   });
 
   it("uses a bounded speed index and percentage fill without staging unknown templates", async () => {

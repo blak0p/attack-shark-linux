@@ -1,6 +1,9 @@
 package x6
 
-import "fmt"
+import (
+	"encoding/hex"
+	"fmt"
+)
 
 const LightingReportLength = 13
 
@@ -39,7 +42,17 @@ const (
 type LightingSelection struct {
 	Mode       LightingMode
 	TemplateID LightingTemplateID
+	// Color optionally overrides the template color as "#RRGGBB". It is
+	// accepted only for modes in customColorModes; empty keeps the template.
+	Color string `json:",omitempty"`
 }
+
+// customColorModes are the modes whose captured reports carry a single color
+// in bytes 6-8. Hardware shows those bytes as RGB.
+var customColorModes = map[LightingMode]bool{LightingFixed: true, LightingBreathing: true}
+
+// SupportsCustomColor reports whether mode accepts LightingSelection.Color.
+func SupportsCustomColor(mode LightingMode) bool { return customColorModes[mode] }
 
 type lightingTemplate struct {
 	mode   LightingMode
@@ -71,7 +84,36 @@ func NewLightingOperation(selection LightingSelection) ([]byte, error) {
 	if !ok || template.mode != selection.Mode {
 		return nil, fmt.Errorf("unsupported lighting selection %q for mode %#x", selection.TemplateID, selection.Mode)
 	}
-	return append([]byte(nil), template.report[:]...), nil
+	report := append([]byte(nil), template.report[:]...)
+	if selection.Color == "" {
+		return report, nil
+	}
+	if !customColorModes[selection.Mode] {
+		return nil, fmt.Errorf("lighting mode %#x does not support a custom color", selection.Mode)
+	}
+	rgb, err := parseLightingColor(selection.Color)
+	if err != nil {
+		return nil, err
+	}
+	copy(report[6:9], rgb[:])
+	var checksum uint16
+	for _, value := range report[3:11] {
+		checksum += uint16(value)
+	}
+	report[11] = byte(checksum >> 8)
+	report[12] = byte(checksum)
+	return report, nil
+}
+
+func parseLightingColor(color string) ([3]byte, error) {
+	var rgb [3]byte
+	if len(color) != 7 || color[0] != '#' {
+		return rgb, fmt.Errorf("lighting color must be #RRGGBB, got %q", color)
+	}
+	if _, err := hex.Decode(rgb[:], []byte(color[1:])); err != nil {
+		return rgb, fmt.Errorf("lighting color must be #RRGGBB, got %q", color)
+	}
+	return rgb, nil
 }
 
 // MatchesLightingACK accepts only the acknowledgement for report 0x05.

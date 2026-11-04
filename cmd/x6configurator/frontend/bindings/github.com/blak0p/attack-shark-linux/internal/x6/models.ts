@@ -41,6 +41,11 @@ export class LightingEffect {
     "SpeedVariants": LightingSpeedVariant[];
     "ColorTemplates": LightingColorTemplate[];
 
+    /**
+     * CustomColor reports that LightingSelection.Color is accepted.
+     */
+    "CustomColor": boolean;
+
     /** Creates a new LightingEffect instance. */
     constructor($$source: Partial<LightingEffect> = {}) {
         if (!("Mode" in $$source)) {
@@ -57,6 +62,9 @@ export class LightingEffect {
         }
         if (!("ColorTemplates" in $$source)) {
             this["ColorTemplates"] = [];
+        }
+        if (!("CustomColor" in $$source)) {
+            this["CustomColor"] = false;
         }
 
         Object.assign(this, $$source);
