@@ -138,6 +138,15 @@ export function App({ service }: { service: DesktopService }) {
     ) ?? 0
   );
   const slots = lightingSlots(lightingEffect);
+  const customColor = lightingEffect?.CustomColor === true;
+  // A single preset duplicates the custom picker's default, so hide it.
+  const presetSlots = customColor && slots.length <= 1 ? [] : slots;
+  const pickerColor = (
+    lighting?.Pending.Color ??
+    slots.find((slot) => slot.templateID === lighting?.Pending.TemplateID)?.color ??
+    slots[0]?.color ??
+    "#ffffff"
+  ).toLowerCase();
   const hasSpeed = !!lightingEffect && lightingEffect.SpeedVariants.length > 1;
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
@@ -267,9 +276,9 @@ export function App({ service }: { service: DesktopService }) {
               </label>
             </article>
 
-            {(slots.length > 0 || hasSpeed) && (
+            {(presetSlots.length > 0 || hasSpeed || customColor) && (
             <article className="card">
-              {slots.length > 0 && <h2 id="lighting-color-title">{t("lighting.color")}</h2>}
+              {(presetSlots.length > 0 || customColor) && <h2 id="lighting-color-title">{t("lighting.color")}</h2>}
 
               {lightingEffect && hasSpeed && (
                 <div className="range-row" style={{ marginBottom: 14 }}>
@@ -303,14 +312,14 @@ export function App({ service }: { service: DesktopService }) {
                 </div>
               )}
 
-              {slots.length > 0 && (
+              {presetSlots.length > 0 && (
               <fieldset className="lighting-colors" disabled={!ready} aria-labelledby="lighting-color-title">
                 <div
                   className="lighting-options"
                   role="radiogroup"
                   aria-labelledby="lighting-color-title"
                 >
-                  {slots.map((slot, index) => (
+                  {presetSlots.map((slot, index) => (
                     <label
                       className="lighting-option"
                       key={`${slot.label}-${index}`}
@@ -319,7 +328,7 @@ export function App({ service }: { service: DesktopService }) {
                         type="radio"
                         name="lighting-color"
                         aria-label={slot.label}
-                        checked={lighting?.Pending.TemplateID === slot.templateID}
+                        checked={!lighting?.Pending.Color && lighting?.Pending.TemplateID === slot.templateID}
                         onChange={() =>
                           lightingEffect &&
                           actions.stageLighting({
@@ -337,6 +346,29 @@ export function App({ service }: { service: DesktopService }) {
                   ))}
                 </div>
               </fieldset>
+              )}
+
+              {lightingEffect && customColor && (
+                <label className="lighting-custom-color">
+                  <span>{t("lighting.customColor")}</span>
+                  <span className="lighting-custom-picker">
+                  {/* WebKitGTK does not paint the native color input, so a swatch shows it. */}
+                  <span className="lighting-custom-swatch" aria-hidden="true" style={{ backgroundColor: pickerColor }} />
+                  <input
+                    type="color"
+                    aria-label={t("lighting.customColor")}
+                    value={pickerColor}
+                    disabled={!ready}
+                    onChange={(event) =>
+                      actions.stageLighting({
+                        Mode: lightingEffect.Mode,
+                        TemplateID: lightingEffect.DefaultTemplateID,
+                        Color: event.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                  </span>
+                </label>
               )}
             </article>
             )}

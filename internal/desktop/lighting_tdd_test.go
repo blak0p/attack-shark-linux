@@ -86,13 +86,15 @@ func newLightingService(t *testing.T, command *lightingCommandFake) *Service {
 
 type lightingCommandFake struct {
 	calls   int
+	reports [][]byte
 	err     error
 	started chan struct{}
 	release chan struct{}
 }
 
-func (f *lightingCommandFake) SendAndAwaitBound(_ context.Context, _ mouse.Binding, _ []byte, continueReading func([]byte) bool) error {
+func (f *lightingCommandFake) SendAndAwaitBound(_ context.Context, _ mouse.Binding, report []byte, continueReading func([]byte) bool) error {
 	f.calls++
+	f.reports = append(f.reports, append([]byte(nil), report...))
 	if f.started != nil {
 		close(f.started)
 		<-f.release

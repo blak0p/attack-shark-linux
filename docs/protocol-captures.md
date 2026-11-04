@@ -44,7 +44,7 @@ Layout (offsets from byte 0 = report id):
 | 8..15 | 8 | DPI lows of stages 1-8 (`(DPI/50 - 1) & 0xFF`) |
 | 16..23 | 8 | DPI highs of stages 1-8 (`(DPI/50 - 1) >> 8`) |
 | 24 | 1 | **active stage** (1-8) |
-| 25..48 | 24 | per-stage BGR colors, 3 B each (8 stages) — stays fixed when switching stage |
+| 25..48 | 24 | per-stage RGB colors, 3 B each in R, G, B order (8 stages) — stays fixed when switching stage |
 | 49 | 1 | `0x01` fixed |
 | 50-51 | 2 | checksum `sum([3..49])`, big-endian |
 
@@ -180,7 +180,7 @@ changes.
 | 3 | 1 | **light mode** (see table) |
 | 4 | 1 | high nibble: deep-sleep minutes bits 4–7; low nibble: `9 - speed` |
 | 5 | 1 | high nibble: deep-sleep minutes bits 0–3; low nibble: brightness for modes 1/9, otherwise `8` |
-| 6..8 | 3 | **color BGR** (e.g. `00 ff 00` green) |
+| 6..8 | 3 | **color RGB** (e.g. `00 ff 00` green; confirmed on hardware, see below) |
 | 9 | 1 | **sleep timer** = minutes × 2 (bar 0.5-60 min, 0.5 steps) |
 | 10 | 1 | **response time**: direct milliseconds in the verified official host serializer; legacy capture interpretation was ms / 2 |
 | 11–12 | 2 | checksum `sum(bytes[3:11])`, 16-bit big-endian (high byte first) |
@@ -200,9 +200,9 @@ changes.
 05 0f 01 00 03 a8 00 ff 00 01 04 01 af     # off, mode=0x00
 05 0f 01 10 03 a8 00 ff 00 01 04 01 bf     # steady, mode=0x10
 05 0f 01 20 03 a8 00 ff 00 01 04 01 cf     # breathing base, speed=03 color=00ff00
-05 0f 01 20 03 a8 f9 5e fe 01 04 03 25     # breathing, color changed -> f95efe
-05 0f 01 20 03 a8 00 7f ff 01 04 02 4e     # breathing, color changed -> 007fff
-05 0f 01 20 03 a8 00 ff ff 01 04 02 ce     # breathing, color changed -> 00ffff
+05 0f 01 20 03 a8 f9 5e fe 01 04 03 25     # breathing, color changed -> #F95EFE violet
+05 0f 01 20 03 a8 00 7f ff 01 04 02 4e     # breathing, color changed -> #007FFF azure blue
+05 0f 01 20 03 a8 00 ff ff 01 04 02 ce     # breathing, color changed -> #00FFFF cyan
 05 0f 01 20 04 a8 00 ff ff 01 04 02 cf     # breathing, speed 03 -> 04
 05 0f 01 20 03 a8 00 ff ff 01 04 02 ce     # breathing, speed back to 03
 05 0f 01 50 03 a8 00 ff 00 01 04 01 ff     # startup, mode=0x50
@@ -215,6 +215,20 @@ changes.
 05 0f 01 20 23 d8 00 ff ff 2b 04 03 48     # sleep timer 21.5 min (0x2b/2) - exact
 05 0f 01 20 23 d8 00 ff ff 0d 04 03 2a     # sleep timer 6.5 min (0x0d/2) - exact
 ```
+
+### Color byte order
+
+Bytes 6-8 are **RGB** on the wire. An earlier BGR reading labelled the
+breathing templates pink `#FE5EF9`, orange `#FF7F00`, and yellow `#FFFF00`;
+on hardware the mouse shows violet, azure blue, and cyan, which is the RGB
+reading of `f9 5e fe`, `00 7f ff`, and `00 ff ff`. The template IDs keep the
+old names (`breathing-fe5ef9`, `breathing-ff7f00`, `breathing-ffff00`)
+because stored profiles reference them; the displayed colors use RGB.
+
+The application also accepts a custom `#RRGGBB` color for Fixed (`0x10`) and
+Breathing (`0x20`): it starts from the mode's captured template, writes the
+RGB bytes to 6-8, and recomputes the checksum. These reports are derived from
+the decoded layout, not captured from the official application.
 
 ### Sleep timer
 
@@ -323,9 +337,8 @@ These remain host transaction logs and human observations, not a USB capture or
 measurements of effective debounce/sleep timing.
 
 The fixed-mode color observations support RGB on this device/mode, contradicting
-the historical BGR labels above. Color order in other modes and application
-palette labeling require separate investigation; the checksum change does not
-reinterpret all historical capture colors.
+the historical BGR labels. Breathing mode was later confirmed RGB on hardware
+as well (see "Color byte order"), and the application palette now uses RGB.
 
 
 ## Report 0x06 — polling rate (9 B)
@@ -525,7 +538,7 @@ Heartbeats arrive roughly once per second while the app is open.
 - Full button table semantics of `0x08`.
 - Meaning of `0x0c` handshake.
 - Whether `0x09` (macro) appears on macro operations.
-- Lighting **mode** in `0x05` byte [3] is decoded; color is bytes 6-8 BGR,
+- Lighting **mode** in `0x05` byte [3] is decoded; color is bytes 6-8 RGB,
   bytes [11–12] are the big-endian checksum. Sleep timer =
   byte [9] (min × 2), deep-sleep = high nibbles of bytes 4 and 5 (above),
   response time = byte [10] (direct ms in the verified host; legacy captures

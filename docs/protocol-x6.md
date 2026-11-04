@@ -84,7 +84,7 @@ Layout of builder `FUN_004143a0` in `X6.exe` (validated live):
 | 8..15 | 8 | **DPI lows** of stages 1-8 (`(DPI/50 - 1) & 0xFF`) | `config[0x8c4+i*4]` |
 | 16..23 | 8 | **DPI highs** (`(DPI/50 - 1) >> 8`) | `config[0x8c4+i*4]` |
 | 24 | 1 | **active stage + 1** (1-8) | `config[0x934]` |
-| 25..48 | 24 | **8 RGB colors**, 24-bit (BGR), 3 B each | `config[0x960+i*4]` |
+| 25..48 | 24 | **8 RGB colors**, 3 B each in R, G, B wire order (the host stores them as `0x00BBGGRR` dwords) | `config[0x960+i*4]` |
 | 49 | 1 | `0x01` | fixed |
 | 50-51 | 2 | checksum `sum([3..49])` big-endian | computed |
 

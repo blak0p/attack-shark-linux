@@ -116,6 +116,7 @@
   "lighting": {
     "effect": "Effect",
     "color": "Lighting color",
+    "customColor": "Custom color",
     "speed": "{{label}} speed",
     "effectSelect": "Lighting effect",
     "selectEffect": "Select effect"
