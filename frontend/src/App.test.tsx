@@ -1072,29 +1072,39 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect(screen.queryByText(/Variant/)).not.toBeInTheDocument();
   });
 
-  it("renders exactly five effect-aware lighting slots and disables unsupported fallbacks", async () => {
+  it("shows only selectable colors for the current effect", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
     const group = await screen.findByRole("group", { name: "Lighting color" });
-    expect(group.querySelectorAll("input[type='radio']")).toHaveLength(5);
+    expect(group.querySelectorAll("input[type='radio']")).toHaveLength(1);
     expect(screen.getByRole("radio", { name: "#00FF00" })).toBeEnabled();
-    expect(screen.getAllByRole("radio").filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(4);
+    expect([...document.querySelectorAll("input[name='lighting-color']")].filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(0);
 
     await chooseLightingEffect("Breathing");
-    await waitFor(() => expect(group.querySelectorAll("input[type='radio']")).toHaveLength(5));
-    expect([...group.querySelectorAll("input[type='radio']")].filter((radio) => !(radio as HTMLInputElement).disabled)).toHaveLength(4);
+    await waitFor(() => expect(screen.getByRole("group", { name: "Lighting color" }).querySelectorAll("input[type='radio']")).toHaveLength(4));
+    expect([...document.querySelectorAll("input[name='lighting-color']")].filter((radio) => (radio as HTMLInputElement).disabled)).toHaveLength(0);
   });
 
-  it("keeps all five slots disabled for every non-color effect and an unknown pending mode", async () => {
+  it("renders the lighting color and effect headings once", async () => {
+    const service = serviceFor(snapshot());
+    const { container } = render(<App service={service} />);
+
+    await screen.findByRole("group", { name: "Lighting color" });
+    const lighting = container.querySelector("#lighting")!;
+    expect([...lighting.querySelectorAll("h2, legend, span:not(.sr-only)")].filter((node) => node.textContent === "Lighting color")).toHaveLength(1);
+    expect([...lighting.querySelectorAll("h2, legend, span:not(.sr-only)")].filter((node) => node.textContent === "Effect")).toHaveLength(1);
+  });
+
+  it("hides the color group for every non-color effect and an unknown pending mode", async () => {
     const service = serviceFor(snapshot());
     render(<App service={service} />);
 
-    const group = await screen.findByRole("group", { name: "Lighting color" });
-    for (const mode of [0, 48, 64, 80, 96]) {
-      const labels = new Map([[0, "Off"], [48, "Neon"], [64, "Color Breathing"], [80, "Static DPI"], [96, "Breathing DPI"]]);
-      await chooseLightingEffect(labels.get(mode)!);
-      await waitFor(() => expect([...group.querySelectorAll("input[type='radio']")].every((radio) => (radio as HTMLInputElement).disabled)).toBe(true));
+    await screen.findByRole("group", { name: "Lighting color" });
+    for (const label of ["Off", "Neon", "Color Breathing", "Static DPI", "Breathing DPI"]) {
+      await chooseLightingEffect(label);
+      await waitFor(() => expect(screen.queryByRole("group", { name: "Lighting color" })).not.toBeInTheDocument());
+      expect(document.querySelectorAll("input[name='lighting-color']")).toHaveLength(0);
     }
 
     cleanup();
@@ -1102,9 +1112,9 @@ it("requires confirmation before factory reset and reports a reset failure", asy
       GetLightingSnapshot: vi.fn().mockResolvedValue(lightingSnapshot({ Pending: { Mode: 0x70 as 0x10, TemplateID: "unknown" } })),
     });
     render(<App service={unknown} />);
-    const unknownGroup = await screen.findByRole("group", { name: "Lighting color" });
-    expect(unknownGroup.querySelectorAll("input[type='radio']")).toHaveLength(5);
-    expect([...unknownGroup.querySelectorAll("input[type='radio']")].every((radio) => (radio as HTMLInputElement).disabled)).toBe(true);
+    await screen.findByRole("combobox", { name: "Lighting effect" });
+    expect(screen.queryByRole("group", { name: "Lighting color" })).not.toBeInTheDocument();
+    expect(document.querySelectorAll("input[name='lighting-color']")).toHaveLength(0);
     expect(unknown.StageLighting).not.toHaveBeenCalled();
   });
 

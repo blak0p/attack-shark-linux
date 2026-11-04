@@ -104,7 +104,7 @@ The **Lighting** view configures the RGB LED lighting strip and illuminated logo
 ### 2. Speed Variants & Color Templates
 
 - **Animation Speed Slider**: For animated lighting effects, adjust the animation speed step-by-step.
-- **Color Presets**: Select from device-supported color swatches (e.g., Neon Green, Magenta, Orange, Yellow) or effect-controlled multi-color modes.
+- **Color Presets**: Only the color swatches the selected effect supports are shown. Effects without a color choice show no swatches.
 - **Feedback**: Uses the same progress indicator and brief `Applied` confirmation as other settings.
 
 ---

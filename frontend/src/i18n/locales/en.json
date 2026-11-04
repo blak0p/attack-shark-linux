@@ -117,8 +117,6 @@
     "effect": "Effect",
     "color": "Lighting color",
     "speed": "{{label}} speed",
-    "unavailableColor": "Unavailable color {{index}}",
-    "effectControlled": "Effect controlled",
     "effectSelect": "Lighting effect",
     "selectEffect": "Select effect"
   },

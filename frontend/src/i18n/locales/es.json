@@ -117,8 +117,6 @@
     "effect": "Efecto",
     "color": "Color de iluminación",
     "speed": "Velocidad de {{label}}",
-    "unavailableColor": "Color {{index}} no disponible",
-    "effectControlled": "Controlado por el efecto",
     "effectSelect": "Efecto de iluminación",
     "selectEffect": "Elige un efecto"
   },
