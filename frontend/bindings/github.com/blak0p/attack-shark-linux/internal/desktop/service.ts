@@ -218,6 +218,16 @@ export function GetApplicationVersion(): $CancellablePromise<string> {
     return $Call.ByID(2852758180);
 }
 
+/**
+ * GetInstallSource reports the compiled package metadata so the UI can show
+ * who installs and updates this application.
+ */
+export function GetInstallSource(): $CancellablePromise<$models.InstallSource> {
+    return $Call.ByID(708716308).then(($result: any) => {
+        return $models.InstallSource.createFrom($result);
+    });
+}
+
 export function GetDebounceSnapshot(): $CancellablePromise<$models.DebounceSnapshot> {
     return $Call.ByID(847781341).then(($result: any) => {
         return $$createType1($result);

@@ -69,6 +69,7 @@ export function App({ service }: { service: DesktopService }) {
     remap,
     inventory,
     applicationVersion,
+    installSource,
     ready,
     notice,
     resetConfirmation,
@@ -450,6 +451,7 @@ export function App({ service }: { service: DesktopService }) {
         <div className="stack">
           <DeviceStatusPanel
             applicationVersion={applicationVersion}
+            installSource={installSource}
             connectionType={snapshot.Connection}
             battery={snapshot.Battery}
             serial={inventory?.Selected?.ID.Serial || undefined}

@@ -20,6 +20,39 @@ var CurrentVersion = "0.0.0-dev"
 // It must never contain private signing material.
 var ReleasePublicKey string
 
+// PackageManager names the system package manager that owns this installation,
+// set at build time with -ldflags "-X <package>.PackageManager=pacman". When it is
+// non-empty the in-app updater stays disabled: updates belong to that manager.
+var PackageManager string
+
+// Distribution, Branch and Commit describe where a package build came from,
+// for example "AUR", "main" and "2bf7932". Branch and Commit are set only by
+// builds of a moving branch, where a version number alone is not meaningful.
+var (
+	Distribution string
+	Branch       string
+	Commit       string
+)
+
+// BuildLabel describes this build for --version: the version, or branch and
+// commit for branch builds, plus the distribution and package manager.
+func BuildLabel() string {
+	label := CurrentVersion
+	if Branch != "" && Commit != "" {
+		label = Branch + " " + Commit
+	}
+	var source []string
+	for _, part := range []string{Distribution, PackageManager} {
+		if part != "" {
+			source = append(source, part)
+		}
+	}
+	if len(source) > 0 {
+		label += " (" + strings.Join(source, ", ") + ")"
+	}
+	return label
+}
+
 // Manifest is the signed, transport-independent description of one AppImage release.
 type Manifest struct {
 	Version   string `json:"version"`

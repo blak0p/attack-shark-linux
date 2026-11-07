@@ -1,0 +1,44 @@
+# Maintainer: blak0p <martinpujaltea@gmail.com>
+# Builds the latest stable release tag from source. Updates come from pacman,
+# so the in-app updater is compiled out via update.PackageManager.
+pkgname=attack-shark-linux
+pkgver=1.8.0
+pkgrel=1
+pkgdesc='Linux desktop configurator for the Attack Shark X6 gaming mouse'
+arch=('x86_64')
+url='https://github.com/blak0p/attack-shark-linux'
+license=('MIT')
+depends=('gtk4' 'webkitgtk-6.0' 'glib2' 'hicolor-icon-theme')
+makedepends=('go>=2:1.27.1' 'nodejs' 'npm')
+conflicts=('attack-shark-linux-git')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('a8eeca6ba725b3dc41fe3568d0aeeacc94057df0d2126a50e913fdd232d2d9fb')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath" GOTOOLCHAIN=local
+  go mod download -x
+  npm --prefix frontend ci --no-audit --no-fund --cache "$srcdir/npm-cache"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath" GOTOOLCHAIN=local
+  export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
+  export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
+  npm --prefix frontend run build
+  local pkg=github.com/blak0p/attack-shark-linux/internal/update
+  go build -o attack-shark-linux \
+    -ldflags "-linkmode=external -X $pkg.CurrentVersion=$pkgver -X $pkg.PackageManager=pacman -X $pkg.Distribution=AUR" \
+    ./cmd/x6configurator
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 attack-shark-linux "$pkgdir/usr/bin/attack-shark-linux"
+  install -Dm644 packaging/desktop/attack-shark-x6.desktop "$pkgdir/usr/share/applications/attack-shark-x6.desktop"
+  install -Dm644 packaging/icons/attack-shark-x6.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/attack-shark-x6.svg"
+  install -Dm644 packaging/udev/60-attack-shark-x6-hidraw.rules "$pkgdir/usr/lib/udev/rules.d/60-attack-shark-x6-hidraw.rules"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

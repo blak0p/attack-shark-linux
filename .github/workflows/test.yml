@@ -52,6 +52,25 @@ jobs:
       - name: Test
         run: go test ./...
 
+  aur:
+    name: AUR packages (clean Arch build, install, remove)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      # actions/checkout needs git inside the container to keep the .git
+      # directory, which the -git package builds from.
+      - name: Install git
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build, lint, install and remove both AUR packages
+        run: bash packaging/aur/check.sh
+        env:
+          SRC: ${{ github.workspace }}
+
   frontend:
     name: Frontend tests (vitest)
     runs-on: ubuntu-latest

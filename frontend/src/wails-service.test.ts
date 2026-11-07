@@ -5,6 +5,7 @@ const bindings = vi.hoisted(() => ({
   StageMacroAssignmentWithMode: vi.fn(), StageMacroAssignment: vi.fn(), StageRemap: vi.fn(), ClearButtonMacroAssignment: vi.fn(),
   ClearMacroAssignment: vi.fn(), DiscardRemap: vi.fn(), GetMacroAssignmentSnapshot: vi.fn(),
   GetApplicationVersion: vi.fn(),
+  GetInstallSource: vi.fn(),
   CheckUnifiedUpdates: vi.fn(),
   ApplyUnifiedUpdate: vi.fn(),
   CheckForUpdate: vi.fn(),
@@ -307,6 +308,7 @@ describe("desktopService", () => {
     const config = { DPI: [1600], ActiveStage: 0, StageMask: 1, LiftDistance: 1 };
 
     expect(desktopService.GetApplicationVersion).toBe(bindings.GetApplicationVersion);
+    expect(desktopService.GetInstallSource).toBe(bindings.GetInstallSource);
     expect(desktopService.CheckForUpdate).toBe(bindings.CheckForUpdate);
     expect(desktopService.ApplyVerifiedUpdate).toBe(bindings.ApplyVerifiedUpdate);
     expect(desktopService.GetSnapshot).toBe(bindings.GetSnapshot);

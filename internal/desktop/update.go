@@ -48,6 +48,21 @@ func (s *Service) GetApplicationVersion() string {
 	return update.CurrentVersion
 }
 
+// InstallSource describes a package-manager installation. All fields are empty
+// for AppImage and development builds.
+type InstallSource struct {
+	PackageManager string
+	Distribution   string
+	Branch         string
+	Commit         string
+}
+
+// GetInstallSource reports the compiled package metadata so the UI can show
+// who installs and updates this application.
+func (s *Service) GetInstallSource() InstallSource {
+	return InstallSource{PackageManager: update.PackageManager, Distribution: update.Distribution, Branch: update.Branch, Commit: update.Commit}
+}
+
 // CheckForUpdate verifies availability only. It never downloads, replaces, or relaunches.
 func (s *Service) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	s.mu.Lock()
