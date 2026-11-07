@@ -125,6 +125,25 @@ verified AppImage replacement in an isolated account; the maintainer observed
 the in-app update card and relaunch. Real-device installation requires its own
 udev authorization and validation.
 
+### Arch Linux (AUR)
+
+Two AUR packages build the app from source:
+
+| Package | Builds | Updates |
+| --- | --- | --- |
+| `attack-shark-linux` | Latest stable release tag | New release → new `pkgver` |
+| `attack-shark-linux-git` | `main` branch | Rebuild the package |
+
+```sh
+paru -S attack-shark-linux      # or: attack-shark-linux-git
+```
+
+Both install `/usr/bin/attack-shark-linux`, the desktop entry, the icon and the
+udev rule in `/usr/lib/udev/rules.d/`. Replug the dongle after installing.
+The package manager owns these installs, so the in-app updater is disabled:
+update with your AUR helper instead. Do not mix an AUR install with the
+AppImage installer. Maintainer notes live in [packaging/aur](packaging/aur/README.md).
+
 ## Optional workaround: fast macro clicks with libinput
 
 If the kernel receives every click but fast macro clicks are merged on the

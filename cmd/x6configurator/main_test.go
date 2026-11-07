@@ -118,6 +118,11 @@ func TestReleaseUpdaterRequiresInstallerManagedRuntimeAppImageIdentity(t *testin
 	if updater := releaseUpdater(); updater != nil {
 		t.Fatal("builds without a release key must not enable updater or recovery")
 	}
+	releaseBuildContract.ReleasePublicKey = "public-key"
+	releaseBuildContract.PackageManager = "pacman"
+	if updater := releaseUpdater(); updater != nil {
+		t.Fatal("package-manager builds must leave updates to the package manager")
+	}
 }
 
 // Structural startup proof avoids starting Wails, device discovery or polkit.

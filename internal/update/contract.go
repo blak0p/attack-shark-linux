@@ -20,6 +20,11 @@ var CurrentVersion = "0.0.0-dev"
 // It must never contain private signing material.
 var ReleasePublicKey string
 
+// PackageManager names the system package manager that owns this installation,
+// set at build time with -ldflags "-X <package>.PackageManager=pacman". When it is
+// non-empty the in-app updater stays disabled: updates belong to that manager.
+var PackageManager string
+
 // Manifest is the signed, transport-independent description of one AppImage release.
 type Manifest struct {
 	Version   string `json:"version"`

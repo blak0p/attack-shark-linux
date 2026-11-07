@@ -30,9 +30,11 @@ var assets embed.FS
 var releaseBuildContract = struct {
 	CurrentVersion   string
 	ReleasePublicKey string
+	PackageManager   string
 }{
 	CurrentVersion:   update.CurrentVersion,
 	ReleasePublicKey: update.ReleasePublicKey,
+	PackageManager:   update.PackageManager,
 }
 
 // wailsEventSink bridges the desktop service to the Wails event manager so the
@@ -246,6 +248,10 @@ func releaseUpdater() *update.Updater {
 }
 
 func releaseUpdaterAt(appImage string) *update.Updater {
+	// Package-manager installs (AUR) are updated by that manager, never in place.
+	if releaseBuildContract.PackageManager != "" {
+		return nil
+	}
 	if releaseBuildContract.CurrentVersion == "" || releaseBuildContract.CurrentVersion == "0.0.0-dev" || releaseBuildContract.ReleasePublicKey == "" {
 		return nil
 	}

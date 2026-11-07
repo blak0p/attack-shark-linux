@@ -1,0 +1,22 @@
+pkgbase = attack-shark-linux-git
+	pkgdesc = Linux desktop configurator for the Attack Shark X6 gaming mouse (main branch)
+	pkgver = 1.8.0.r1.g2bf7932
+	pkgrel = 1
+	url = https://github.com/blak0p/attack-shark-linux
+	arch = x86_64
+	license = MIT
+	makedepends = git
+	makedepends = go>=2:1.27.1
+	makedepends = nodejs
+	makedepends = npm
+	depends = gtk4
+	depends = webkitgtk-6.0
+	depends = glib2
+	depends = hicolor-icon-theme
+	provides = attack-shark-linux
+	conflicts = attack-shark-linux
+	options = !lto
+	source = attack-shark-linux::git+https://github.com/blak0p/attack-shark-linux.git#branch=main
+	sha256sums = SKIP
+
+pkgname = attack-shark-linux-git
