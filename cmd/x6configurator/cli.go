@@ -20,12 +20,15 @@ type cliDependencies struct {
 	startTray  func() error // the login start: tray only, no window unless needed
 	reset      func(context.Context) error
 	launch     func(profileRef string, command []string) int
+	version    func() string
+	stdout     io.Writer
 }
 
 const usageText = `Usage:
   attack-shark-linux                         open the desktop app
   attack-shark-linux --tray                  start in the system tray (used by autostart)
   attack-shark-linux reset                   restore the factory configuration
+  attack-shark-linux --version               print the version and install source
   attack-shark-linux --profile NAME -- CMD   apply profile NAME (name or ID), run CMD,
                                              then restore the previous profile
 
@@ -43,6 +46,16 @@ func runCLI(args []string, dependencies cliDependencies) int {
 		if dependencies.startTray == nil || dependencies.startTray() != nil {
 			return exitFailure
 		}
+		return exitSuccess
+	case len(args) == 1 && args[0] == "--version":
+		if dependencies.version == nil {
+			return exitFailure
+		}
+		out := dependencies.stdout
+		if out == nil {
+			out = os.Stdout
+		}
+		io.WriteString(out, "attack-shark-linux "+dependencies.version()+"\n")
 		return exitSuccess
 	case len(args) == 1 && args[0] == "reset":
 		if dependencies.reset == nil || dependencies.reset(context.Background()) != nil {

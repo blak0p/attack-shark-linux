@@ -194,6 +194,8 @@
     "title": "Status",
     "version": "Application version",
     "devBuild": "development build",
+    "updates": "Updates",
+    "updatesManagedBy": "Managed by {{manager}}",
     "interface": "Interface",
     "battery": "Battery charge",
     "serial": "Serial identifier"

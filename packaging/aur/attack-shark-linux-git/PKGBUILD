@@ -36,9 +36,11 @@ build() {
   export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
   export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
   npm --prefix frontend run build
-  local pkg=github.com/blak0p/attack-shark-linux/internal/update
+  local pkg=github.com/blak0p/attack-shark-linux/internal/update commit
+  commit=$(git rev-parse --short=7 HEAD)
   go build -o attack-shark-linux \
-    -ldflags "-linkmode=external -X $pkg.CurrentVersion=$pkgver -X $pkg.PackageManager=pacman" \
+    -ldflags "-linkmode=external -X $pkg.CurrentVersion=$pkgver -X $pkg.PackageManager=pacman -X $pkg.Distribution=AUR \
+      -X $pkg.Branch=main -X $pkg.Commit=$commit" \
     ./cmd/x6configurator
 }
 

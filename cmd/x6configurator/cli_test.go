@@ -1,11 +1,31 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
 	"testing"
 )
+
+func TestRunCLIVersionPrintsBuildLabelWithoutStartingTheApp(t *testing.T) {
+	var out bytes.Buffer
+	started := false
+	exit := runCLI([]string{"--version"}, cliDependencies{
+		startWails: func() error { started = true; return nil },
+		version:    func() string { return "main 2bf7932 (AUR, pacman)" },
+		stdout:     &out,
+	})
+	if exit != exitSuccess || started {
+		t.Fatalf("exit=%d started=%v, want success without starting the app", exit, started)
+	}
+	if got := out.String(); got != "attack-shark-linux main 2bf7932 (AUR, pacman)\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	if exit := runCLI([]string{"--version", "extra"}, cliDependencies{version: func() string { return "1.8.0" }, stdout: &out}); exit != exitUsage {
+		t.Fatalf("--version with extra arguments exit = %d, want usage", exit)
+	}
+}
 
 func TestRunCLIRoutesOnlyExactResetBeforeWails(t *testing.T) {
 	tests := []struct {

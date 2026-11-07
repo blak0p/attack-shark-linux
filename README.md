@@ -141,7 +141,9 @@ paru -S attack-shark-linux      # or: attack-shark-linux-git
 Both install `/usr/bin/attack-shark-linux`, the desktop entry, the icon and the
 udev rule in `/usr/lib/udev/rules.d/`. Replug the dongle after installing.
 The package manager owns these installs, so the in-app updater is disabled:
-update with your AUR helper instead. Do not mix an AUR install with the
+update with your AUR helper instead. **Device → Status** and
+`attack-shark-linux --version` show the install source, for example
+`1.8.0 (AUR, pacman)` or `main 2bf7932 (AUR, pacman)` for the `-git` package. Do not mix an AUR install with the
 AppImage installer. Maintainer notes live in [packaging/aur](packaging/aur/README.md).
 
 ## Optional workaround: fast macro clicks with libinput

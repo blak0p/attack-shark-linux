@@ -195,6 +195,8 @@
     "title": "Estado",
     "version": "Versión de la aplicación",
     "devBuild": "compilación de desarrollo",
+    "updates": "Actualizaciones",
+    "updatesManagedBy": "Gestionadas por {{manager}}",
     "interface": "Interfaz",
     "battery": "Carga de la batería",
     "serial": "Número de serie"

@@ -30,7 +30,7 @@ build() {
   npm --prefix frontend run build
   local pkg=github.com/blak0p/attack-shark-linux/internal/update
   go build -o attack-shark-linux \
-    -ldflags "-linkmode=external -X $pkg.CurrentVersion=$pkgver -X $pkg.PackageManager=pacman" \
+    -ldflags "-linkmode=external -X $pkg.CurrentVersion=$pkgver -X $pkg.PackageManager=pacman -X $pkg.Distribution=AUR" \
     ./cmd/x6configurator
 }
 

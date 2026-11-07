@@ -92,6 +92,7 @@ func main() {
 		startTray:  func() error { return startDesktop(true) },
 		reset:      emergencyReset,
 		launch:     launchWithProfile,
+		version:    update.BuildLabel,
 	})
 	if exitCode != exitSuccess {
 		os.Exit(exitCode)

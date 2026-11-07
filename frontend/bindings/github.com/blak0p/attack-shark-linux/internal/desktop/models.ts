@@ -822,3 +822,40 @@ const $$createType16 = $Create.Array($Create.Any);
 const $$createType17 = ResetLaneResult.createFrom;
 const $$createType18 = $Create.Array($$createType17);
 const $$createType19 = DPIConfig.createFrom;
+
+/**
+ * InstallSource describes a package-manager installation. All fields are empty
+ * for AppImage and development builds.
+ */
+export class InstallSource {
+    "PackageManager": string;
+    "Distribution": string;
+    "Branch": string;
+    "Commit": string;
+
+    /** Creates a new InstallSource instance. */
+    constructor($$source: Partial<InstallSource> = {}) {
+        if (!("PackageManager" in $$source)) {
+            this["PackageManager"] = "";
+        }
+        if (!("Distribution" in $$source)) {
+            this["Distribution"] = "";
+        }
+        if (!("Branch" in $$source)) {
+            this["Branch"] = "";
+        }
+        if (!("Commit" in $$source)) {
+            this["Commit"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new InstallSource instance from a string or object.
+     */
+    static createFrom($$source: any = {}): InstallSource {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new InstallSource($$parsedSource as Partial<InstallSource>);
+    }
+}
