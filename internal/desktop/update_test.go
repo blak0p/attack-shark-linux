@@ -22,6 +22,23 @@ func TestInstalledApplicationVersionIsIndependentOfUpdateAvailability(t *testing
 	}
 }
 
+func TestInstallSourceReportsCompiledPackageMetadata(t *testing.T) {
+	original := []string{update.PackageManager, update.Distribution, update.Branch, update.Commit}
+	t.Cleanup(func() {
+		update.PackageManager, update.Distribution, update.Branch, update.Commit = original[0], original[1], original[2], original[3]
+	})
+	service := &Service{}
+	update.PackageManager, update.Distribution, update.Branch, update.Commit = "", "", "", ""
+	if got := service.GetInstallSource(); got != (InstallSource{}) {
+		t.Fatalf("unpackaged GetInstallSource() = %+v, want empty", got)
+	}
+	update.PackageManager, update.Distribution, update.Branch, update.Commit = "pacman", "AUR", "main", "2bf7932"
+	want := InstallSource{PackageManager: "pacman", Distribution: "AUR", Branch: "main", Commit: "2bf7932"}
+	if got := service.GetInstallSource(); got != want {
+		t.Fatalf("GetInstallSource() = %+v, want %+v", got, want)
+	}
+}
+
 func TestApplyVerifiedUpdateRetriesOnlyRelaunchAfterReplacement(t *testing.T) {
 	service := &Service{}
 	applies, launches := 0, 0

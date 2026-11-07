@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { i18n } from "../i18n";
-import type { Binding, DesktopService, DPIConfig, RemapSnapshot, Snapshot, WorkspaceActions, WorkspaceModel } from "../desktop-contract";
+import type { Binding, DesktopService, DPIConfig, InstallSource, RemapSnapshot, Snapshot, WorkspaceActions, WorkspaceModel } from "../desktop-contract";
 
 // Shared with the components that compare against the notice text.
 export const workspaceNoticeKeys = {
@@ -23,6 +23,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   const [resetConfirmation, setResetConfirmation] = useState(false);
   const [automaticApplyRequests, setAutomaticApplyRequests] = useState(0);
   const [applicationVersion, setApplicationVersion] = useState<string>();
+  const [installSource, setInstallSource] = useState<InstallSource>();
   const [update, setUpdate] = useState<WorkspaceModel["update"]>();
   const [updateApplying, setUpdateApplying] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -169,6 +170,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
   useEffect(() => {
     let cancelled = false;
     if (service.GetApplicationVersion) void service.GetApplicationVersion().then((version) => { if (!cancelled) setApplicationVersion(version); }).catch(() => {});
+    if (service.GetInstallSource) void service.GetInstallSource().then((source) => { if (!cancelled) setInstallSource(source); }).catch(() => {});
     return () => { cancelled = true; };
   }, [service]);
   useEffect(() => {
@@ -387,7 +389,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     retryPersistence: () => void runAutomaticApply(() => service.RetryPersistence().then(setSnapshot)),
     retryPollingPersistence: () => void runAutomaticApply(() => service.RetryPollingPersistence().then(setPolling)),
   };
-		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, update, unifiedUpdate, updateChecking, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0, remapBusy, remapError }, actions };
+		return { model: { snapshot, polling, debounce, lighting, normalSleep, remap, inventory, applicationVersion, installSource, update, unifiedUpdate, updateChecking, updateApplying, updateError, ready: inventory?.Selected != null, notice, resetConfirmation, automaticApplyBusy: automaticApplyRequests > 0, remapBusy, remapError }, actions };
 }
 
 function applyStatusEvent(current: Snapshot, event: { Connection?: string; Battery?: number | null; ActiveStage?: number | null }): Snapshot {

@@ -14,6 +14,7 @@ export {
     DeviceID,
     Error,
     ErrorCode,
+    InstallSource,
     Inventory,
     LightingSnapshot,
     MacroDraft,
