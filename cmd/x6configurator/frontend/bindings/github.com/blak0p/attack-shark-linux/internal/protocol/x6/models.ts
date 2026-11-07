@@ -24,6 +24,12 @@ export class LightingSelection {
     "Mode": LightingMode;
     "TemplateID": LightingTemplateID;
 
+    /**
+     * Color optionally overrides the template color as "#RRGGBB". It is
+     * accepted only for modes in customColorModes; empty keeps the template.
+     */
+    "Color"?: string;
+
     /** Creates a new LightingSelection instance. */
     constructor($$source: Partial<LightingSelection> = {}) {
         if (!("Mode" in $$source)) {
@@ -51,6 +57,7 @@ export enum LightingTemplateID {
      */
     $zero = "",
 
+    LightingTemplateStaticDPIFactoryReset = "static-dpi-factory-reset",
     LightingTemplateOff = "off",
     LightingTemplateFixedGreen = "fixed-green",
     LightingTemplateBreathingGreen = "breathing-green",

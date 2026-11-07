@@ -52,11 +52,17 @@ func TestLightingEffectsExposeBatchOneColorsAndBatchTwoSpeeds(t *testing.T) {
 			}
 		}
 	}
-	if got := effects[2].ColorTemplates; len(got) != 4 || got[0].CSSColor != "#00FF00" || got[1].CSSColor != "#FE5EF9" || got[2].CSSColor != "#FF7F00" || got[3].CSSColor != "#FFFF00" {
-		t.Fatalf("breathing color templates = %#v; want exact capture-backed colors", got)
+	if got := effects[2].ColorTemplates; len(got) != 4 || got[0].CSSColor != "#00FF00" || got[1].CSSColor != "#F95EFE" || got[2].CSSColor != "#007FFF" || got[3].CSSColor != "#00FFFF" {
+		t.Fatalf("breathing color templates = %#v; want report bytes 6-8 read as RGB", got)
 	}
 	if got := effects[6].SpeedVariants; len(got) != 3 || got[0].TemplateID != LightingTemplateBreathingDPIOne || got[1].TemplateID != LightingTemplateBreathingDPITwo || got[2].TemplateID != LightingTemplateBreathingDPIThree {
 		t.Fatalf("breathing DPI speed templates = %#v; want capture order", got)
+	}
+	for index, effect := range effects {
+		want := effect.Mode == LightingFixed || effect.Mode == LightingBreathing
+		if effect.CustomColor != want {
+			t.Fatalf("effect %d %q CustomColor = %v; want %v", index, effect.Label, effect.CustomColor, want)
+		}
 	}
 	effects[1].ColorTemplates[0].CSSColor = "mutated"
 	if LightingEffects()[1].ColorTemplates[0].CSSColor == "mutated" {

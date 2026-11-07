@@ -43,42 +43,15 @@ const feedbackFor = (code: string) =>
     : code === "stale_binding"
     ? i18n.t("errors.stale_binding")
     : code.replaceAll("_", " ");
-const SWATCH_COLORS = ["#00FF00", "#FE5EF9", "#FF7F00", "#FFFF00"];
+type LightingSlot = { label: string; color: string; templateID: string };
 
-type LightingSlot = { label: string; color?: string; templateID?: string; disabled: boolean };
-
-const lightingSlots = (
-  effect: LightingEffect | undefined,
-  appliedColors?: number[][]
-): LightingSlot[] => {
-  if (!effect)
-    return Array.from({ length: 5 }, (_, index) => ({
-      label: i18n.t("lighting.unavailableColor", { index: index + 1 }),
-      disabled: true,
-    }));
-  const interactive = effect.ColorTemplates.slice(0, 4).map((template) => ({
+// Only capture-backed templates are selectable, so only those are shown.
+const lightingSlots = (effect: LightingEffect | undefined): LightingSlot[] =>
+  (effect?.ColorTemplates ?? []).map((template) => ({
     label: template.CSSColor,
     color: template.CSSColor,
     templateID: template.TemplateID,
-    disabled: false,
   }));
-  const fallback = (index: number): LightingSlot => ({
-    label: i18n.t("lighting.unavailableColor", { index: index + 1 }),
-    color: SWATCH_COLORS[index],
-    disabled: true,
-  });
-  return [
-    ...interactive,
-    ...Array.from({ length: 4 - interactive.length }, (_, index) =>
-      fallback(interactive.length + index)
-    ),
-    {
-      label: i18n.t("lighting.effectControlled"),
-      color: appliedColors?.length ? `rgb(${appliedColors[0].join(", ")})` : undefined,
-      disabled: true,
-    },
-  ];
-};
 
 const speedFill = (index: number, count: number) =>
   count > 1 ? `${Math.round((index / (count - 1)) * 100)}%` : "0%";
@@ -165,7 +138,17 @@ export function App({ service }: { service: DesktopService }) {
       (variant) => variant.TemplateID === lighting.Pending.TemplateID
     ) ?? 0
   );
-  const slots = lightingSlots(lightingEffect, snapshot.Applied.Colors);
+  const slots = lightingSlots(lightingEffect);
+  const customColor = lightingEffect?.CustomColor === true;
+  // A single preset duplicates the custom picker's default, so hide it.
+  const presetSlots = customColor && slots.length <= 1 ? [] : slots;
+  const pickerColor = (
+    lighting?.Pending.Color ??
+    slots.find((slot) => slot.templateID === lighting?.Pending.TemplateID)?.color ??
+    slots[0]?.color ??
+    "#ffffff"
+  ).toLowerCase();
+  const hasSpeed = !!lightingEffect && lightingEffect.SpeedVariants.length > 1;
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
   const titlebarElement = (
@@ -294,10 +277,11 @@ export function App({ service }: { service: DesktopService }) {
               </label>
             </article>
 
+            {(presetSlots.length > 0 || hasSpeed || customColor) && (
             <article className="card">
-              <h2>{t("lighting.color")}</h2>
+              {(presetSlots.length > 0 || customColor) && <h2 id="lighting-color-title">{t("lighting.color")}</h2>}
 
-              {lightingEffect && lightingEffect.SpeedVariants.length > 1 && (
+              {lightingEffect && hasSpeed && (
                 <div className="range-row" style={{ marginBottom: 14 }}>
                   <span>{t("lighting.speed", { label: lightingEffect.Label })}</span>
                   <input
@@ -329,14 +313,14 @@ export function App({ service }: { service: DesktopService }) {
                 </div>
               )}
 
-              <fieldset className="lighting-colors" disabled={!ready}>
-                <legend style={{ fontWeight: 600, marginBottom: 8 }}>{t("lighting.color")}</legend>
+              {presetSlots.length > 0 && (
+              <fieldset className="lighting-colors" disabled={!ready} aria-labelledby="lighting-color-title">
                 <div
                   className="lighting-options"
                   role="radiogroup"
-                  aria-label={t("lighting.color")}
+                  aria-labelledby="lighting-color-title"
                 >
-                  {slots.map((slot, index) => (
+                  {presetSlots.map((slot, index) => (
                     <label
                       className="lighting-option"
                       key={`${slot.label}-${index}`}
@@ -345,13 +329,8 @@ export function App({ service }: { service: DesktopService }) {
                         type="radio"
                         name="lighting-color"
                         aria-label={slot.label}
-                        checked={
-                          slot.templateID != null &&
-                          lighting?.Pending.TemplateID === slot.templateID
-                        }
-                        disabled={slot.disabled}
+                        checked={!lighting?.Pending.Color && lighting?.Pending.TemplateID === slot.templateID}
                         onChange={() =>
-                          slot.templateID != null &&
                           lightingEffect &&
                           actions.stageLighting({
                             Mode: lightingEffect.Mode,
@@ -360,17 +339,40 @@ export function App({ service }: { service: DesktopService }) {
                         }
                       />
                       <span
-                        className={`lighting-color-swatch${
-                          slot.disabled ? " is-disabled" : ""
-                        }`}
+                        className="lighting-color-swatch"
                         aria-hidden="true"
-                        style={slot.color ? { backgroundColor: slot.color } : undefined}
+                        style={{ backgroundColor: slot.color }}
                       />
                     </label>
                   ))}
                 </div>
               </fieldset>
+              )}
+
+              {lightingEffect && customColor && (
+                <label className="lighting-custom-color">
+                  <span>{t("lighting.customColor")}</span>
+                  <span className="lighting-custom-picker">
+                  {/* WebKitGTK does not paint the native color input, so a swatch shows it. */}
+                  <span className="lighting-custom-swatch" aria-hidden="true" style={{ backgroundColor: pickerColor }} />
+                  <input
+                    type="color"
+                    aria-label={t("lighting.customColor")}
+                    value={pickerColor}
+                    disabled={!ready}
+                    onChange={(event) =>
+                      actions.stageLighting({
+                        Mode: lightingEffect.Mode,
+                        TemplateID: lightingEffect.DefaultTemplateID,
+                        Color: event.target.value.toUpperCase(),
+                      })
+                    }
+                  />
+                  </span>
+                </label>
+              )}
             </article>
+            )}
 
           </LightingPanel>
         )}

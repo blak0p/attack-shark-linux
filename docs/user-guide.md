@@ -104,7 +104,8 @@ The **Lighting** view configures the RGB LED lighting strip and illuminated logo
 ### 2. Speed Variants & Color Templates
 
 - **Animation Speed Slider**: For animated lighting effects, adjust the animation speed step-by-step.
-- **Color Presets**: Select from device-supported color swatches (e.g., Neon Green, Magenta, Orange, Yellow) or effect-controlled multi-color modes.
+- **Color Presets**: Only colors the selected effect really supports are shown. `Breathing` offers green, violet, blue, and cyan; `Fixed` uses the custom color picker only, which starts at green. Effects without a color choice show no swatches.
+- **Custom Color**: `Fixed` and `Breathing` also accept any color from the **Custom color** picker. The app writes it to the device as RGB and saves it in the active profile; choosing a preset again clears it.
 - **Feedback**: Uses the same progress indicator and brief `Applied` confirmation as other settings.
 
 ---
