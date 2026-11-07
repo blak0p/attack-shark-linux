@@ -50,5 +50,5 @@ package() {
   install -Dm644 packaging/desktop/attack-shark-x6.desktop "$pkgdir/usr/share/applications/attack-shark-x6.desktop"
   install -Dm644 packaging/icons/attack-shark-x6.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/attack-shark-x6.svg"
   install -Dm644 packaging/udev/60-attack-shark-x6-hidraw.rules "$pkgdir/usr/lib/udev/rules.d/60-attack-shark-x6-hidraw.rules"
-  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

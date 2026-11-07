@@ -66,7 +66,7 @@ for pkg in "${PACKAGES[@]}"; do
   fi
 
   step "$pkg: package contents"
-  for file in "${FILES[@]}" "usr/share/licenses/attack-shark-linux/LICENSE"; do
+  for file in "${FILES[@]}" "usr/share/licenses/$pkg/LICENSE"; do
     bsdtar -tf "$archive" | grep -qx "$file" || fail "$pkg: missing $file"
   done
 
