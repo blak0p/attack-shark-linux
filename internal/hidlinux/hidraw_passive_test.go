@@ -112,6 +112,7 @@ func hidrawBackendForFixture(t *testing.T, opener hidrawNodeOpener) (*HidrawBack
 	t.Helper()
 	root := fixtureRoot(t)
 	backend := &HidrawBackend{
+		registry:    fixtureRegistry(t),
 		sysRoot:     filepath.Join(root, "sys"),
 		devRoot:     filepath.Join(root, "dev"),
 		readTimeout: statusReadDeadline,
@@ -123,7 +124,7 @@ func hidrawBackendForFixture(t *testing.T, opener hidrawNodeOpener) (*HidrawBack
 func TestHidrawEnumerateFindsX6DeviceFromSysfs(t *testing.T) {
 	backend, _ := hidrawBackendForFixture(t, fakeHidrawOpener{})
 
-	candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+	candidates, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if err != nil {
 		t.Fatalf("Enumerate() error = %v", err)
 	}
@@ -140,7 +141,7 @@ func TestHidrawProfileValidRejectsInterfaceMismatchWithoutHidrawOpen(t *testing.
 	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/1-4:1.2/bInterfaceNumber"), "1\n")
 
-	candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+	candidates, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if err != nil || len(candidates) != 1 || candidates[0].Serial != "fixture-x6-serial" {
 		t.Fatalf("Enumerate() = %#v, %v; want visible stable-serial candidate", candidates, err)
 	}
@@ -187,7 +188,7 @@ func TestHidrawInventoryDiagnosticsIdentifyValidAndRejectedInterfaces(t *testing
 			inventoryDiagnosticWriter = &logs
 			defer func() { inventoryDiagnosticWriter = oldWriter }()
 
-			candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+			candidates, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,8 +218,8 @@ func TestHidrawEnumerateIgnoresOtherUsbDevicesAndInterfaces(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(other, "idProduct"), "c52b\n")
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-0:1.0/bInterfaceNumber"), "0\n")
 
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: fakeHidrawOpener{}}
-	candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: fakeHidrawOpener{}}
+	candidates, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if err != nil {
 		t.Fatalf("Enumerate() error = %v", err)
 	}
@@ -232,8 +233,8 @@ func TestHidrawEnumerateReturnsNotFoundWhenX6Absent(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-3/idVendor"), "046d\n")
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-3/idProduct"), "c52b\n")
 
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: fakeHidrawOpener{}}
-	_, err := backend.Enumerate(context.Background(), transport.X6Match())
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: fakeHidrawOpener{}}
+	_, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if !IsErrorKind(err, NotFound) {
 		t.Fatalf("Enumerate() error = %v; want NotFound", err)
 	}
@@ -241,7 +242,7 @@ func TestHidrawEnumerateReturnsNotFoundWhenX6Absent(t *testing.T) {
 
 func TestHidrawValidateDescriptorAcceptsOnlyX6StatusIdentity(t *testing.T) {
 	backend, _ := hidrawBackendForFixture(t, fakeHidrawOpener{})
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{Path: "1:1-4"}
@@ -286,8 +287,8 @@ func TestHidrawReadInterruptINDiagnostics(t *testing.T) {
 			if tt.openErr != nil {
 				opener = failingHidrawOpener{err: tt.openErr}
 			}
-			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 50 * time.Millisecond, opener: opener}
-			if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 50 * time.Millisecond, opener: opener}
+			if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 				t.Fatal(err)
 			}
 			var logs bytes.Buffer
@@ -316,7 +317,7 @@ func TestHidrawReadInterruptINClassifiesNodeAccessFailures(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend, _ := hidrawBackendForFixture(t, failingHidrawOpener{err: tt.err})
-			if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+			if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 				t.Fatal(err)
 			}
 			err := backend.ReadInterruptIN(context.Background(), transport.InputSource{Path: "1:1-4"}, func([]byte) bool { return false })
@@ -332,9 +333,9 @@ func TestHidrawReadInterruptINStreamsReportsUntilConsumed(t *testing.T) {
 	nodePath := filepath.Join(root, "dev/hidraw3")
 	node := &fakeHidrawNode{reports: [][]byte{{0x01}, {0x02}}}
 	opener := fakeHidrawOpener{nodes: map[string]hidrawNode{nodePath: node}}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: statusReadDeadline, opener: opener}
 
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -359,9 +360,9 @@ func TestHidrawReadInterruptINTimesOutWithoutReports(t *testing.T) {
 	nodePath := filepath.Join(root, "dev/hidraw3")
 	node := &fakeHidrawNode{block: make(chan struct{})}
 	opener := fakeHidrawOpener{nodes: map[string]hidrawNode{nodePath: node}}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 50 * time.Millisecond, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 50 * time.Millisecond, opener: opener}
 
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -380,9 +381,9 @@ func TestHidrawReadInterruptINWaitsForReadWorkerShutdown(t *testing.T) {
 		readRelease: make(chan struct{}),
 	}
 	opener := fakeHidrawOpener{nodes: map[string]hidrawNode{nodePath: node}}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
 
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)

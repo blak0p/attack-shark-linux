@@ -910,7 +910,7 @@ type commandFake struct {
 type targetedProfile struct{ serialless bool }
 
 func (targetedProfile) ID() string                       { return "x6" }
-func (targetedProfile) Match() transport.Match           { return transport.X6Match() }
+func (targetedProfile) Match() transport.Match           { return x6TestMatch() }
 func (p targetedProfile) AllowsSeriallessIdentity() bool { return p.serialless }
 func (targetedProfile) HIDFacts() HIDFacts               { return HIDFacts{} }
 func (targetedProfile) Codec() Codec                     { return targetedCodec{} }

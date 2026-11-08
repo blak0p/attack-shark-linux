@@ -30,6 +30,10 @@ var knownViolations = map[string][]string{
 	"internal/mouse":       {"internal/attackshark/x6/macrocodec", "internal/attackshark/x6/protocol"},
 }
 
+// modelUSBIdentity lists the lowercase literals that identify one model's USB
+// device. Generic code must read them from registered profiles instead.
+var modelUSBIdentity = []string{"0x1d57", "0xfa60", "0xfa61", "1d57:fa6"}
+
 // legacyPackages are the pre-separation homes of the X6 code.
 var legacyPackages = []string{"internal/x6", "internal/protocol/x6"}
 
@@ -63,6 +67,44 @@ func TestGenericPackagesDoNotImportModelDrivers(t *testing.T) {
 				t.Errorf("stale known violation %s -> %s; remove it from knownViolations", dir, imported)
 			}
 		}
+	}
+}
+
+func TestGenericCodeHasNoModelUSBIdentity(t *testing.T) {
+	root := repositoryRoot(t)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "node_modules", "testdata", "frontend", "dist":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") || isModelPackage(filepath.ToSlash(filepath.Dir(rel))) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		lower := strings.ToLower(string(data))
+		for _, literal := range modelUSBIdentity {
+			if strings.Contains(lower, literal) {
+				t.Errorf("%s contains model USB identity %s; read it from the registered profile", rel, literal)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan repository: %v", err)
 	}
 }
 

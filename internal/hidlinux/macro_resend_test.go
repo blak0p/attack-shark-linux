@@ -23,7 +23,7 @@ func macroResendFixture(t *testing.T, node *scriptedNode, silence time.Duration)
 	t.Helper()
 	root := fixtureRoot(t)
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
-	b := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, resendDelay: time.Millisecond, silenceDelay: silence, maxAttempts: 4, opener: &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}}
+	b := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, resendDelay: time.Millisecond, silenceDelay: silence, maxAttempts: 4, opener: &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}}
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "A"}, Path: "1:1-4"}
 	return b, binding
 }

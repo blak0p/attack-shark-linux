@@ -11,8 +11,8 @@ import (
 )
 
 func TestZZProbeHidrawDiscoveryAgainstRealSysfs(t *testing.T) {
-	backend := NewHidrawBackend()
-	candidates, err := backend.Enumerate(context.Background(), transport.X6Match())
+	backend := NewHidrawBackend(fixtureRegistry(t))
+	candidates, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if err != nil {
 		t.Fatalf("Enumerate error: %v", err)
 	}

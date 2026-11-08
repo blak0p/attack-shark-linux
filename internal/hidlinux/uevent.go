@@ -8,8 +8,8 @@ import (
 )
 
 // hidUEventMatches reports whether a HID device uevent belongs to the
-// candidate's validated physical path and interface 2.
-func hidUEventMatches(data []byte, candidate Candidate) bool {
+// candidate's validated physical path and the given interface.
+func hidUEventMatches(data []byte, candidate Candidate, interfaceNumber int) bool {
 	fields := make(map[string]string)
 	for _, line := range strings.Split(string(data), "\n") {
 		key, value, ok := strings.Cut(line, "=")
@@ -30,7 +30,7 @@ func hidUEventMatches(data []byte, candidate Candidate) bool {
 	if physPort == "" || candidatePort == "" || physPort != candidatePort {
 		return false
 	}
-	return interfaceFromHIDPhys(fields["HID_PHYS"]) == hidInterface
+	return interfaceFromHIDPhys(fields["HID_PHYS"]) == interfaceNumber
 }
 
 func interfaceFromHIDPhys(value string) int {

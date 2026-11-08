@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -20,7 +20,7 @@ func TestHidrawSendAndAwaitBindingUsesOnlyExactValidatedPath(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
 	node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
 	payload := make([]byte, protocol.DPIReportLength)
 	payload[0] = 0x04
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
@@ -57,7 +57,7 @@ func TestHidrawSendAndAwaitBindingAdmitsOnlyKnownReportPairs(t *testing.T) {
 			writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
 			node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x06}})
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
 			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
 
 			err := backend.SendAndAwaitBound(context.Background(), binding, tt.payload, func(report []byte) bool { return !protocol.MatchesPollingACK(report) })
@@ -86,7 +86,7 @@ func TestHidrawSendAndAwaitBindingClassifiesNodeAccessFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := fixtureRoot(t)
 			writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
-			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: failingHidrawOpener{err: tt.err}}
+			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: failingHidrawOpener{err: tt.err}}
 			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
 			payload := make([]byte, protocol.DPIReportLength)
 			payload[0] = 0x04
@@ -110,8 +110,8 @@ func TestHidrawSendAndAwaitBindingDoesNotReuseTimedOutListenerNode(t *testing.T)
 		path:  filepath.Join(root, "dev/hidraw3"),
 		nodes: []hidrawNode{listenerNode, commandNode},
 	}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
@@ -166,7 +166,7 @@ func TestHidrawSendAndAwaitBindingRejectsStaleIdentityOrPathBeforeNodeOpen(t *te
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
 	node := newCommandHidrawNode(nil)
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
 	payload := make([]byte, protocol.DPIReportLength)
 	payload[0] = 0x04
 
@@ -191,7 +191,7 @@ func TestHidrawSendAndAwaitSessionOnlyBindingRequiresSeriallessExactPath(t *test
 	}
 	node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: time.Second, opener: opener}
 	payload := make([]byte, protocol.DPIReportLength)
 	payload[0] = 0x04
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "session-id"}, ProfileID: "x6", Path: "1:1-4", SessionOnly: true}

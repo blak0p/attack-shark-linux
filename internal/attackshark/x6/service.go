@@ -102,7 +102,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.transport == nil {
 		return Status{}, &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
 	}
-	candidates, err := transport.EnumerateX6(ctx, s.transport)
+	candidates, err := transport.EnumerateAll(ctx, s.transport, dongleMatch, wiredMatch)
 	if err != nil {
 		return Status{}, &ServiceError{NoUsableDevice, err}
 	}
@@ -156,7 +156,7 @@ func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error 
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		candidates, err := transport.EnumerateX6(ctx, s.transport)
+		candidates, err := transport.EnumerateAll(ctx, s.transport, dongleMatch, wiredMatch)
 		if err != nil {
 			if !waitOrDone(ctx, listenRetryDelay) {
 				return nil
@@ -216,7 +216,7 @@ func (s *Service) preferredCandidates(ctx context.Context, candidates []transpor
 			eligible = append(eligible, c)
 		}
 	}
-	return transport.PreferX6Wired(eligible)
+	return transport.PreferWired(eligible, transport.WiredPair{Wired: wiredMatch, Dongle: dongleMatch})
 }
 
 // waitOrDone sleeps for the given delay unless ctx is cancelled first. It

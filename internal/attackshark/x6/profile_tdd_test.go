@@ -6,6 +6,7 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestProfilePreservesX6ValidationAndCodecParity(t *testing.T) {
@@ -62,5 +63,26 @@ func TestProfileRejectsInvalidOrForeignConfiguration(t *testing.T) {
 	}
 	if _, ok := profile.(mouse.Profile); !ok {
 		t.Fatal("NewProfile() does not expose the generic mouse profile contract")
+	}
+}
+
+func TestProfilesOwnX6USBIdentityAndPairing(t *testing.T) {
+	registry, err := mouse.NewProfileRegistry(NewProfile(), NewWiredProfile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dongle, wired := NewProfile(), NewWiredProfile()
+	if dongle.Match() != (transport.Match{VendorID: 0x1D57, ProductID: 0xFA60}) || dongle.HIDFacts().Connection != transport.Dongle {
+		t.Fatalf("dongle profile = %v / %v", dongle.Match(), dongle.HIDFacts().Connection)
+	}
+	if wired.Match() != (transport.Match{VendorID: 0x1D57, ProductID: 0xFA61}) || wired.HIDFacts().Connection != transport.Wired {
+		t.Fatalf("wired profile = %v / %v", wired.Match(), wired.HIDFacts().Connection)
+	}
+	if wired.HIDFacts().StatusInput != dongle.HIDFacts().StatusInput {
+		t.Fatalf("wired and dongle must share status input facts")
+	}
+	pairs := registry.WiredPairs()
+	if len(pairs) != 1 || pairs[0].Wired != wired.Match() || pairs[0].Dongle != dongle.Match() {
+		t.Fatalf("WiredPairs() = %v", pairs)
 	}
 }
