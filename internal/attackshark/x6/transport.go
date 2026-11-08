@@ -1,6 +1,9 @@
 package x6
 
-import "github.com/blak0p/attack-shark-linux/internal/transport"
+import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
+)
 
 type Match = transport.Match
 type Candidate = transport.Candidate
@@ -15,4 +18,4 @@ const (
 	Wired  = transport.Wired
 )
 
-type AppliedDPIStore interface{ SaveApplied(DPIConfig) error }
+type AppliedDPIStore = device.AppliedDPIStore

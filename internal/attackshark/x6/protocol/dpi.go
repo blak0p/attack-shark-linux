@@ -1,32 +1,20 @@
 // Package x6 contains pure, hardware-free facts about the X6 protocol.
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
+)
 
 const DPIReportLength = 56
 
-type DPIConfig struct {
-	AngleControl, RippleControl bool
-	StageMask, LiftDistance     byte
-	DPI                         [8]int
-	ActiveStage                 byte
-	Colors                      [8][3]byte
-}
+type DPIConfig = device.DPIConfig
 
-func DefaultDPIConfig() DPIConfig {
-	// Factory template dictated by the user (docs/config-baseline.md): six stages
-	// ending at the sensor max. Stages 7-8 hold the minimum encodable value but
-	// are masked off by StageMask 0x3f. Colors match the factory dwords
-	// 0xff/0xff00/0xff0000/0xffff/0xffff00/0xff00ff/0x40ff/0xffffff.
-	return DPIConfig{StageMask: 0x3f, LiftDistance: 1, DPI: [8]int{800, 1200, 1600, 3200, 5600, 26000, 50, 50}, ActiveStage: 4, Colors: [8][3]byte{{0xff, 0, 0}, {0, 0xff, 0}, {0, 0, 0xff}, {0xff, 0xff, 0}, {0, 0xff, 0xff}, {0xff, 0, 0xff}, {0xff, 0x40, 0}, {0xff, 0xff, 0xff}}}
-}
+func DefaultDPIConfig() DPIConfig { return device.DefaultDPIConfig() }
 
 // DocumentedResetDPIConfig returns the documented factory baseline for report 0x04.
-func DocumentedResetDPIConfig() DPIConfig {
-	config := DefaultDPIConfig()
-	config.ActiveStage = 2
-	return config
-}
+func DocumentedResetDPIConfig() DPIConfig { return device.DocumentedResetDPIConfig() }
 
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
 	if config.StageMask == 0 || config.LiftDistance > 1 || config.ActiveStage < 1 || config.ActiveStage > 8 {

@@ -1,9 +1,9 @@
 package x6
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -11,45 +11,26 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
-type ErrorKind string
+type ErrorKind = device.ErrorKind
 
 const (
-	NoUsableDevice ErrorKind = "no usable X6 device"
-	ReadFailure    ErrorKind = "input read failed"
-	InvalidDPI     ErrorKind = "invalid DPI configuration"
-	WriteFailure   ErrorKind = "configuration write failed"
-	AckFailure     ErrorKind = "configuration acknowledgement failed"
-	PersistFailure ErrorKind = "applied-state persistence failed"
+	NoUsableDevice = device.NoUsableDevice
+	ReadFailure    = device.ReadFailure
+	InvalidDPI     = device.InvalidDPI
+	WriteFailure   = device.WriteFailure
+	AckFailure     = device.AckFailure
+	PersistFailure = device.PersistFailure
 )
 
-type ServiceError struct {
-	Kind ErrorKind
-	Err  error
-}
+type ServiceError = device.ServiceError
 
-func (e *ServiceError) Error() string { return fmt.Sprintf("%s: %v", e.Kind, e.Err) }
-func (e *ServiceError) Unwrap() error { return e.Err }
-func IsErrorKind(err error, kind ErrorKind) bool {
-	var target *ServiceError
-	return errors.As(err, &target) && target.Kind == kind
-}
+func IsErrorKind(err error, kind ErrorKind) bool { return device.IsErrorKind(err, kind) }
 
-type Status struct {
-	Connection       Connection
-	BatteryPercent   int
-	BatteryAvailable bool
-}
+type Status = device.Status
 
-// StatusEvent is one dongle-pushed status report delivered by Listen. Exactly
-// one field is meaningful per event: a heartbeat carries Battery, and a
-// physical DPI button press carries ActiveStage.
-type StatusEvent struct {
-	Connection       Connection
-	BatteryPercent   int
-	BatteryAvailable bool
-	ActiveStage      byte
-	StageAvailable   bool
-}
+// StatusEvent is one dongle-pushed status report delivered by Listen.
+type StatusEvent = device.StatusEvent
+
 type Service struct {
 	transport PassiveInputTransport
 	command   CommandTransport
@@ -79,32 +60,32 @@ func (s *Service) applyDPI(ctx context.Context, config DPIConfig, store AppliedD
 		return err
 	}
 	if s.command == nil {
-		return &ServiceError{WriteFailure, errors.New("command transport is unavailable")}
+		return &ServiceError{Kind: WriteFailure, Err: errors.New("command transport is unavailable")}
 	}
 	s.commandMu.Lock()
 	defer s.commandMu.Unlock()
 	matched := false
 	err = s.command.SendAndAwait(ctx, report, func(input []byte) bool { matched = matchesDPIACK(input); return !matched })
 	if err != nil {
-		return &ServiceError{AckFailure, err}
+		return &ServiceError{Kind: AckFailure, Err: err}
 	}
 	if !matched {
-		return &ServiceError{AckFailure, errors.New("matching DPI acknowledgement was not received")}
+		return &ServiceError{Kind: AckFailure, Err: errors.New("matching DPI acknowledgement was not received")}
 	}
 	if store != nil {
 		if err := store.SaveApplied(config); err != nil {
-			return &ServiceError{PersistFailure, err}
+			return &ServiceError{Kind: PersistFailure, Err: err}
 		}
 	}
 	return nil
 }
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	if s.transport == nil {
-		return Status{}, &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
+		return Status{}, &ServiceError{Kind: NoUsableDevice, Err: errors.New("passive input transport is unavailable")}
 	}
 	candidates, err := transport.EnumerateAll(ctx, s.transport, dongleMatch, wiredMatch)
 	if err != nil {
-		return Status{}, &ServiceError{NoUsableDevice, err}
+		return Status{}, &ServiceError{Kind: NoUsableDevice, Err: err}
 	}
 	candidates = s.preferredCandidates(ctx, candidates)
 	var readErr error
@@ -132,9 +113,9 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 		}
 	}
 	if readErr != nil {
-		return Status{}, &ServiceError{ReadFailure, readErr}
+		return Status{}, &ServiceError{Kind: ReadFailure, Err: readErr}
 	}
-	return Status{}, &ServiceError{NoUsableDevice, errors.New("no validated passive input path")}
+	return Status{}, &ServiceError{Kind: NoUsableDevice, Err: errors.New("no validated passive input path")}
 }
 
 // listenRetryDelay bounds the retry cadence when no device answers. The dongle
@@ -150,7 +131,7 @@ const listenRetryDelay = 500 * time.Millisecond
 // re-enumerating.
 func (s *Service) Listen(ctx context.Context, onStatus func(StatusEvent)) error {
 	if s.transport == nil {
-		return &ServiceError{NoUsableDevice, errors.New("passive input transport is unavailable")}
+		return &ServiceError{Kind: NoUsableDevice, Err: errors.New("passive input transport is unavailable")}
 	}
 	for {
 		if err := ctx.Err(); err != nil {

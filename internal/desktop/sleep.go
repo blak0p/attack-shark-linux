@@ -3,23 +3,23 @@ package desktop
 import (
 	"context"
 	"errors"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func newSettingsState() *settingsState {
-	return &settingsState{normalSleep: x6.NormalSleepMinimumMinutes, responseTimeMs: x6.ResponseTimeFactoryMs}
+	return &settingsState{normalSleep: device.NormalSleepMinimumMinutes, responseTimeMs: device.ResponseTimeFactoryMs}
 }
-func newSettingsStateFromConfig(c x6.DeviceConfig) *settingsState {
+func newSettingsStateFromConfig(model device.Model, c device.DeviceConfig) *settingsState {
 	s := newSettingsState()
-	if x6.ValidateNormalSleepMinutes(c.NormalSleepMinutes) == nil {
+	if model.ValidateNormalSleepMinutes(c.NormalSleepMinutes) == nil {
 		s.normalSleep = c.NormalSleepMinutes
 		v := c.NormalSleepMinutes
 		s.persistedNormal = &v
 		s.normalPersistence = "success"
 	}
-	if x6.ValidateResponseTime(c.ResponseTimeMs) == nil {
+	if model.ValidateResponseTime(c.ResponseTimeMs) == nil {
 		s.responseTimeMs = c.ResponseTimeMs
 		v := c.ResponseTimeMs
 		s.persistedResponse = &v
@@ -27,21 +27,21 @@ func newSettingsStateFromConfig(c x6.DeviceConfig) *settingsState {
 	}
 	return s
 }
-func (s *settingsState) reset() {
-	s.replace(x6.DeviceConfig{})
+func (s *settingsState) reset(model device.Model) {
+	s.replace(model, device.DeviceConfig{})
 	s.mu.Lock()
 	s.persistedNormal, s.persistedResponse = nil, nil
 	s.normalPersistence, s.responsePersistence = "", ""
 	s.mu.Unlock()
 }
-func (s *settingsState) replace(c x6.DeviceConfig) {
+func (s *settingsState) replace(model device.Model, c device.DeviceConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.replaceLocked(c)
+	s.replaceLocked(model, c)
 }
 
-func (s *settingsState) replaceLocked(c x6.DeviceConfig) {
-	next := newSettingsStateFromConfig(c)
+func (s *settingsState) replaceLocked(model device.Model, c device.DeviceConfig) {
+	next := newSettingsStateFromConfig(model, c)
 	s.normalSleep, s.responseTimeMs = next.normalSleep, next.responseTimeMs
 	s.persistedNormal, s.persistedResponse = next.persistedNormal, next.persistedResponse
 	s.retryNormal, s.retryResponse = nil, nil
@@ -86,7 +86,7 @@ func (s *Service) StageNormalSleep(minutes float64) NormalSleepSnapshot {
 	defer st.applyMu.Unlock()
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if x6.ValidateNormalSleepMinutes(minutes) != nil {
+	if s.model.ValidateNormalSleepMinutes(minutes) != nil {
 		st.normalError = Error{Code: InvalidConfiguration}
 		return normalSleepSnapshot(st)
 	}
@@ -113,7 +113,7 @@ func debounceSnapshot(st *settingsState) DebounceSnapshot {
 		v := *st.persistedResponse
 		p = &v
 	}
-	return DebounceSnapshot{Desired: st.responseTimeMs, Applied: st.responseTimeMs, Persisted: p, Factory: x6.ResponseTimeFactoryMs, Revision: st.responseRevision, Firmware: st.responseFirmware, Persistence: st.responsePersistence, RetryAvailable: st.retryResponse != nil, Error: st.responseError}
+	return DebounceSnapshot{Desired: st.responseTimeMs, Applied: st.responseTimeMs, Persisted: p, Factory: device.ResponseTimeFactoryMs, Revision: st.responseRevision, Firmware: st.responseFirmware, Persistence: st.responsePersistence, RetryAvailable: st.retryResponse != nil, Error: st.responseError}
 }
 func (s *Service) StageDebounce(ms int) DebounceSnapshot {
 	st := s.currentSettingsState()
@@ -121,7 +121,7 @@ func (s *Service) StageDebounce(ms int) DebounceSnapshot {
 	defer st.applyMu.Unlock()
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if x6.ValidateResponseTime(ms) != nil {
+	if s.model.ValidateResponseTime(ms) != nil {
 		st.responseError = Error{Code: InvalidConfiguration}
 		return debounceSnapshot(st)
 	}
@@ -176,8 +176,8 @@ func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 		defer st.mu.Unlock()
 		return normalSleepSnapshot(st)
 	}
-	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: minutes, ResponseTimeMs: ms}
-	if err := inventory.ApplyOperationBound(context.Background(), b, x6.NewLightingSettingsOperation(), settings); err != nil {
+	settings := device.LightingSettings{LightingSelection: selection, NormalSleepMinutes: minutes, ResponseTimeMs: ms}
+	if err := inventory.ApplyOperationBound(context.Background(), b, s.model.LightingSettingsOperation(), settings); err != nil {
 		st.mu.Lock()
 		code := errorCode(err, false)
 		if errors.Is(err, mouse.ErrStaleBinding) {
@@ -202,7 +202,7 @@ func (s *Service) applySettings(normal bool) NormalSleepSnapshot {
 		st.responseError = Error{}
 	}
 	st.mu.Unlock()
-	captured := x6.DeviceConfig{NormalSleepMinutes: minutes, ResponseTimeMs: ms}
+	captured := device.DeviceConfig{NormalSleepMinutes: minutes, ResponseTimeMs: ms}
 	return s.persistSettingsBound(b, st, normal, false, &captured)
 }
 func (s *Service) persistSettings(normal bool, retry ...bool) NormalSleepSnapshot {
@@ -222,7 +222,7 @@ func normalSleepSnapshotLocked(st *settingsState) NormalSleepSnapshot {
 	defer st.mu.Unlock()
 	return normalSleepSnapshot(st)
 }
-func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, retry bool, applied *x6.DeviceConfig) NormalSleepSnapshot {
+func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, retry bool, applied *device.DeviceConfig) NormalSleepSnapshot {
 	if b.SessionOnly {
 		return normalSleepSnapshotLocked(st)
 	}
@@ -233,7 +233,7 @@ func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, ret
 		return normalSleepSnapshotLocked(st)
 	}
 	st.mu.Lock()
-	c := x6.DeviceConfig{NormalSleepMinutes: st.normalSleep, ResponseTimeMs: st.responseTimeMs}
+	c := device.DeviceConfig{NormalSleepMinutes: st.normalSleep, ResponseTimeMs: st.responseTimeMs}
 	if applied != nil {
 		if normal {
 			c.NormalSleepMinutes = applied.NormalSleepMinutes
@@ -259,7 +259,7 @@ func (s *Service) persistSettingsBound(b Binding, st *settingsState, normal, ret
 	st.mu.Unlock()
 	deviceErr := error(nil)
 	if p != nil {
-		deviceErr = s.saveDeviceConfig(b, p, func(config *x6.DeviceConfig) {
+		deviceErr = s.saveDeviceConfig(b, p, func(config *device.DeviceConfig) {
 			if normal {
 				config.NormalSleepMinutes = c.NormalSleepMinutes
 			} else {

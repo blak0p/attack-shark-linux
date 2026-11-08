@@ -13,10 +13,7 @@ import * as macros$0 from "../macros/models.js";
 import * as mouse$0 from "../mouse/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$1 from "../attackshark/x6/protocol/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as x6$0 from "../attackshark/x6/models.js";
+import * as device$0 from "../device/models.js";
 
 export const Binding = mouse$0.Binding;
 export type Binding = mouse$0.Binding;
@@ -217,9 +214,9 @@ export class Inventory {
 }
 
 export class LightingSnapshot {
-    "Pending": x6$0.LightingSelection;
-    "Applied": x6$0.LightingSelection | null;
-    "Effects": x6$0.LightingEffect[];
+    "Pending": device$0.LightingSelection;
+    "Applied": device$0.LightingSelection | null;
+    "Effects": device$0.LightingEffect[];
     "Revision": number;
     "Firmware": string;
     "Error": Error;
@@ -227,7 +224,7 @@ export class LightingSnapshot {
     /** Creates a new LightingSnapshot instance. */
     constructor($$source: Partial<LightingSnapshot> = {}) {
         if (!("Pending" in $$source)) {
-            this["Pending"] = (new x6$0.LightingSelection());
+            this["Pending"] = (new device$0.LightingSelection());
         }
         if (!("Applied" in $$source)) {
             this["Applied"] = null;
@@ -376,10 +373,10 @@ export class NormalSleepSnapshot {
 }
 
 export class PollingSnapshot {
-    "Desired": x6$0.PollingRate;
-    "Applied": x6$0.PollingRate;
-    "Persisted": x6$0.PollingRate | null;
-    "Factory": x6$0.PollingRate;
+    "Desired": device$0.PollingRate;
+    "Applied": device$0.PollingRate;
+    "Persisted": device$0.PollingRate | null;
+    "Factory": device$0.PollingRate;
     "Revision": number;
     "Error": Error;
     "Firmware": string;
@@ -389,16 +386,16 @@ export class PollingSnapshot {
     /** Creates a new PollingSnapshot instance. */
     constructor($$source: Partial<PollingSnapshot> = {}) {
         if (!("Desired" in $$source)) {
-            this["Desired"] = x6$1.PollingRate.$zero;
+            this["Desired"] = device$0.PollingRate.$zero;
         }
         if (!("Applied" in $$source)) {
-            this["Applied"] = x6$1.PollingRate.$zero;
+            this["Applied"] = device$0.PollingRate.$zero;
         }
         if (!("Persisted" in $$source)) {
             this["Persisted"] = null;
         }
         if (!("Factory" in $$source)) {
-            this["Factory"] = x6$1.PollingRate.$zero;
+            this["Factory"] = device$0.PollingRate.$zero;
         }
         if (!("Revision" in $$source)) {
             this["Revision"] = 0;
@@ -438,10 +435,10 @@ export class RemapSnapshot {
     "MacroDrafts": { [_ in `${number}`]?: MacroDraft };
     "MacroAppliedDrafts": { [_ in `${number}`]?: MacroDraft };
     "MacroProgress": mouse$0.MacroProgress;
-    "Pending": x6$0.RemapConfig;
-    "Applied": x6$0.RemapConfig;
-    "Factory": x6$0.RemapConfig;
-    "Actions": x6$0.RemapAction[];
+    "Pending": device$0.RemapConfig;
+    "Applied": device$0.RemapConfig;
+    "Factory": device$0.RemapConfig;
+    "Actions": device$0.RemapAction[];
     "Revision": number;
     "Firmware": string;
     "Persistence": string;
@@ -466,13 +463,13 @@ export class RemapSnapshot {
             this["MacroProgress"] = (new mouse$0.MacroProgress());
         }
         if (!("Pending" in $$source)) {
-            this["Pending"] = (new x6$0.RemapConfig());
+            this["Pending"] = (new device$0.RemapConfig());
         }
         if (!("Applied" in $$source)) {
-            this["Applied"] = (new x6$0.RemapConfig());
+            this["Applied"] = (new device$0.RemapConfig());
         }
         if (!("Factory" in $$source)) {
-            this["Factory"] = (new x6$0.RemapConfig());
+            this["Factory"] = (new device$0.RemapConfig());
         }
         if (!("Actions" in $$source)) {
             this["Actions"] = [];
@@ -807,9 +804,9 @@ const $$createType1 = mouse$0.Device.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = mouse$0.Binding.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = x6$1.LightingSelection.createFrom;
+const $$createType5 = device$0.LightingSelection.createFrom;
 const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = x6$0.LightingEffect.createFrom;
+const $$createType7 = device$0.LightingEffect.createFrom;
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = macros$0.Event.createFrom;
 const $$createType10 = $Create.Array($$createType9);
@@ -817,7 +814,7 @@ const $$createType11 = MacroDraft.createFrom;
 const $$createType12 = $Create.Nullable($$createType11);
 const $$createType13 = $Create.Map($Create.Any, $$createType11);
 const $$createType14 = mouse$0.MacroProgress.createFrom;
-const $$createType15 = x6$1.RemapConfig.createFrom;
+const $$createType15 = device$0.RemapConfig.createFrom;
 const $$createType16 = $Create.Array($Create.Any);
 const $$createType17 = ResetLaneResult.createFrom;
 const $$createType18 = $Create.Array($$createType17);

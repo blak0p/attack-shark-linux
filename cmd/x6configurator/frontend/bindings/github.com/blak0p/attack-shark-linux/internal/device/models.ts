@@ -25,8 +25,8 @@ export class LightingSelection {
     "TemplateID": LightingTemplateID;
 
     /**
-     * Color optionally overrides the template color as "#RRGGBB". It is
-     * accepted only for modes in customColorModes; empty keeps the template.
+     * Color optionally overrides the template color as "#RRGGBB". Only modes
+     * whose effect reports CustomColor accept it; empty keeps the template.
      */
     "Color"?: string;
 
@@ -75,7 +75,7 @@ export enum LightingTemplateID {
 };
 
 /**
- * PollingRate is one of the X6's supported report frequencies in hertz.
+ * PollingRate is the typed polling-rate selection in hertz.
  */
 export enum PollingRate {
     /**
@@ -181,6 +181,109 @@ export class RemapConfig {
     }
 }
 
+export class LightingColorTemplate {
+    "TemplateID": LightingTemplateID;
+    "CSSColor": string;
+
+    /** Creates a new LightingColorTemplate instance. */
+    constructor($$source: Partial<LightingColorTemplate> = {}) {
+        if (!("TemplateID" in $$source)) {
+            this["TemplateID"] = LightingTemplateID.$zero;
+        }
+        if (!("CSSColor" in $$source)) {
+            this["CSSColor"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingColorTemplate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingColorTemplate {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LightingColorTemplate($$parsedSource as Partial<LightingColorTemplate>);
+    }
+}
+
+export class LightingEffect {
+    "Mode": LightingMode;
+    "Label": string;
+    "DefaultTemplateID": LightingTemplateID;
+    "SpeedVariants": LightingSpeedVariant[];
+    "ColorTemplates": LightingColorTemplate[];
+
+    /**
+     * CustomColor reports that LightingSelection.Color is accepted.
+     */
+    "CustomColor": boolean;
+
+    /** Creates a new LightingEffect instance. */
+    constructor($$source: Partial<LightingEffect> = {}) {
+        if (!("Mode" in $$source)) {
+            this["Mode"] = LightingMode.$zero;
+        }
+        if (!("Label" in $$source)) {
+            this["Label"] = "";
+        }
+        if (!("DefaultTemplateID" in $$source)) {
+            this["DefaultTemplateID"] = LightingTemplateID.$zero;
+        }
+        if (!("SpeedVariants" in $$source)) {
+            this["SpeedVariants"] = [];
+        }
+        if (!("ColorTemplates" in $$source)) {
+            this["ColorTemplates"] = [];
+        }
+        if (!("CustomColor" in $$source)) {
+            this["CustomColor"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingEffect instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingEffect {
+        const $$createField3_0 = $$createType3;
+        const $$createField4_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("SpeedVariants" in $$parsedSource) {
+            $$parsedSource["SpeedVariants"] = $$createField3_0($$parsedSource["SpeedVariants"]);
+        }
+        if ("ColorTemplates" in $$parsedSource) {
+            $$parsedSource["ColorTemplates"] = $$createField4_0($$parsedSource["ColorTemplates"]);
+        }
+        return new LightingEffect($$parsedSource as Partial<LightingEffect>);
+    }
+}
+
+export class LightingSpeedVariant {
+    "TemplateID": LightingTemplateID;
+
+    /** Creates a new LightingSpeedVariant instance. */
+    constructor($$source: Partial<LightingSpeedVariant> = {}) {
+        if (!("TemplateID" in $$source)) {
+            this["TemplateID"] = LightingTemplateID.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LightingSpeedVariant instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LightingSpeedVariant {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LightingSpeedVariant($$parsedSource as Partial<LightingSpeedVariant>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = RemapButton.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = LightingSpeedVariant.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = LightingColorTemplate.createFrom;
+const $$createType5 = $Create.Array($$createType4);

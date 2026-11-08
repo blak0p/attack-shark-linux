@@ -1,13 +1,13 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestLightingOwnerTracksSelectedState(t *testing.T) {
@@ -22,11 +22,11 @@ func TestLightingStageUsesPerDevicePendingStateWithoutIO(t *testing.T) {
 	service := newLightingService(t, command)
 
 	initial := service.GetLightingSnapshot()
-	if initial.Pending != (x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen}) || initial.Applied != nil {
+	if initial.Pending != (device.LightingSelection{Mode: device.LightingFixed, TemplateID: device.LightingTemplateFixedGreen}) || initial.Applied != nil {
 		t.Fatalf("initial lighting snapshot = %#v; want fixed-green pending and no applied state", initial)
 	}
-	staged := service.StageLighting(x6.LightingSelection{Mode: x6.LightingBreathingDPI, TemplateID: x6.LightingTemplateBreathingDPIThree})
-	if staged.Pending.TemplateID != x6.LightingTemplateBreathingDPIThree || staged.Revision != 1 || command.calls != 0 {
+	staged := service.StageLighting(device.LightingSelection{Mode: device.LightingBreathingDPI, TemplateID: device.LightingTemplateBreathingDPIThree})
+	if staged.Pending.TemplateID != device.LightingTemplateBreathingDPIThree || staged.Revision != 1 || command.calls != 0 {
 		t.Fatalf("staged lighting = %#v, writes=%d; want pending revision and zero I/O", staged, command.calls)
 	}
 }
@@ -34,7 +34,7 @@ func TestLightingStageUsesPerDevicePendingStateWithoutIO(t *testing.T) {
 func TestLightingApplyWritesOnceAndCommitsOnlyAfterAcknowledgement(t *testing.T) {
 	command := &lightingCommandFake{}
 	service := newLightingService(t, command)
-	selection := x6.LightingSelection{Mode: x6.LightingColorBreathing, TemplateID: x6.LightingTemplateColorBreathingOne}
+	selection := device.LightingSelection{Mode: device.LightingColorBreathing, TemplateID: device.LightingTemplateColorBreathingOne}
 	service.StageLighting(selection)
 
 	got := service.ApplyLighting()
@@ -47,7 +47,7 @@ func TestLightingApplyFailureAndRevisionChangeDoNotCommit(t *testing.T) {
 	t.Run("failure remains visible", func(t *testing.T) {
 		command := &lightingCommandFake{err: errors.New("ack timeout")}
 		service := newLightingService(t, command)
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
+		service.StageLighting(device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonOne})
 
 		got := service.ApplyLighting()
 		if command.calls != 1 || got.Applied != nil || got.Firmware != "failed" || got.Error.Code != ApplyFailed {
@@ -58,11 +58,11 @@ func TestLightingApplyFailureAndRevisionChangeDoNotCommit(t *testing.T) {
 	t.Run("changed revision cannot commit", func(t *testing.T) {
 		command := &lightingCommandFake{started: make(chan struct{}), release: make(chan struct{})}
 		service := newLightingService(t, command)
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
+		service.StageLighting(device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonOne})
 		result := make(chan LightingSnapshot, 1)
 		go func() { result <- service.ApplyLighting() }()
 		<-command.started
-		service.StageLighting(x6.LightingSelection{Mode: x6.LightingBreathingDPI, TemplateID: x6.LightingTemplateBreathingDPIOne})
+		service.StageLighting(device.LightingSelection{Mode: device.LightingBreathingDPI, TemplateID: device.LightingTemplateBreathingDPIOne})
 		close(command.release)
 		got := <-result
 		if command.calls != 1 || got.Applied != nil || got.Error.Code != ApplyFailed {
@@ -73,12 +73,12 @@ func TestLightingApplyFailureAndRevisionChangeDoNotCommit(t *testing.T) {
 
 func newLightingService(t *testing.T, command *lightingCommandFake) *Service {
 	t.Helper()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "lighting", Path: "/dev/hidraw-lighting"}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command))
 	service.RefreshInventory(context.Background())
 	return service

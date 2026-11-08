@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/blak0p/attack-shark-linux/internal/device"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,7 +16,6 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type ErrorCode string
@@ -64,9 +65,9 @@ type Snapshot struct {
 	ObservedDPI    *int
 }
 type PollingSnapshot struct {
-	Desired, Applied x6.PollingRate
-	Persisted        *x6.PollingRate
-	Factory          x6.PollingRate
+	Desired, Applied device.PollingRate
+	Persisted        *device.PollingRate
+	Factory          device.PollingRate
 	Revision         uint64
 	Error            Error
 	Firmware         string
@@ -83,9 +84,9 @@ type DebounceSnapshot struct {
 	RetryAvailable        bool
 }
 type LightingSnapshot struct {
-	Pending  x6.LightingSelection
-	Applied  *x6.LightingSelection
-	Effects  []x6.LightingEffect
+	Pending  device.LightingSelection
+	Applied  *device.LightingSelection
+	Effects  []device.LightingEffect
 	Revision uint64
 	Firmware string
 	Error    Error
@@ -103,40 +104,40 @@ type RemapSnapshot struct {
 	MacroDrafts                map[uint8]MacroDraft
 	MacroAppliedDrafts         map[uint8]MacroDraft
 	MacroProgress              mouse.MacroProgress
-	Pending, Applied, Factory  x6.RemapConfig
-	Actions                    []x6.RemapAction
+	Pending, Applied, Factory  device.RemapConfig
+	Actions                    []device.RemapAction
 	Revision                   uint64
 	Firmware, Persistence      string
 	RetryAvailable             bool
 	Error                      Error
 }
 type StatusReader interface {
-	Status(context.Context) (x6.Status, error)
+	Status(context.Context) (device.Status, error)
 }
 type DPIWriter interface {
-	ApplyAndPersist(context.Context, x6.DPIConfig, x6.AppliedDPIStore) error
+	ApplyAndPersist(context.Context, device.DPIConfig, device.AppliedDPIStore) error
 }
 type AppliedStore interface {
-	x6.AppliedDPIStore
-	LoadApplied() (x6.DPIConfig, error)
-	LoadFactory() (x6.DPIConfig, error)
+	device.AppliedDPIStore
+	LoadApplied() (device.DPIConfig, error)
+	LoadFactory() (device.DPIConfig, error)
 }
 
 type DevicePersistence interface {
-	Load(Binding) (x6.DPIConfig, error)
-	Save(Binding, x6.DPIConfig) error
+	Load(Binding) (device.DPIConfig, error)
+	Save(Binding, device.DPIConfig) error
 }
 type PollingPersistence interface {
-	Load(Binding) (x6.DeviceConfig, error)
-	Save(Binding, x6.DeviceConfig) error
+	Load(Binding) (device.DeviceConfig, error)
+	Save(Binding, device.DeviceConfig) error
 }
 
 type resetRunner interface {
 	Run(context.Context) (ResetResult, error)
 }
 type RemapPersistence interface {
-	Load(Binding) (x6.DeviceConfig, error)
-	Save(Binding, x6.DeviceConfig) error
+	Load(Binding) (device.DeviceConfig, error)
+	Save(Binding, device.DeviceConfig) error
 }
 
 // RemapConfigurationEvent is an immutable completion snapshot for one binding.
@@ -148,7 +149,7 @@ type RemapConfigurationEvent struct {
 // StatusListener runs the always-on status listener until its context is
 // cancelled, forwarding every dongle-pushed report through onStatus.
 type StatusListener interface {
-	Listen(context.Context, func(x6.StatusEvent)) error
+	Listen(context.Context, func(device.StatusEvent)) error
 }
 
 // EventSink pushes live status updates to the frontend. The desktop service
@@ -184,13 +185,13 @@ type PollingConfigurationEvent struct {
 type deviceState struct {
 	mu                         sync.Mutex
 	applyMu                    sync.Mutex
-	applied, pending, factory  x6.DPIConfig
-	connection                 x6.Connection
+	applied, pending, factory  device.DPIConfig
+	connection                 transport.Connection
 	battery                    *int
 	revision                   uint64
 	err                        Error
 	firmware, persistence      string
-	retry                      *x6.DPIConfig
+	retry                      *device.DPIConfig
 	observedStage, observedDPI *int
 }
 type settingsState struct {
@@ -208,16 +209,18 @@ type settingsState struct {
 	normalError, responseError             Error
 }
 type lightingState struct {
+	effects  []device.LightingEffect
 	mu       sync.Mutex
 	applyMu  sync.Mutex
-	pending  x6.LightingSelection
-	applied  *x6.LightingSelection
+	pending  device.LightingSelection
+	applied  *device.LightingSelection
 	revision uint64
 	firmware string
 	err      Error
 }
 
 type Service struct {
+	model             device.Model
 	profiles          *profileComponent
 	macroLibrary      *macros.Library
 	macroLibraryError error
@@ -243,17 +246,17 @@ type Service struct {
 	autostart           autostartComponent
 }
 
-func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
+func New(model device.Model, status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 	applied, err := store.LoadApplied()
 	if err != nil {
-		applied = x6.DefaultDPIConfig()
+		applied = device.DefaultDPIConfig()
 	}
 	factory, err := store.LoadFactory()
 	if err != nil {
-		factory = x6.DefaultDPIConfig()
+		factory = device.DefaultDPIConfig()
 	}
-	s := &Service{status: status, writer: writer, store: store, inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}}
-	s.remapComponent = &remapComponent{service: s, states: make(map[DeviceID]*remapState), legacy: newRemapState(x6.DefaultRemapConfig(), x6.DefaultRemapConfig())}
+	s := &Service{model: model, status: status, writer: writer, store: store, inventoryComponent: newInventoryComponent(), listenerComponent: &listenerComponent{}}
+	s.remapComponent = &remapComponent{service: s, states: make(map[DeviceID]*remapState), legacy: newRemapState(device.DefaultRemapConfig(), device.DefaultRemapConfig())}
 	s.dpiComponent = &dpiComponent{service: s, legacy: newDeviceState(applied, factory), states: make(map[DeviceID]*deviceState)}
 	s.pollingComponent = &pollingComponent{service: s, states: s.inventoryComponent.pollingStates}
 	s.lightingComponent = &lightingComponent{service: s, states: make(map[DeviceID]*lightingState)}
@@ -263,8 +266,8 @@ func New(status StatusReader, writer DPIWriter, store AppliedStore) *Service {
 // Option configures app-owned dependencies before the service is published.
 type Option func(*Service)
 
-func Compose(status StatusReader, writer DPIWriter, store AppliedStore, options ...Option) *Service {
-	s := New(status, writer, store)
+func Compose(model device.Model, status StatusReader, writer DPIWriter, store AppliedStore, options ...Option) *Service {
+	s := New(model, status, writer, store)
 	for _, option := range options {
 		option(s)
 	}
@@ -326,10 +329,10 @@ func (s *Service) AttachMigrator(migrate func(Binding) error) *Service {
 }
 
 // AttachDevicePersistence wires keyed selected-device applied-state storage.
-func (s *Service) AttachDevicePersistence(load func(Binding) (x6.DPIConfig, error), save func(Binding, x6.DPIConfig) error) *Service {
+func (s *Service) AttachDevicePersistence(load func(Binding) (device.DPIConfig, error), save func(Binding, device.DPIConfig) error) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.devicePersistence = devicePersistence{load: load, save: func(binding Binding, config x6.DPIConfig) error {
+	s.devicePersistence = devicePersistence{load: load, save: func(binding Binding, config device.DPIConfig) error {
 		s.configMu.Lock()
 		defer s.configMu.Unlock()
 		return save(binding, config)
@@ -337,7 +340,7 @@ func (s *Service) AttachDevicePersistence(load func(Binding) (x6.DPIConfig, erro
 	return s
 }
 
-func (s *Service) AttachPollingPersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+func (s *Service) AttachPollingPersistence(load func(Binding) (device.DeviceConfig, error), save func(Binding, device.DeviceConfig) error) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pollingComponent.persistence = pollingPersistence{load: load, save: save}
@@ -346,27 +349,27 @@ func (s *Service) AttachPollingPersistence(load func(Binding) (x6.DeviceConfig, 
 
 // AttachNormalSleepPersistence and AttachDebouncePersistence share the durable
 // per-device record so applying either field never discards the other.
-func (s *Service) AttachNormalSleepPersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+func (s *Service) AttachNormalSleepPersistence(load func(Binding) (device.DeviceConfig, error), save func(Binding, device.DeviceConfig) error) *Service {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settingsPersistence = pollingPersistence{load: load, save: save}
 	return s
 }
-func (s *Service) AttachDebouncePersistence(load func(Binding) (x6.DeviceConfig, error), save func(Binding, x6.DeviceConfig) error) *Service {
+func (s *Service) AttachDebouncePersistence(load func(Binding) (device.DeviceConfig, error), save func(Binding, device.DeviceConfig) error) *Service {
 	return s.AttachNormalSleepPersistence(load, save)
 }
 
 type devicePersistence struct {
-	load func(Binding) (x6.DPIConfig, error)
-	save func(Binding, x6.DPIConfig) error
+	load func(Binding) (device.DPIConfig, error)
+	save func(Binding, device.DPIConfig) error
 }
 type pollingPersistence struct {
-	load func(Binding) (x6.DeviceConfig, error)
-	save func(Binding, x6.DeviceConfig) error
+	load func(Binding) (device.DeviceConfig, error)
+	save func(Binding, device.DeviceConfig) error
 }
 
 // saveDeviceConfig serializes read-modify-write across the shared device record.
-func (s *Service) saveDeviceConfig(binding Binding, persistence PollingPersistence, update func(*x6.DeviceConfig)) error {
+func (s *Service) saveDeviceConfig(binding Binding, persistence PollingPersistence, update func(*device.DeviceConfig)) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	config, err := persistence.Load(binding)
@@ -374,32 +377,32 @@ func (s *Service) saveDeviceConfig(binding Binding, persistence PollingPersisten
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		config = x6.DefaultDeviceConfig()
+		config = device.DefaultDeviceConfig()
 	}
 	update(&config)
 	return persistence.Save(binding, config)
 }
 
-func (p pollingPersistence) Load(binding Binding) (x6.DeviceConfig, error) {
+func (p pollingPersistence) Load(binding Binding) (device.DeviceConfig, error) {
 	if p.load == nil {
-		return x6.DeviceConfig{}, os.ErrNotExist
+		return device.DeviceConfig{}, os.ErrNotExist
 	}
 	return p.load(binding)
 }
-func (p pollingPersistence) Save(binding Binding, config x6.DeviceConfig) error {
+func (p pollingPersistence) Save(binding Binding, config device.DeviceConfig) error {
 	if p.save == nil {
 		return nil
 	}
 	return p.save(binding, config)
 }
 
-func (p devicePersistence) Load(binding Binding) (x6.DPIConfig, error) {
+func (p devicePersistence) Load(binding Binding) (device.DPIConfig, error) {
 	if p.load == nil {
-		return x6.DPIConfig{}, os.ErrNotExist
+		return device.DPIConfig{}, os.ErrNotExist
 	}
 	return p.load(binding)
 }
-func (p devicePersistence) Save(binding Binding, config x6.DPIConfig) error {
+func (p devicePersistence) Save(binding Binding, config device.DPIConfig) error {
 	if p.save == nil {
 		return nil
 	}
@@ -426,7 +429,7 @@ func (s *Service) StartListener(ctx context.Context) {
 // handleStatusEvent folds one dongle-pushed report into the shared state and
 // emits the delta to the frontend. The listener callback is serialized by
 // Listen, so only the state lock is needed here.
-func (s *Service) handleStatusEvent(event x6.StatusEvent) {
+func (s *Service) handleStatusEvent(event device.StatusEvent) {
 	s.listenerComponent.handleStatusEvent(s, event)
 }
 
@@ -436,7 +439,7 @@ func (s *Service) handleAttributedStatusEvent(event StatusEvent) {
 	s.listenerComponent.handleAttributedStatusEvent(s, event)
 }
 
-func statusDelta(event x6.StatusEvent) (*int, *int) {
+func statusDelta(event device.StatusEvent) (*int, *int) {
 	var battery, stage *int
 	if event.BatteryAvailable {
 		value := event.BatteryPercent
@@ -473,7 +476,7 @@ func (s *Service) GetLightingSnapshot() LightingSnapshot {
 }
 
 // StageLighting updates only the selected device's pending state.
-func (s *Service) StageLighting(selection x6.LightingSelection) LightingSnapshot {
+func (s *Service) StageLighting(selection device.LightingSelection) LightingSnapshot {
 	return s.lightingComponent.stage(selection)
 }
 
@@ -485,7 +488,7 @@ func (s *Service) GetRemapSnapshot() RemapSnapshot { return s.remapComponent.sna
 
 // ApplyRemap validates and writes one complete draft. Applied state advances
 // only after the targeted command receives its ACK.
-func (s *Service) ApplyRemap(config x6.RemapConfig) RemapSnapshot {
+func (s *Service) ApplyRemap(config device.RemapConfig) RemapSnapshot {
 	return s.remapComponent.apply(config)
 }
 
@@ -497,7 +500,7 @@ func (s *Service) emitRemapConfiguration(binding Binding, snapshot RemapSnapshot
 	s.listenerComponent.emit(s, "mouse:remap-configuration", RemapConfigurationEvent{Binding: binding, Snapshot: snapshot})
 }
 
-func (s *Service) StagePollingRate(rate x6.PollingRate) PollingSnapshot {
+func (s *Service) StagePollingRate(rate device.PollingRate) PollingSnapshot {
 	return s.pollingComponent.stage(rate)
 }
 
@@ -534,7 +537,7 @@ func (s *Service) reconcileFactoryReset() {
 
 	s.remapComponent.reconcileFactoryReset()
 
-	captured := x6.DocumentedResetLightingSettings()
+	captured := device.DocumentedResetLightingSettings()
 	settings := s.currentSettingsState()
 	settings.mu.Lock()
 	settings.normalSleep, settings.responseTimeMs = captured.NormalSleepMinutes, captured.ResponseTimeMs
@@ -560,7 +563,7 @@ func (s *Service) ApplyDPI(ctx context.Context) Snapshot { return s.dpiComponent
 
 func (s *Service) applyFailure(err error) Snapshot { return s.dpiComponent.applyFailure(err) }
 
-func newDeviceState(applied, factory x6.DPIConfig) *deviceState {
+func newDeviceState(applied, factory device.DPIConfig) *deviceState {
 	return &deviceState{applied: applied, pending: applied, factory: factory}
 }
 
@@ -583,11 +586,11 @@ func (s *Service) cancelSync(binding Binding) { s.dpiComponent.cancelSync(bindin
 func (s *Service) cancelPollingSync(binding Binding) { s.pollingComponent.cancelSync(binding) }
 
 func (s *Service) currentPollingState() *pollingState { return s.pollingComponent.currentState() }
-func (s *Service) applyPollingBound(binding Binding, revision uint64, rate x6.PollingRate) error {
+func (s *Service) applyPollingBound(binding Binding, revision uint64, rate device.PollingRate) error {
 	return s.pollingComponent.applyPollingBound(binding, revision, rate)
 }
 
-func (s *Service) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
+func (s *Service) applyBound(binding Binding, revision uint64, config device.DPIConfig) error {
 	return s.dpiComponent.applyBound(binding, revision, config)
 }
 
@@ -607,7 +610,7 @@ func snapshotLocked(state *deviceState) Snapshot {
 	return Snapshot{Connection: string(state.connection), Battery: state.battery, Applied: ToDTO(state.applied), Pending: ToDTO(state.pending), Factory: ToDTO(state.factory), Revision: state.revision, Error: state.err, Firmware: state.firmware, Persistence: state.persistence, RetryAvailable: state.retry != nil, ObservedStage: state.observedStage, ObservedDPI: state.observedDPI}
 }
 
-func mappedDPI(config x6.DPIConfig, stage int) *int {
+func mappedDPI(config device.DPIConfig, stage int) *int {
 	if stage < 1 || stage > len(config.DPI) || config.StageMask&(1<<uint(stage-1)) == 0 {
 		return nil
 	}
@@ -616,11 +619,11 @@ func mappedDPI(config x6.DPIConfig, stage int) *int {
 }
 
 func validStage(stage *int) bool { return stage != nil && *stage >= 1 && *stage <= 8 }
-func ToDTO(config x6.DPIConfig) DPIConfig {
+func ToDTO(config device.DPIConfig) DPIConfig {
 	return DPIConfig{config.AngleControl, config.RippleControl, config.StageMask, config.LiftDistance, config.DPI, config.ActiveStage, config.Colors}
 }
-func fromDTO(config DPIConfig) x6.DPIConfig {
-	return x6.DPIConfig{AngleControl: config.AngleControl, RippleControl: config.RippleControl, StageMask: config.StageMask, LiftDistance: config.LiftDistance, DPI: config.DPI, ActiveStage: config.ActiveStage, Colors: config.Colors}
+func fromDTO(config DPIConfig) device.DPIConfig {
+	return device.DPIConfig{AngleControl: config.AngleControl, RippleControl: config.RippleControl, StageMask: config.StageMask, LiftDistance: config.LiftDistance, DPI: config.DPI, ActiveStage: config.ActiveStage, Colors: config.Colors}
 }
 func errorCode(err error, status bool) ErrorCode {
 	code := classifyErrorCode(err, status)
@@ -647,10 +650,10 @@ func classifyErrorCode(err error, status bool) ErrorCode {
 	if errors.Is(err, mouse.ErrStaleBinding) {
 		return StaleBinding
 	}
-	if x6.IsErrorKind(err, x6.PersistFailure) {
+	if device.IsErrorKind(err, device.PersistFailure) {
 		return PersistenceFailed
 	}
-	if x6.IsErrorKind(err, x6.NoUsableDevice) {
+	if device.IsErrorKind(err, device.NoUsableDevice) {
 		return DeviceUnavailable
 	}
 	if errors.Is(err, os.ErrPermission) {
@@ -659,7 +662,7 @@ func classifyErrorCode(err error, status bool) ErrorCode {
 	if hidlinux.IsErrorKind(err, hidlinux.Disconnected) || errors.Is(err, os.ErrNotExist) {
 		return DeviceDisconnected
 	}
-	if status && x6.IsErrorKind(err, x6.ReadFailure) {
+	if status && device.IsErrorKind(err, device.ReadFailure) {
 		return StatusReadFailed
 	}
 	if status {
@@ -675,7 +678,7 @@ func applyErrorClassification(err error) string {
 	if operation := hidlinux.DiagnosticOperation(err); operation != "" {
 		return operation
 	}
-	if x6.IsErrorKind(err, x6.AckFailure) {
+	if device.IsErrorKind(err, device.AckFailure) {
 		return "ack_failure"
 	}
 	return "unknown"

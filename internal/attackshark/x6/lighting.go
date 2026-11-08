@@ -1,6 +1,7 @@
 package x6
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"fmt"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
@@ -11,24 +12,9 @@ type LightingMode = protocol.LightingMode
 type LightingTemplateID = protocol.LightingTemplateID
 type LightingSelection = protocol.LightingSelection
 
-type LightingSpeedVariant struct {
-	TemplateID LightingTemplateID
-}
-
-type LightingColorTemplate struct {
-	TemplateID LightingTemplateID
-	CSSColor   string
-}
-
-type LightingEffect struct {
-	Mode              LightingMode
-	Label             string
-	DefaultTemplateID LightingTemplateID
-	SpeedVariants     []LightingSpeedVariant
-	ColorTemplates    []LightingColorTemplate
-	// CustomColor reports that LightingSelection.Color is accepted.
-	CustomColor bool
-}
+type LightingSpeedVariant = device.LightingSpeedVariant
+type LightingColorTemplate = device.LightingColorTemplate
+type LightingEffect = device.LightingEffect
 
 const (
 	LightingOff            = protocol.LightingOff

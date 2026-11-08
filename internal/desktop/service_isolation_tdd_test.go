@@ -1,22 +1,22 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testing.T) {
 	alpha := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	bravo := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo", Path: "/dev/hidraw1"}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(
 		mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, nil),
 	).attachAutomaticSave(&fakeSyncScheduler{})
 	inventory := service.RefreshInventory(context.Background())
@@ -29,7 +29,7 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 	if selected := service.SelectDevice(alphaID); selected.Error.Code != "" || selected.Selected == nil {
 		t.Fatalf("SelectDevice(alpha) = %#v", selected)
 	}
-	alphaPending := x6.DefaultDPIConfig()
+	alphaPending := device.DefaultDPIConfig()
 	alphaPending.DPI[0] = 1200
 	service.StageDPI(ToDTO(alphaPending))
 	alphaSnapshot := service.ApplyDPI(context.Background())
@@ -40,7 +40,7 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 	if selected := service.SelectDevice(bravoID); selected.Error.Code != "" || selected.Selected == nil {
 		t.Fatalf("SelectDevice(bravo) = %#v", selected)
 	}
-	bravoPending := x6.DefaultDPIConfig()
+	bravoPending := device.DefaultDPIConfig()
 	bravoPending.DPI[0] = 2400
 	service.StageDPI(ToDTO(bravoPending))
 	bravoSnapshot := service.GetSnapshot()
@@ -66,11 +66,11 @@ func TestDeviceStateIsolatedAcrossSelectionAndAttributedListenerUpdates(t *testi
 func TestSelectionResolverTracksBindingAndRejectsStaleAttribution(t *testing.T) {
 	alpha := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	bravo := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo", Path: "/dev/hidraw1"}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(
 		mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, nil),
 	)
 	resolver := selectionResolver{service: service}
@@ -111,11 +111,11 @@ func TestSelectionResolverTracksBindingAndRejectsStaleAttribution(t *testing.T) 
 }
 
 func TestInventoryComponentOwnsSelectionStateAndCancellation(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if service.inventoryComponent == nil || service.dpiComponent.states == nil || service.inventoryComponent.pollingStates == nil || service.inventoryComponent.settingsStates == nil {
 		t.Fatal("inventory component must initialize per-device state maps")
 	}
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	service.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
 	first := service.RefreshInventory(context.Background()).Selected
@@ -132,11 +132,11 @@ func intPtr(value int) *int { return &value }
 
 func TestAttributedListenerUpdatesAreRaceSafeForSelectedDevice(t *testing.T) {
 	alpha := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(
 		mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha}}, nil),
 	)
 	selected := service.RefreshInventory(context.Background()).Selected

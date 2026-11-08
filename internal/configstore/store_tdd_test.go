@@ -1,12 +1,10 @@
 package configstore
 
 import (
-	"context"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestStoreRestoresAppliedStateWithoutChangingFactoryDefaults(t *testing.T) {
@@ -16,7 +14,7 @@ func TestStoreRestoresAppliedStateWithoutChangingFactoryDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := New(filepath.Join(dir, "applied.json"), factory)
-	config := x6.DefaultDPIConfig()
+	config := device.DefaultDPIConfig()
 	config.ActiveStage = 3
 	if err := store.SaveApplied(config); err != nil {
 		t.Fatalf("SaveApplied() error = %v", err)
@@ -40,7 +38,7 @@ func TestLoadFactorySeedsDefaultsWhenMissingAndReusesSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFactory() error = %v", err)
 	}
-	if seeded != x6.DefaultDPIConfig() {
+	if seeded != device.DefaultDPIConfig() {
 		t.Fatalf("seeded factory = %#v; want DefaultDPIConfig", seeded)
 	}
 	if _, err := os.Stat(factoryPath); err != nil {
@@ -56,7 +54,7 @@ func TestLoadFactoryReadsExistingSeedWithoutReseeding(t *testing.T) {
 	dir := t.TempDir()
 	factoryPath := filepath.Join(dir, "factory-defaults.json")
 	store := New(filepath.Join(dir, "applied.json"), factoryPath)
-	custom := x6.DefaultDPIConfig()
+	custom := device.DefaultDPIConfig()
 	custom.DPI[0] = 1200
 
 	if err := store.SaveApplied(custom); err != nil {
@@ -85,42 +83,21 @@ func TestLoadFactoryRejectsUnusableSeedAndReseeds(t *testing.T) {
 	store := New(filepath.Join(dir, "applied.json"), factoryPath)
 
 	got, err := store.LoadFactory()
-	if err != nil || got != x6.DefaultDPIConfig() {
+	if err != nil || got != device.DefaultDPIConfig() {
 		t.Fatalf("LoadFactory() = %#v, %v; want reseeded factory defaults", got, err)
 	}
 }
 
-func TestAppliedStateIsSavedOnlyAfterAcknowledgementAndRestoredOnRestart(t *testing.T) {
+func TestAppliedStateIsRestoredOnRestart(t *testing.T) {
 	dir := t.TempDir()
-	appliedPath := filepath.Join(dir, "applied.json")
-	store := New(appliedPath, filepath.Join(dir, "factory.json"))
-	config := x6.DefaultDPIConfig()
+	appliedPath, factoryPath := filepath.Join(dir, "applied.json"), filepath.Join(dir, "factory.json")
+	config := device.DefaultDPIConfig()
 	config.DPI[0] = 1600
-	command := &ackCommand{beforeAcknowledgement: func() {
-		if _, err := os.Stat(appliedPath); !os.IsNotExist(err) {
-			t.Fatalf("applied state exists before acknowledgement: %v", err)
-		}
-	}}
-
-	if err := x6.NewCommandService(command).ApplyAndPersist(context.Background(), config, store); err != nil {
-		t.Fatalf("ApplyAndPersist() error = %v", err)
+	if err := New(appliedPath, factoryPath).SaveApplied(config); err != nil {
+		t.Fatalf("SaveApplied() error = %v", err)
 	}
-	restarted, err := store.LoadApplied()
-	if err != nil || restarted.DPI[0] != 1600 || len(command.report) != 56 {
-		t.Fatalf("restarted state = %#v, %v; report length = %d; want documented 56-byte baseline", restarted, err, len(command.report))
+	restarted, err := New(appliedPath, factoryPath).LoadApplied()
+	if err != nil || restarted != config {
+		t.Fatalf("restarted state = %#v, %v; want %#v", restarted, err, config)
 	}
-}
-
-type ackCommand struct {
-	report                []byte
-	beforeAcknowledgement func()
-}
-
-func (f *ackCommand) SendAndAwait(_ context.Context, report []byte, keepReading func([]byte) bool) error {
-	f.report = append([]byte(nil), report...)
-	f.beforeAcknowledgement()
-	if keepReading([]byte{0x03, 0x10, 0x50, 0x00, 0x04}) {
-		return os.ErrInvalid
-	}
-	return nil
 }

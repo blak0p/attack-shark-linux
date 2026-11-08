@@ -21,12 +21,9 @@ const module = "github.com/blak0p/attack-shark-linux"
 const modelRoot = "internal/attackshark"
 
 // knownViolations lists generic packages that still import a model driver.
-// Entries may only be removed: the test fails on any new violation and on any
-// entry that no longer matches real code.
-var knownViolations = map[string][]string{
-	"internal/configstore": {"internal/attackshark/x6"},
-	"internal/desktop":     {"internal/attackshark/x6", "internal/attackshark/x6/macrocodec", "internal/attackshark/x6/protocol"},
-}
+// It is empty: entries may only be removed, and the test fails on any new
+// violation and on any entry that no longer matches real code.
+var knownViolations = map[string][]string{}
 
 // modelUSBIdentity lists the lowercase literals that identify one model's USB
 // device. Generic code must read them from registered profiles instead.

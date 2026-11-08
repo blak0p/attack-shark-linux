@@ -1,12 +1,12 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"path/filepath"
 	"reflect"
 	"testing"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
@@ -18,10 +18,10 @@ func remapMultiMacroFixture(t *testing.T) (*Service, *macroCommandFake, macros.M
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	command := &macroCommandFake{progress: mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadConfirmed}}
 	candidates := []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/mock-a"}}
-	s := Compose(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}, WithMacroLibrary(lib, nil)).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command))
+	s := Compose(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}, WithMacroLibrary(lib, nil)).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command))
 	s.RefreshInventory(context.Background())
 	s.SelectDevice(DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha"})
 

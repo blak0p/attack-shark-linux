@@ -1,17 +1,21 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
+)
 
 const PollingReportLength = 9
 
 // PollingRate is one of the X6's supported report frequencies in hertz.
-type PollingRate uint16
+type PollingRate = device.PollingRate
 
 const (
-	PollingRate125  PollingRate = 125
-	PollingRate250  PollingRate = 250
-	PollingRate500  PollingRate = 500
-	PollingRate1000 PollingRate = 1000
+	PollingRate125  = device.PollingRate125
+	PollingRate250  = device.PollingRate250
+	PollingRate500  = device.PollingRate500
+	PollingRate1000 = device.PollingRate1000
 )
 
 // ValidatePollingRate accepts only frequencies represented by the X6 0x06 command.

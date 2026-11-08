@@ -21,7 +21,7 @@ func DocumentedResetDPIConfig() DPIConfig {
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
 	report, err := protocol.EncodeDPIReport(config)
 	if err != nil {
-		return nil, &ServiceError{InvalidDPI, fmt.Errorf("%w", err)}
+		return nil, &ServiceError{Kind: InvalidDPI, Err: fmt.Errorf("%w", err)}
 	}
 	return report, nil
 }
