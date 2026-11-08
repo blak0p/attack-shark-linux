@@ -20,7 +20,7 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type inventorySourceFake struct{ candidates []transport.Candidate }
@@ -739,7 +739,7 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		}
 	}
 
-	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models.ts")
+	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol/models.ts")
 	if err != nil {
 		t.Fatalf("read generated lighting selection model binding: %v", err)
 	}
@@ -747,7 +747,7 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		t.Error("generated Wails model binding must expose LightingSelection")
 	}
 
-	effects, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/x6/models.ts")
+	effects, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/attackshark/x6/models.ts")
 	if err != nil {
 		t.Fatalf("read generated lighting effect model binding: %v", err)
 	}

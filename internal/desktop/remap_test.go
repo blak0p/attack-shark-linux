@@ -8,7 +8,7 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func remapMultiMacroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro, macros.Macro) {

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/macros"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 // Rejection the receiver sent instead of the report08 ACK on real hardware.
@@ -35,7 +35,7 @@ func macroAssignmentWrites(t *testing.T, assignment x6.MacroAssignment, report08
 		t.Fatal(err)
 	}
 	destination, _ := x6.MacroDestinationForButton(assignment.Button)
-	chunks, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: macroClick})
+	chunks, err := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: macroClick})
 	if err != nil {
 		t.Fatal(err)
 	}

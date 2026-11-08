@@ -13,10 +13,10 @@ import * as macros$0 from "../macros/models.js";
 import * as mouse$0 from "../mouse/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$1 from "../protocol/x6/models.js";
+import * as x6$1 from "../attackshark/x6/protocol/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$0 from "../x6/models.js";
+import * as x6$0 from "../attackshark/x6/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports

@@ -119,6 +119,12 @@ func validate(name string, events []Event) error {
 	if strings.TrimSpace(name) == "" {
 		return errors.New("macro name is blank")
 	}
+	return ValidateEvents(events)
+}
+
+// ValidateEvents checks the model-neutral event invariants shared by the
+// library and every model's macro codec.
+func ValidateEvents(events []Event) error {
 	for i, event := range events {
 		switch event.Type {
 		case MouseLeft, MouseRight, MouseMiddle, MouseBack, MouseForward:

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestProfileSwitchSelectionAtACK(t *testing.T) {

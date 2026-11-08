@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 // MacroDraft is one local assignment, not a firmware slot inventory. Events are
@@ -29,25 +30,25 @@ func cloneMacroDraft(d *MacroDraft) *MacroDraft {
 	copy.Events = append([]macros.Event(nil), d.Events...)
 	return &copy
 }
-func admittedSequence(events []macros.Event, repeat int) (macros.X6Sequence, bool) {
+func admittedSequence(events []macros.Event, repeat int) (macrocodec.X6Sequence, bool) {
 	return admittedSequenceWithMode(events, repeat, 0)
 }
 
-func admittedSequenceWithMode(events []macros.Event, repeat int, mode uint8) (macros.X6Sequence, bool) {
+func admittedSequenceWithMode(events []macros.Event, repeat int, mode uint8) (macrocodec.X6Sequence, bool) {
 	if repeat < 1 || repeat > 255 || (len(events) != 2 && len(events) != 4) {
-		return macros.X6Sequence{}, false
+		return macrocodec.X6Sequence{}, false
 	}
-	sequence := macros.X6Sequence{Repeat: repeat, Mode: mode}
+	sequence := macrocodec.X6Sequence{Repeat: repeat, Mode: mode}
 	for i := 0; i < len(events); i += 2 {
 		down, up := events[i], events[i+1]
 		if down.KeyCode != "" || up.KeyCode != "" || down.Type != up.Type || down.Action != macros.Down || up.Action != macros.Up || down.DelayMS != 0 || up.DelayMS != 0 {
-			return macros.X6Sequence{}, false
+			return macrocodec.X6Sequence{}, false
 		}
 		sequence.Buttons = append(sequence.Buttons, down.Type)
 	}
 	// Keep the captured action/count/repeat boundary owned by the shared codec.
-	if _, err := macros.EncodeX6SequenceBlock(sequence); err != nil {
-		return macros.X6Sequence{}, false
+	if _, err := macrocodec.EncodeX6SequenceBlock(sequence); err != nil {
+		return macrocodec.X6Sequence{}, false
 	}
 	return sequence, true
 }
@@ -67,7 +68,7 @@ func (s *Service) StageMacroAssignmentWithMode(id string, button uint8, repeat i
 	state := s.remapComponent.stateForBinding(binding)
 	m, err := s.ReadMacro(id)
 	_, destinationErr := protocol.MacroDestinationForButton(button)
-	_, admissionErr := macros.AdmitX6LocalBlock(m.Events, repeat, mode)
+	_, admissionErr := macrocodec.AdmitX6LocalBlock(m.Events, repeat, mode)
 	if err != nil || destinationErr != nil || admissionErr != nil {
 		return failRemap(state, InvalidConfiguration)
 	}
@@ -189,7 +190,7 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 		if err != nil || !s.macroDraftCurrent(draft) {
 			return InvalidConfiguration
 		}
-		if _, err := macros.EncodeX6LocalUpload(destination, draft.Events, draft.Repeat, draft.Mode); err != nil {
+		if _, err := macrocodec.EncodeX6LocalUpload(destination, draft.Events, draft.Repeat, draft.Mode); err != nil {
 			return InvalidConfiguration
 		}
 		_, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
@@ -225,7 +226,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 			failRemap(state, InvalidConfiguration)
 			return
 		}
-		if _, err := macros.AdmitX6LocalBlock(draft.Events, draft.Repeat, draft.Mode); err != nil {
+		if _, err := macrocodec.AdmitX6LocalBlock(draft.Events, draft.Repeat, draft.Mode); err != nil {
 			failRemap(state, InvalidConfiguration)
 			return
 		}

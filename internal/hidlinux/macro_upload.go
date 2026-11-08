@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -34,12 +35,12 @@ func waitMacroChunk(ctx context.Context, duration time.Duration) error {
 
 // SendX6MacroBound uploads the strict report09 template. Success means only
 // normal upload status, not playback, readback or persistence. Never retries.
-func (b *HidrawBackend) SendX6MacroBound(ctx context.Context, binding mouse.Binding, click macros.X6Click) error {
+func (b *HidrawBackend) SendX6MacroBound(ctx context.Context, binding mouse.Binding, click macrocodec.X6Click) error {
 	return b.sendX6MacroBound(ctx, binding, click, waitMacroChunk)
 }
 
-func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Binding, click macros.X6Click, wait macroWait) (err error) {
-	reports, err := macros.EncodeX6Reports(click)
+func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Binding, click macrocodec.X6Click, wait macroWait) (err error) {
+	reports, err := macrocodec.EncodeX6Reports(click)
 	if err != nil {
 		return err
 	}
@@ -92,11 +93,11 @@ func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Bind
 // SendX6MacroAssignmentBound owns report08 and the whole report09 batch under
 // one command lock. Only report08 is resent when the receiver drops it; the
 // report09 batch is never retried and nothing is rolled back.
-func (b *HidrawBackend) SendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click) (mouse.MacroProgress, error) {
+func (b *HidrawBackend) SendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macrocodec.X6Click) (mouse.MacroProgress, error) {
 	return b.sendX6MacroAssignmentBound(ctx, binding, assignment, click, waitMacroChunk)
 }
 
-func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click, wait macroWait) (progress mouse.MacroProgress, err error) {
+func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macrocodec.X6Click, wait macroWait) (progress mouse.MacroProgress, err error) {
 	report, err := x6.EncodeMacroAssignmentReport(assignment)
 	if err != nil {
 		return progress, err
@@ -105,7 +106,7 @@ func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding 
 	if err != nil {
 		return progress, err
 	}
-	chunks, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click})
+	chunks, err := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: click})
 	if err != nil {
 		return progress, err
 	}
@@ -114,11 +115,11 @@ func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding 
 
 // SendX6MacroSequenceAssignmentBound admits only the bounded offline sequence
 // codec and retains the composite command's ownership and progress semantics.
-func (b *HidrawBackend) SendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (mouse.MacroProgress, error) {
+func (b *HidrawBackend) SendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macrocodec.X6Sequence) (mouse.MacroProgress, error) {
 	return b.sendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence, waitMacroChunk)
 }
 
-func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence, wait macroWait) (mouse.MacroProgress, error) {
+func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macrocodec.X6Sequence, wait macroWait) (mouse.MacroProgress, error) {
 	report, err := x6.EncodeMacroAssignmentReport(assignment)
 	if err != nil {
 		return mouse.MacroProgress{}, err
@@ -127,7 +128,7 @@ func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, 
 	if err != nil {
 		return mouse.MacroProgress{}, err
 	}
-	chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence})
+	chunks, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: sequence})
 	if err != nil {
 		return mouse.MacroProgress{}, err
 	}
@@ -162,7 +163,7 @@ func (b *HidrawBackend) sendX6MultiMacroSequenceAssignmentBound(ctx context.Cont
 		if err != nil {
 			return mouse.MacroProgress{}, err
 		}
-		chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence})
+		chunks, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: item.Sequence})
 		if err != nil {
 			return mouse.MacroProgress{}, err
 		}
@@ -198,7 +199,7 @@ func (b *HidrawBackend) sendX6MultiMacroLocalAssignmentBound(ctx context.Context
 		if err != nil {
 			return empty, err
 		}
-		reports, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		reports, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
 		if err != nil {
 			return empty, err
 		}

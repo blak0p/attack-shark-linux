@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 

@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type macroCommandFake struct {
@@ -23,7 +24,7 @@ type macroCommandFake struct {
 	err               error
 	during            func()
 	assignment        protocol.MacroAssignment
-	sequence          macros.X6Sequence
+	sequence          macrocodec.X6Sequence
 	multiConfig       protocol.RemapConfig
 	items             []mouse.MacroSequenceItem
 }
@@ -32,10 +33,10 @@ func (f *macroCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []b
 	f.normal++
 	return nil
 }
-func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macros.X6Sequence) (mouse.MacroProgress, error) {
+func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macrocodec.X6Sequence) (mouse.MacroProgress, error) {
 	f.composite++
 	f.assignment = a
-	f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat, Mode: c.Mode}
+	f.sequence = macrocodec.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat, Mode: c.Mode}
 	if f.during != nil {
 		f.during()
 	}
@@ -47,7 +48,7 @@ func (f *macroCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Con
 	f.items = append([]mouse.MacroSequenceItem(nil), items...)
 	if len(items) == 1 {
 		f.assignment = protocol.MacroAssignment{Config: cfg, Button: items[0].Button}
-		f.sequence = macros.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat, Mode: items[0].Sequence.Mode}
+		f.sequence = macrocodec.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat, Mode: items[0].Sequence.Mode}
 	}
 	if f.during != nil {
 		f.during()
@@ -244,7 +245,7 @@ func (f *officialSerializedCommand) SendX6MultiMacroLocalAssignmentBound(ctx con
 		if err != nil {
 			return mouse.MacroProgress{}, err
 		}
-		encoded, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		encoded, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
 		if err != nil {
 			return mouse.MacroProgress{}, err
 		}
