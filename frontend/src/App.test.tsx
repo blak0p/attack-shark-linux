@@ -4,6 +4,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App, type ConfigurationEvent, type DesktopService, type LightingSnapshot, type PollingConfigurationEvent, type PollingSnapshot, type RemapSnapshot, type Snapshot } from "./App";
 import type { Binding } from "../bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
 import type { Macro } from "./desktop-contract";
+import { deviceKeyCode, setDeviceKeyCodes } from "./macros/device-keys";
+import { expected } from "./macros/test-key-table";
 
 beforeAll(() => {
   // Chromium exercises native top-layer focus/inertness; jsdom only models open.
@@ -17,6 +19,18 @@ function openMacroAssignment(button: number) {
   fireEvent.click(screen.getByRole("menuitem", { name: "Macro", exact: true }));
   return screen.getByRole("dialog", { name: `Button ${button} macro assignment` });
 }
+
+it("shows the model name and key table the backend delivers", async () => {
+  const service = serviceFor(snapshot(), {
+    DeviceInfo: vi.fn().mockResolvedValue({ Name: "Test Model Z", KeyCodes: { KeyA: 4 } }),
+  });
+  render(<App service={service} />);
+  expect((await screen.findAllByText("Test Model Z")).length).toBeGreaterThan(0);
+  expect(screen.queryByText("Attack Shark X6")).not.toBeInTheDocument();
+  expect(deviceKeyCode("KeyA")).toBe(4);
+  expect(deviceKeyCode("KeyB")).toBeUndefined();
+  setDeviceKeyCodes(expected);
+});
 
 it("shares one guarded saved library between manager and remapping", async () => {
   const macro: Macro = { id: "saved", name: "Saved click", events: [

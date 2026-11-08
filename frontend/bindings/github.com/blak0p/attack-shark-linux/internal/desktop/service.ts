@@ -198,6 +198,15 @@ export function DeleteMacro(id: string): $CancellablePromise<void> {
 }
 
 /**
+ * DeviceInfo returns the injected model's display name and macro key table.
+ */
+export function DeviceInfo(): $CancellablePromise<$models.DeviceInfo> {
+    return $Call.ByID(460049276).then(($result: any) => {
+        return $$createType16($result);
+    });
+}
+
+/**
  * DiscardRemap restores ordinary applied fields but deliberately does not restore
  * a previously applied macro: no readback or independent slots are inferred.
  */
@@ -458,3 +467,4 @@ const $$createType12 = macros$0.Macro.createFrom;
 const $$createType13 = $Create.Array($$createType12);
 const $$createType14 = $models.Inventory.createFrom;
 const $$createType15 = $models.ResetResult.createFrom;
+const $$createType16 = $models.DeviceInfo.createFrom;

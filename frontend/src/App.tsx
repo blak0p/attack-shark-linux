@@ -5,10 +5,11 @@ import { GamesAvailableContext, type WorkspaceViewId } from "./components/worksp
 import { GamesPanel } from "./components/games/GamesPanel";
 import { useDesktopWorkspace } from "./hooks/useDesktopWorkspace";
 import { useMacroLibrary } from "./hooks/useMacroLibrary";
-import type { DesktopService, Device, LightingEffect } from "./desktop-contract";
+import type { DesktopService, Device, DeviceInfo, LightingEffect } from "./desktop-contract";
 import { WorkspaceShell } from "./components/workspace/WorkspaceShell";
 import { WorkspaceView } from "./components/workspace/WorkspaceView";
 import { ProfileControls } from "./components/profiles/ProfileControls";
+import { setDeviceKeyCodes } from "./macros/device-keys";
 import { TopBar } from "./components/workspace/TopBar";
 import { DpiPanel } from "./components/panels/DpiPanel";
 import { PollingPanel } from "./components/panels/PollingPanel";
@@ -60,6 +61,17 @@ export function App({ service }: { service: DesktopService }) {
   const { t } = useTranslation();
   const { model, actions } = useDesktopWorkspace(service);
   const macroLibrary = useMacroLibrary(service);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>();
+  useEffect(() => {
+    let live = true;
+    void service.DeviceInfo?.().then(info => {
+      if (!live) return;
+      setDeviceKeyCodes(info.KeyCodes);
+      setDeviceInfo(info);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [service]);
+  const deviceName = deviceInfo?.Name;
   const {
     snapshot,
     polling,
@@ -101,8 +113,8 @@ export function App({ service }: { service: DesktopService }) {
 
   if (!snapshot) return (
     <GamesAvailableContext.Provider value={gamesAvailable}>
-    <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName="Attack Shark X6" deviceSubtitle={t("app.wirelessSubtitle")}
-      titlebar={<TopBar subtitle="Attack Shark X6" center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
+    <WorkspaceShell feedback={feedback} activeView={activeView} onNavigate={setActiveView} deviceName={deviceName} deviceSubtitle={t("app.wirelessSubtitle")}
+      titlebar={<TopBar subtitle={deviceName} center={<ProfileControls service={service} scope={selectedBinding} disabled refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />} />}
       connectionStatus={<p className="connection offline">{t("app.connecting")}</p>}>
       {macroWorkspace}
       <WorkspaceView id="performance" title={t("nav.performance")}><div aria-busy="true" /></WorkspaceView>
@@ -152,7 +164,7 @@ export function App({ service }: { service: DesktopService }) {
   const eligibleDevices = inventory?.Devices.filter((device) => device.Eligible) ?? [];
 
   const titlebarElement = (
-    <TopBar subtitle="Attack Shark X6" center={
+    <TopBar subtitle={deviceName} center={
       <ProfileControls service={service} scope={selectedBinding} disabled={!ready} refresh={actions.refreshProfilesWorkspace} onBusy={setProfileBusy} />}>
       {eligibleDevices.length > 1 && (
         <label className="titlebar-device">
@@ -199,7 +211,7 @@ export function App({ service }: { service: DesktopService }) {
       onNavigate={setActiveView}
       busy={automaticApplyBusy || profileBusy}
       feedback={feedback}
-      deviceName="Attack Shark X6"
+      deviceName={deviceName}
       deviceSubtitle={t("app.wirelessSubtitle")}
       titlebar={titlebarElement}
       connectionStatus={connectionStatusElement}

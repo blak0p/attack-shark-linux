@@ -35,7 +35,7 @@ adding a new X6 command/report type.
 
 ## Frontier bar
 - A frontier model adds a feature by (1) pure encode/decode in `attackshark/x6/protocol`,
-  (2) a typed `Operation` adapter in `x6`, (3) tests asserting byte-exact output.
+  (2) a typed `Operation` adapter in `attackshark/x6`, (3) tests asserting byte-exact output.
 - It never puts I/O or device knowledge in `attackshark/x6/protocol`.
 - It keeps `(T, bool)` decode contracts strict and documents the report ID and
   length constants.
@@ -45,14 +45,14 @@ adding a new X6 command/report type.
 | You need to… | Pattern |
 | Add a report type | `Encode*Report` + `DPIReportLength`-style constant in `attackshark/x6/protocol` |
 | Decode a dongle push | `Decode*Report(...) (T, bool)` returning false on mismatch |
-| Expose command to `mouse`/`desktop` | `New*Operation() mouse.CommandOperation` in `x6` |
+| Expose command to `mouse`/`desktop` | `New*Operation() mouse.CommandOperation` in `attackshark/x6`, returned by `x6.Model()` (`device.Model`) |
 | Verify ACK | `Matches*ACK(report []byte) bool` |
 | Compute checksum | sum fixed range, split hi/lo bytes |
 
 ## Execution Steps
 1. In `attackshark/x6/protocol`, add the encoder (with length constant + checksum) and decoder
    (`(T, bool)`).
-2. In `x6`, add `New*Operation()` returning a `mouse.CommandOperation` whose
+2. In `attackshark/x6`, add `New*Operation()` returning a `mouse.CommandOperation` whose
    methods delegate to `protocol` after a type assertion.
 3. Add field/semantic validation where it belongs (`protocol.Encode*` vs
    `Operation.Validate`).

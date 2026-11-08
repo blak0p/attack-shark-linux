@@ -21,7 +21,7 @@ export function WorkspaceShell({
   busy = false,
   activeView: activeViewProp,
   onNavigate: onNavigateProp,
-  deviceName = "Attack Shark X6",
+  deviceName = "",
   deviceSubtitle,
   connectionStatus,
   titlebar,

@@ -13,6 +13,10 @@ func Model() device.Model { return model{} }
 
 type model struct{}
 
+func (model) Name() string { return "Attack Shark X6" }
+
+func (model) KeyCodes() map[string]byte { return macrocodec.OfficialKeyCodes() }
+
 func (model) DPIOperation() mouse.CommandOperation      { return NewDPIOperation() }
 func (model) PollingOperation() mouse.CommandOperation  { return NewPollingOperation() }
 func (model) LightingOperation() mouse.CommandOperation { return NewLightingOperation() }
