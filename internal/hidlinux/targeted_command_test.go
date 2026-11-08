@@ -6,14 +6,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
@@ -85,10 +84,7 @@ func TestTargetedPollingRoutesToBoundHidrawNode(t *testing.T) {
 	defaultNode := newCommandHidrawNode(nil)
 	opener := &routedHidrawOpener{nodes: map[string]*commandHidrawNode{filepath.Join(root, "dev/hidraw3"): defaultNode, path: node}}
 	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := fixtureRegistry(t)
 	service := mouse.NewTargetedService(registry, targetedHidrawInventory{backend}, backend)
 	devices, err := service.Refresh(context.Background())
 	if err != nil || len(devices) != 2 || !devices[0].Eligible || !devices[1].Eligible {
@@ -101,12 +97,9 @@ func TestTargetedPollingRoutesToBoundHidrawNode(t *testing.T) {
 	if !ok || binding.Path != "1:1-5" {
 		t.Fatalf("Selection() = %#v, %t", binding, ok)
 	}
-	if err := service.ApplyOperationBound(context.Background(), binding, x6.NewPollingOperation(), x6.PollingRate500); err != nil {
+	expected := fixturePayload(0x06, 9)
+	if err := service.ApplyOperationBound(context.Background(), binding, fixturePollingOperation(), expected); err != nil {
 		t.Fatalf("ApplyOperationBound() = %v", err)
-	}
-	expected, err := protocol.EncodePollingReport(protocol.PollingRate500)
-	if err != nil {
-		t.Fatal(err)
 	}
 	if !bytes.Equal(node.written(), expected) || len(opener.paths()) != 1 || opener.paths()[0] != path || len(defaultNode.written()) != 0 {
 		t.Fatalf("report=%x opened=%v default report=%x; want only selected %s with report %x", node.written(), opener.paths(), defaultNode.written(), path, expected)
@@ -127,10 +120,7 @@ func TestTargetedDPIRoutesToSelectedHidrawNode(t *testing.T) {
 	defaultNode := newCommandHidrawNode(nil)
 	opener := &routedHidrawOpener{nodes: map[string]*commandHidrawNode{filepath.Join(root, "dev/hidraw3"): defaultNode, path: node}}
 	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := fixtureRegistry(t)
 	service := mouse.NewTargetedService(registry, targetedHidrawInventory{backend}, backend)
 	devices, err := service.Refresh(context.Background())
 	if err != nil || len(devices) != 2 || !devices[0].Eligible || !devices[1].Eligible {
@@ -143,14 +133,8 @@ func TestTargetedDPIRoutesToSelectedHidrawNode(t *testing.T) {
 	if !ok || binding.Path != "1:1-5" {
 		t.Fatalf("Selection() = %#v, %t", binding, ok)
 	}
-	config := x6.DefaultDPIConfig()
-	config.DPI[0] = 1600
-	config.ActiveStage = 2
-	expected, err := x6.EncodeDPIReport(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := service.ApplyOperationBound(context.Background(), binding, x6.NewDPIOperation(), config); err != nil {
+	expected := fixturePayload(fixtureConfigID, fixtureConfigLength)
+	if err := service.ApplyOperationBound(context.Background(), binding, fixtureConfigOperation(), expected); err != nil {
 		t.Fatalf("ApplyOperationBound() = %v", err)
 	}
 	if !bytes.Equal(node.written(), expected) || len(opener.paths()) != 1 || opener.paths()[0] != path || len(defaultNode.written()) != 0 {
@@ -165,10 +149,9 @@ func TestTargetedDPIRoutesToSelectedHidrawNode(t *testing.T) {
 	if reads != 2 {
 		t.Fatalf("node reads = %d; want polling ACK ignored before DPI ACK", reads)
 	}
-	invalid := config
-	invalid.DPI[0] = 55
-	if err := service.ApplyOperationBound(context.Background(), binding, x6.NewDPIOperation(), invalid); err == nil {
-		t.Fatal("invalid typed DPI config was accepted")
+	invalid := fixturePayload(fixtureConfigID, fixtureConfigLength-1)
+	if err := service.ApplyOperationBound(context.Background(), binding, fixtureConfigOperation(), invalid); err == nil {
+		t.Fatal("invalid typed config was accepted")
 	}
 	if len(opener.paths()) != 1 || !bytes.Equal(node.written(), expected) {
 		t.Fatalf("invalid DPI config reached node: opened=%v report=%x", opener.paths(), node.written())
@@ -180,10 +163,7 @@ func TestTargetedPollingDoesNotAcceptUnrelatedACK(t *testing.T) {
 	node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
 	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := fixtureRegistry(t)
 	service := mouse.NewTargetedService(registry, targetedHidrawInventory{backend}, backend)
 	if _, err := service.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
@@ -192,7 +172,7 @@ func TestTargetedPollingDoesNotAcceptUnrelatedACK(t *testing.T) {
 	if !ok {
 		t.Fatal("no selected binding")
 	}
-	err = service.ApplyOperationBound(context.Background(), binding, x6.NewPollingOperation(), x6.PollingRate500)
+	err := service.ApplyOperationBound(context.Background(), binding, fixturePollingOperation(), fixturePayload(0x06, 9))
 	if err == nil {
 		t.Fatal("unrelated DPI ACK completed polling command")
 	}
@@ -211,24 +191,21 @@ func TestTargetedPollingFailsClosedBeforeNodeOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		mutate    func(*mouse.Binding, string)
-		rate      x6.PollingRate
+		payload   []byte
 		wantStale bool
 	}{
-		{name: "invalid rate", rate: x6.PollingRate(42)},
-		{name: "stale serial", rate: x6.PollingRate500, wantStale: true, mutate: func(_ *mouse.Binding, root string) {
+		{name: "invalid payload", payload: fixturePayload(0x06, 8)},
+		{name: "stale serial", payload: fixturePayload(0x06, 9), wantStale: true, mutate: func(_ *mouse.Binding, root string) {
 			writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "replacement\n")
 		}},
-		{name: "stale binding path", rate: x6.PollingRate500, wantStale: true, mutate: func(b *mouse.Binding, _ string) { b.Path = "1:1-9" }},
+		{name: "stale binding path", payload: fixturePayload(0x06, 9), wantStale: true, mutate: func(b *mouse.Binding, _ string) { b.Path = "1:1-9" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := fixtureRoot(t)
 			node := newCommandHidrawNode(nil)
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
 			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
-			if err != nil {
-				t.Fatal(err)
-			}
+			registry := fixtureRegistry(t)
 			service := mouse.NewTargetedService(registry, targetedHidrawInventory{backend}, backend)
 			if _, err := service.Refresh(context.Background()); err != nil {
 				t.Fatal(err)
@@ -246,7 +223,7 @@ func TestTargetedPollingFailsClosedBeforeNodeOpen(t *testing.T) {
 					t.Fatalf("fresh inventory = %#v, %v; selected binding = %#v; want changed serial", fresh, err, binding)
 				}
 			}
-			err = service.ApplyOperationBound(context.Background(), binding, x6.NewPollingOperation(), tc.rate)
+			err := service.ApplyOperationBound(context.Background(), binding, fixturePollingOperation(), tc.payload)
 			if err == nil || (tc.wantStale && !errors.Is(err, mouse.ErrStaleBinding)) {
 				t.Fatalf("ApplyOperationBound() = %v; want rejection", err)
 			}
@@ -256,3 +233,39 @@ func TestTargetedPollingFailsClosedBeforeNodeOpen(t *testing.T) {
 		})
 	}
 }
+
+// fixturePayload is a deterministic feature report: the ID, then 1..n-1.
+func fixturePayload(id byte, length int) []byte {
+	payload := make([]byte, length)
+	payload[0] = id
+	for i := 1; i < length; i++ {
+		payload[i] = byte(i)
+	}
+	return payload
+}
+
+// fixtureOperation mimics a model command whose typed value is its report.
+type fixtureOperation struct {
+	id     byte
+	length int
+}
+
+func fixturePollingOperation() fixtureOperation { return fixtureOperation{id: 0x06, length: 9} }
+func fixtureConfigOperation() fixtureOperation {
+	return fixtureOperation{id: fixtureConfigID, length: fixtureConfigLength}
+}
+
+func (o fixtureOperation) Validate(value any) error {
+	payload, ok := value.([]byte)
+	if !ok || len(payload) != o.length || payload[0] != o.id {
+		return fmt.Errorf("fixture operation rejects %T of %d bytes", value, len(payload))
+	}
+	return nil
+}
+func (o fixtureOperation) Encode(value any) ([]byte, error) {
+	if err := o.Validate(value); err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), value.([]byte)...), nil
+}
+func (o fixtureOperation) MatchesACK(report []byte) bool { return fixtureACK(o.id, report) }

@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
@@ -39,10 +37,7 @@ func TestWiredDescriptorAdmission(t *testing.T) {
 	if err != nil || len(candidates) != 2 {
 		t.Fatalf("inventory = %v, %v", candidates, err)
 	}
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := fixtureRegistry(t)
 	for i, candidate := range candidates {
 		pid, connection := uint16(0xfa60), transport.Dongle
 		if i == 1 {
@@ -142,7 +137,7 @@ func TestUSBModeBoundCommand(t *testing.T) {
 			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1d57, ProductID: pid, Serial: "fixture-x6-serial"}, Path: "1:1-4", ProfileID: "attack-shark-x6"}
 			payload := append([]byte{4}, make([]byte, 55)...)
 			ack := false
-			err := backend.SendAndAwaitBound(context.Background(), binding, payload, func(report []byte) bool { ack = protocol.MatchesDPIACK(report); return !ack })
+			err := backend.SendAndAwaitBound(context.Background(), binding, payload, func(report []byte) bool { ack = fixtureACK(4, report); return !ack })
 			if pid == 0xfa62 {
 				if err == nil || opener.opens() != 0 || len(node.written()) != 0 || ack {
 					t.Fatalf("rejected PID: err=%v opens=%d writes=%x", err, opener.opens(), node.written())

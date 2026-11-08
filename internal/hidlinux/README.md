@@ -1,15 +1,20 @@
-# Bound X6 macro upload
+# Bound macro upload
 
-The explicit composite `SendX6MacroAssignmentBound(ctx, binding, assignment,
-click)` (and mouse `ApplyMacroAssignmentBound`) validates typed remap and click
-before I/O, derives the destination from the assignment button, and owns one
-command lock/node for report08, exact `0310500008`, three report09 chunks and
-final `0310500009`. Identity, descriptor, path and cancellation are checked
+`hidlinux` only moves bytes. A model driver builds a `mouse.Batch` (setup
+report, setup ACK rule, chunks, spacing and final-status rule) and
+`HidrawBackend.SendBatchBound(ctx, binding, batch)` sends it under one command
+lock/node; `SendChunksBound` sends chunks without a setup report. Accepted
+feature reports come from the bound profile's `HIDFacts.FeatureReports`.
+
+For the X6 (`internal/attackshark/x6/macro_commands.go`), the composite
+`ApplyMacroAssignmentBound(ctx, inventory, binding, assignment, click)`
+validates typed remap and click before I/O, derives the destination from the
+assignment button, and builds report08, exact `0310500008`, three report09
+chunks and final `0310500009`. Identity, descriptor, path and cancellation are checked
 before writes and the upload completion phase. No generic report09 bypass is
 provided. Legacy block05 upload remains unchanged.
 
-The additive `SendX6MacroSequenceAssignmentBound` and mouse
-`ApplyMacroSequenceAssignmentBound` accept `macros.X6Sequence`: one or two
+The X6 `ApplyMacroSequenceAssignmentBound` accepts `macrocodec.X6Sequence`: one or two
 complete zero-delay clicks from the five captured action codes. Both composite
 APIs share the same serialized transport implementation, status handling and
 partial-progress rules. Destination comes only from `assignment.Button`, never
@@ -26,14 +31,15 @@ persistence. Destinations05/06 are capture-backed; other mapped button groups
 are authorized extrapolation, not proof of independent simultaneous slots.
 Desktop staging/composition and physical validation remain separate work.
 
-`HidrawBackend.SendX6MacroBound(ctx, binding, macros.X6Click)` encodes the strict
-single-button template before I/O. It acquires command ownership, revalidates the
+The X6 `SendMacroClickBound(ctx, command, binding, macrocodec.X6Click)` encodes
+the strict single-button template before I/O and sends it through
+`SendChunksBound`. It acquires command ownership, revalidates the
 captured candidate identity, serial and status descriptor, and opens only that
 binding's node. Three report09 chunks share one command lock and one node.
 Generic feature-report admission remains unchanged; report08 assignment and
 service/UI integration are not part of this API.
 
-Chunks have a cancellable 1.2-second gap. This is conservative engineering
+X6 chunks have a cancellable 1.2-second gap (`x6.MacroSpacing`). This is conservative engineering
 policy, **not a validated firmware minimum**; captures showed
 811.726–1190.951ms. Tests inject the internal wait function without real pacing.
 The bounded final-status deadline starts only after all three writes; there is

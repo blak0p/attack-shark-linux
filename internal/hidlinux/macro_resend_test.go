@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
-	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
 
@@ -28,37 +26,27 @@ func macroResendFixture(t *testing.T, node *scriptedNode, silence time.Duration)
 	return b, binding
 }
 
-func macroAssignmentWrites(t *testing.T, assignment x6.MacroAssignment, report08Copies int) [][]byte {
-	t.Helper()
-	report, err := x6.EncodeMacroAssignmentReport(assignment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	destination, _ := x6.MacroDestinationForButton(assignment.Button)
-	chunks, err := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: macroClick})
-	if err != nil {
-		t.Fatal(err)
-	}
+func batchWrites(batch mouse.Batch, setupCopies int) [][]byte {
 	var want [][]byte
-	for range report08Copies {
-		want = append(want, report)
+	for range setupCopies {
+		want = append(want, batch.Setup)
 	}
-	return append(want, chunks...)
+	return append(want, batch.Chunks...)
 }
 
 func TestMacroAssignmentResendsReport08AfterRejection(t *testing.T) {
 	// Writes: 1 report08 (rejected), 2 report08 resent (ACK), 3-5 report09 chunks (final ACK).
 	node := newScriptedNode(map[int][][]byte{1: {macroAssignmentRejection}, 2: {remapACK}, 5: {macroACK}})
 	b, binding := macroResendFixture(t, node, 0)
-	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}
-	progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+	batch := fixtureBatch(3)
+	progress, err := b.sendBatchBound(context.Background(), binding, batch, noMacroWait)
 	if err != nil {
 		t.Fatalf("error = %v", err)
 	}
 	if progress.Assignment != mouse.MacroAssignmentACKConfirmed || progress.Upload != mouse.MacroUploadConfirmed {
 		t.Fatalf("progress = %+v", progress)
 	}
-	if want := macroAssignmentWrites(t, assignment, 2); !reflect.DeepEqual(node.payloads(), want) {
+	if want := batchWrites(batch, 2); !reflect.DeepEqual(node.payloads(), want) {
 		t.Fatalf("writes = %x, want %x", node.payloads(), want)
 	}
 }
@@ -66,15 +54,15 @@ func TestMacroAssignmentResendsReport08AfterRejection(t *testing.T) {
 func TestMacroAssignmentResendsReport08AfterSilence(t *testing.T) {
 	node := newScriptedNode(map[int][][]byte{2: {remapACK}, 5: {macroACK}})
 	b, binding := macroResendFixture(t, node, 5*time.Millisecond)
-	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}
-	progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+	batch := fixtureBatch(3)
+	progress, err := b.sendBatchBound(context.Background(), binding, batch, noMacroWait)
 	if err != nil {
 		t.Fatalf("error = %v", err)
 	}
 	if progress.Assignment != mouse.MacroAssignmentACKConfirmed || progress.Upload != mouse.MacroUploadConfirmed {
 		t.Fatalf("progress = %+v", progress)
 	}
-	if want := macroAssignmentWrites(t, assignment, 2); !reflect.DeepEqual(node.payloads(), want) {
+	if want := batchWrites(batch, 2); !reflect.DeepEqual(node.payloads(), want) {
 		t.Fatalf("writes = %x, want %x", node.payloads(), want)
 	}
 }
@@ -86,15 +74,15 @@ func TestMacroAssignmentStopsAfterMaxAttempts(t *testing.T) {
 	}
 	node := newScriptedNode(rejectEach)
 	b, binding := macroResendFixture(t, node, 0)
-	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}
-	progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+	batch := fixtureBatch(3)
+	progress, err := b.sendBatchBound(context.Background(), binding, batch, noMacroWait)
 	if !IsErrorKind(err, Timeout) {
 		t.Fatalf("error = %v, want timeout", err)
 	}
 	if progress.Assignment != mouse.MacroAssignmentUnknown || progress.Upload != mouse.MacroUploadNotStarted {
 		t.Fatalf("progress = %+v", progress)
 	}
-	if want := macroAssignmentWrites(t, assignment, 4)[:4]; !reflect.DeepEqual(node.payloads(), want) {
+	if want := batchWrites(batch, 4)[:4]; !reflect.DeepEqual(node.payloads(), want) {
 		t.Fatalf("writes = %x, want four report08 copies and no report09", node.payloads())
 	}
 }
@@ -103,12 +91,12 @@ func TestMacroUploadChunksAreNeverResent(t *testing.T) {
 	// The final status after the last chunk is a rejection: the chunks must not be written again.
 	node := newScriptedNode(map[int][][]byte{1: {remapACK}, 4: {macroAssignmentRejection}})
 	b, binding := macroResendFixture(t, node, 0)
-	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 6}
-	progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
+	batch := fixtureBatch(3)
+	progress, err := b.sendBatchBound(context.Background(), binding, batch, noMacroWait)
 	if err == nil || progress.Upload != mouse.MacroUploadPossiblyPartial {
 		t.Fatalf("progress = %+v, error = %v", progress, err)
 	}
-	if want := macroAssignmentWrites(t, assignment, 1); !reflect.DeepEqual(node.payloads(), want) {
+	if want := batchWrites(batch, 1); !reflect.DeepEqual(node.payloads(), want) {
 		t.Fatalf("writes = %x, want %x", node.payloads(), want)
 	}
 }

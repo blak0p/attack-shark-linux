@@ -542,21 +542,21 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		for i := range target.Macros {
 			drafts[i] = cloneMacroDraft(&target.Macros[i])
 		}
-		items := make([]mouse.MacroSequenceItem, len(drafts))
-		localItems := make([]mouse.MacroLocalItem, len(drafts))
+		items := make([]x6.MacroSequenceItem, len(drafts))
+		localItems := make([]x6.MacroLocalItem, len(drafts))
 		legacy := true
 		for i, draft := range drafts {
 			seq, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
 			legacy = legacy && valid
-			localItems[i] = mouse.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
-			items[i] = mouse.MacroSequenceItem{Button: draft.Button, Sequence: seq}
+			localItems[i] = x6.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
+			items[i] = x6.MacroSequenceItem{Button: draft.Button, Sequence: seq}
 		}
 		var progress mouse.MacroProgress
 		var remapErr error
 		if legacy {
-			progress, remapErr = inventory.ApplyMultiMacroSequenceAssignmentBound(ctx, binding, remapConfig, items)
+			progress, remapErr = x6.ApplyMultiMacroSequenceAssignmentBound(ctx, inventory, binding, remapConfig, items)
 		} else {
-			progress, remapErr = inventory.ApplyMultiMacroLocalAssignmentBound(ctx, binding, remapConfig, localItems)
+			progress, remapErr = x6.ApplyMultiMacroLocalAssignmentBound(ctx, inventory, binding, remapConfig, localItems)
 		}
 		remState.mu.Lock()
 		remState.macroProgress = progress
