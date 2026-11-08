@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
-	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestX6FacadesMatchGenericTransportAndPureProtocol(t *testing.T) {
-	if Match(transport.X6Match()) != (Match{VendorID: 0x1D57, ProductID: 0xFA60}) {
+	if Match(NewProfile().Match()) != (Match{VendorID: 0x1D57, ProductID: 0xFA60}) {
 		t.Fatalf("X6 transport match does not preserve generic identity")
 	}
 	config := DefaultDPIConfig()

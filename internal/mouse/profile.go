@@ -38,6 +38,8 @@ func (id DeviceID) Key() string {
 type HIDFacts struct {
 	StatusInput             transport.InputDescriptor
 	ConfigurationReportSize int
+	// Connection is the USB mode this profile's VID/PID represents.
+	Connection transport.Connection
 }
 
 // Codec contains model-specific configuration behavior behind a generic seam.
@@ -69,6 +71,7 @@ type Profile interface {
 // ProfileRegistry owns the unique VID/PID-to-profile mapping.
 type ProfileRegistry struct {
 	profiles map[transport.Match]Profile
+	ordered  []Profile
 }
 
 func NewProfileRegistry(profiles ...Profile) (*ProfileRegistry, error) {
@@ -85,6 +88,7 @@ func NewProfileRegistry(profiles ...Profile) (*ProfileRegistry, error) {
 			return nil, fmt.Errorf("%w: VID:PID %04x:%04x", ErrProfileCollision, match.VendorID, match.ProductID)
 		}
 		registry.profiles[match] = profile
+		registry.ordered = append(registry.ordered, profile)
 	}
 	return registry, nil
 }
@@ -92,4 +96,29 @@ func NewProfileRegistry(profiles ...Profile) (*ProfileRegistry, error) {
 func (r *ProfileRegistry) Lookup(vendorID, productID uint16) (Profile, bool) {
 	profile, ok := r.profiles[transport.Match{VendorID: vendorID, ProductID: productID}]
 	return profile, ok
+}
+
+// Matches lists every registered VID/PID in registration order.
+func (r *ProfileRegistry) Matches() []transport.Match {
+	matches := make([]transport.Match, 0, len(r.ordered))
+	for _, profile := range r.ordered {
+		matches = append(matches, profile.Match())
+	}
+	return matches
+}
+
+// WiredPairs derives the cable/dongle pairs of profiles sharing one ID.
+func (r *ProfileRegistry) WiredPairs() []transport.WiredPair {
+	var pairs []transport.WiredPair
+	for _, wired := range r.ordered {
+		if wired.HIDFacts().Connection != transport.Wired {
+			continue
+		}
+		for _, dongle := range r.ordered {
+			if dongle.ID() == wired.ID() && dongle.HIDFacts().Connection == transport.Dongle {
+				pairs = append(pairs, transport.WiredPair{Wired: wired.Match(), Dongle: dongle.Match()})
+			}
+		}
+	}
+	return pairs
 }

@@ -357,7 +357,7 @@ func (b *HidrawBackend) macroBindingPath(ctx context.Context, binding mouse.Bind
 	if !ok || candidateKey(candidate) != binding.Path || candidate.VendorID != binding.ID.VendorID || candidate.ProductID != binding.ID.ProductID || !serialMatches {
 		return "", mouse.ErrStaleBinding
 	}
-	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err != nil {
+	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, statusInputFor(b.registry, candidate.VendorID, candidate.ProductID)); err != nil {
 		return "", mouse.ErrStaleBinding
 	}
 	path, err := b.hidrawPath(candidate)

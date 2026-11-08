@@ -13,6 +13,7 @@ func TestAdapterCleansUpClaimConfigurationAndDeviceInReverseOrder(t *testing.T) 
 	adapter := NewAdapter(
 		&fakeUSB{device: &fakeDevice{configuration: &fakeConfiguration{claim: claim, cleanup: &cleanup}, cleanup: &cleanup}},
 		fakeSysfs{descriptor: x6ReportDescriptor},
+		fixtureRegistry(t),
 	)
 
 	err := adapter.WithValidatedCandidate(context.Background(), validCandidate(), func(Claim) error {
@@ -33,6 +34,7 @@ func TestAdapterCleansUpInReverseOrderWhenClaimUseFails(t *testing.T) {
 	adapter := NewAdapter(
 		&fakeUSB{device: &fakeDevice{configuration: &fakeConfiguration{claim: claim, cleanup: &cleanup}, cleanup: &cleanup}},
 		fakeSysfs{descriptor: x6ReportDescriptor},
+		fixtureRegistry(t),
 	)
 	wantErr := errors.New("claim use failed")
 
@@ -53,7 +55,7 @@ func TestAdapterDoesNotOverlapOperations(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	adapter := NewAdapter(usb, fakeSysfs{descriptor: x6ReportDescriptor})
+	adapter := NewAdapter(usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
 	first := make(chan error, 1)
 	go func() {
@@ -84,15 +86,15 @@ func TestAdapterDoesNotOpenUSBForCandidateMismatch(t *testing.T) {
 		candidate  Candidate
 		descriptor []byte
 	}{
-		{name: "identity", candidate: Candidate{VendorID: 0xFFFF, ProductID: x6ProductID, Bus: 1, PortPath: "1-2"}, descriptor: x6ReportDescriptor},
-		{name: "physical path", candidate: Candidate{VendorID: x6VendorID, ProductID: x6ProductID, Bus: 0, PortPath: ""}, descriptor: x6ReportDescriptor},
+		{name: "identity", candidate: Candidate{VendorID: 0xFFFF, ProductID: fixtureDongleProduct, Bus: 1, PortPath: "1-2"}, descriptor: x6ReportDescriptor},
+		{name: "physical path", candidate: Candidate{VendorID: fixtureVendorID, ProductID: fixtureDongleProduct, Bus: 0, PortPath: ""}, descriptor: x6ReportDescriptor},
 		{name: "report descriptor", candidate: validCandidate(), descriptor: []byte{0x05, 0x01, 0x09, 0x02}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			usb := &fakeUSB{device: &fakeDevice{configuration: &fakeConfiguration{claim: &fakeClaim{}}}}
-			adapter := NewAdapter(usb, fakeSysfs{descriptor: tt.descriptor})
+			adapter := NewAdapter(usb, fakeSysfs{descriptor: tt.descriptor}, fixtureRegistry(t))
 
 			err := adapter.WithValidatedCandidate(context.Background(), tt.candidate, func(Claim) error { return nil })
 			if !errors.Is(err, ErrCandidateMismatch) {
@@ -191,7 +193,7 @@ func (f fakeSysfs) ReportDescriptor(context.Context, Candidate) ([]byte, error) 
 }
 
 func validCandidate() Candidate {
-	return Candidate{VendorID: x6VendorID, ProductID: x6ProductID, Bus: 1, PortPath: "1-2", Interfaces: validInterfaces()}
+	return Candidate{VendorID: fixtureVendorID, ProductID: fixtureDongleProduct, Bus: 1, PortPath: "1-2", Interfaces: validInterfaces()}
 }
 
 var x6ReportDescriptor = []byte{0x05, 0x01, 0x09, 0x80}

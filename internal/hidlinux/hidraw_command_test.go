@@ -66,6 +66,7 @@ func TestHidrawSendAndAwaitTable(t *testing.T) {
 			}
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
 			backend := &HidrawBackend{
+				registry:    fixtureRegistry(t),
 				sysRoot:     filepath.Join(root, "sys"),
 				devRoot:     filepath.Join(root, "dev"),
 				readTimeout: 20 * time.Millisecond,
@@ -115,12 +116,13 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 	commandNode := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), nodes: []hidrawNode{listenerNode, commandNode}}
 	backend := &HidrawBackend{
+		registry:    fixtureRegistry(t),
 		sysRoot:     filepath.Join(root, "sys"),
 		devRoot:     filepath.Join(root, "dev"),
 		readTimeout: time.Second,
 		opener:      opener,
 	}
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 	source := transport.InputSource{Path: "1:1-4"}

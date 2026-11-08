@@ -426,7 +426,7 @@ func macroFixture(t *testing.T, reports [][]byte) (*HidrawBackend, mouse.Binding
 	root := fixtureRoot(t)
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
 	n := &macroNode{commandHidrawNode: newCommandHidrawNode(reports)}
-	b := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: n}}
+	b := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: n}}
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "A"}, Path: "1:1-4"}
 	return b, binding, n, root
 }

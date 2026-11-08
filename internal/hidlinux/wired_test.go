@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
-	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func cableFixture(t *testing.T, root string) {
@@ -35,7 +35,7 @@ func cableFixture(t *testing.T, root string) {
 func TestWiredDescriptorAdmission(t *testing.T) {
 	backend, root := hidrawBackendForFixture(t, fakeHidrawOpener{})
 	cableFixture(t, root)
-	candidates, err := backend.EnumerateX6(context.Background())
+	candidates, err := backend.EnumerateMatches(context.Background(), fixtureDongleMatch(), transport.Match{VendorID: fixtureVendorID, ProductID: fixtureWiredProduct})
 	if err != nil || len(candidates) != 2 {
 		t.Fatalf("inventory = %v, %v", candidates, err)
 	}
@@ -60,7 +60,7 @@ func TestWiredDescriptorAdmission(t *testing.T) {
 		}
 	}
 	// Explicit single-match scans must not broaden discovery.
-	only, err := backend.Enumerate(context.Background(), transport.X6Match())
+	only, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 	if err != nil || len(only) != 1 || only[0].ProductID != 0xfa60 {
 		t.Fatalf("exact scan = %v, %v", only, err)
 	}
@@ -138,7 +138,7 @@ func TestUSBModeBoundCommand(t *testing.T) {
 			writeFixtureFile(t, filepath.Join(root, "sys/bus/hid/devices/0003:1D57:FA60.0001/uevent"), fmt.Sprintf("HID_ID=0003:00001D57:0000%04X\nHID_PHYS=usb-0000:0d:00.0-4/input2\n", pid))
 			node := newCommandHidrawNode([][]byte{{3, 0x10, 0x50, 0, 4}})
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), opener: opener, readTimeout: time.Second}
+			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), opener: opener, readTimeout: time.Second}
 			binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1d57, ProductID: pid, Serial: "fixture-x6-serial"}, Path: "1:1-4", ProfileID: "attack-shark-x6"}
 			payload := append([]byte{4}, make([]byte, 55)...)
 			ack := false
