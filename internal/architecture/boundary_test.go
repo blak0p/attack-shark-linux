@@ -26,8 +26,6 @@ const modelRoot = "internal/attackshark"
 var knownViolations = map[string][]string{
 	"internal/configstore": {"internal/attackshark/x6"},
 	"internal/desktop":     {"internal/attackshark/x6", "internal/attackshark/x6/macrocodec", "internal/attackshark/x6/protocol"},
-	"internal/hidlinux":    {"internal/attackshark/x6", "internal/attackshark/x6/macrocodec", "internal/attackshark/x6/protocol"},
-	"internal/mouse":       {"internal/attackshark/x6/macrocodec", "internal/attackshark/x6/protocol"},
 }
 
 // modelUSBIdentity lists the lowercase literals that identify one model's USB

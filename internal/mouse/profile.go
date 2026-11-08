@@ -40,6 +40,28 @@ type HIDFacts struct {
 	ConfigurationReportSize int
 	// Connection is the USB mode this profile's VID/PID represents.
 	Connection transport.Connection
+	// FeatureReports lists every feature report this model accepts for a plain
+	// bound command; anything else is refused before device I/O.
+	FeatureReports []FeatureReport
+}
+
+// FeatureReport is one accepted feature report shape: its ID and exact length.
+type FeatureReport struct {
+	ID     byte
+	Length int
+}
+
+// AcceptsFeatureReport reports whether payload matches a declared feature report.
+func (f HIDFacts) AcceptsFeatureReport(payload []byte) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	for _, report := range f.FeatureReports {
+		if payload[0] == report.ID && len(payload) == report.Length {
+			return true
+		}
+	}
+	return false
 }
 
 // Codec contains model-specific configuration behavior behind a generic seam.

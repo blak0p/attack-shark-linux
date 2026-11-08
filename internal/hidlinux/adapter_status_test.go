@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -101,32 +101,41 @@ func TestClassifyPreservesTransportErrorPrecedenceAndWrapsENOENTAsDisconnected(t
 	}
 }
 
-func TestAdapterStatusRunsOnlyOnExplicitRequestAndKeepsAbsentBatteryUnavailable(t *testing.T) {
+func TestAdapterStatusRunsOnlyOnExplicitRequestAndReadsOneReport(t *testing.T) {
 	tests := []struct {
-		name              string
-		reports           [][]byte
-		wantBattery       int
-		wantBatteryExists bool
+		name    string
+		reports [][]byte
 	}{
-		{name: "battery report", reports: [][]byte{{0x03, 0x10, 0x40, 0x00, 8}}, wantBattery: 80, wantBatteryExists: true},
-		{name: "no battery report", reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 4}}, wantBatteryExists: false},
+		{name: "battery report", reports: [][]byte{{0x03, 0x10, 0x40, 0x00, 8}}},
+		{name: "no battery report", reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 4}}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			usb := &statusUSB{reports: tt.reports}
 			discovery := &statusDiscovery{candidates: []Candidate{candidateWithInterface()}}
-			service := x6.NewService(NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t)))
+			adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 			if discovery.calls != 0 || usb.opens != 0 || usb.reads != 0 {
 				t.Fatalf("construction performed status I/O: discovery=%d opens=%d reads=%d", discovery.calls, usb.opens, usb.reads)
 			}
 
-			status, err := service.Status(context.Background())
-			if err != nil {
-				t.Fatalf("Status() error = %v", err)
+			candidates, err := adapter.Enumerate(context.Background(), fixtureDongleMatch())
+			if err != nil || len(candidates) != 1 || candidates[0].Connection != transport.Dongle {
+				t.Fatalf("Enumerate() = %#v, %v", candidates, err)
 			}
-			if status.Connection != x6.Dongle || status.BatteryAvailable != tt.wantBatteryExists || status.BatteryPercent != tt.wantBattery {
-				t.Fatalf("Status() = %#v", status)
+			source, err := adapter.ValidateDescriptor(context.Background(), candidates[0], fixtureStatusInput)
+			if err != nil {
+				t.Fatalf("ValidateDescriptor() error = %v", err)
+			}
+			var got [][]byte
+			if err := adapter.ReadInterruptIN(context.Background(), source, func(report []byte) bool {
+				got = append(got, append([]byte(nil), report...))
+				return false
+			}); err != nil {
+				t.Fatalf("ReadInterruptIN() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.reports) {
+				t.Fatalf("reports = %x, want %x", got, tt.reports)
 			}
 			if discovery.calls != 1 || usb.opens != 1 || usb.reads != 1 {
 				t.Fatalf("explicit status I/O calls: discovery=%d opens=%d reads=%d, want one each", discovery.calls, usb.opens, usb.reads)

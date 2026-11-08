@@ -3,12 +3,9 @@ package mouse
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
+	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
-	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
-	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -86,168 +83,65 @@ const (
 	MacroUploadConfirmed
 )
 
-// TargetedMacroCommand is deliberately separate from generic report admission.
-type TargetedMacroCommand interface {
-	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macrocodec.X6Click) (MacroProgress, error)
+// BatchStatus classifies one report read while waiting for a batch's final status.
+type BatchStatus uint8
+
+const (
+	// StatusUnexpected fails the batch: the report is neither final nor ignorable.
+	StatusUnexpected BatchStatus = iota
+	// StatusIgnore skips an interleaved report such as a heartbeat.
+	StatusIgnore
+	// StatusDone is the final confirmation of the whole batch.
+	StatusDone
+)
+
+// Batch is a model-encoded multi-report transaction. The model owns every byte,
+// the ACK rules and the pacing; the transport only moves them in order.
+type Batch struct {
+	// Setup, when set, is sent first and re-sent while SetupKeepReading says
+	// the last report was not its ACK. It reports whether to keep reading.
+	Setup            []byte
+	SetupKeepReading func([]byte) bool
+	// Chunks are sent in order, never retried, Spacing apart.
+	Chunks  [][]byte
+	Spacing time.Duration
+	// Status classifies reports read after the last chunk.
+	Status func([]byte) BatchStatus
 }
 
-// MacroSequenceItem associates one button with an offline sequence.
-type MacroSequenceItem struct {
-	Button   uint8
-	Sequence macrocodec.X6Sequence
+// Clone deep-copies the report bytes so callers cannot mutate an in-flight batch.
+func (b Batch) Clone() Batch {
+	b.Setup = append([]byte(nil), b.Setup...)
+	chunks := make([][]byte, len(b.Chunks))
+	for i, chunk := range b.Chunks {
+		chunks[i] = append([]byte(nil), chunk...)
+	}
+	b.Chunks = chunks
+	return b
 }
 
-// TargetedMacroSequenceCommand is additive: legacy click-only commands remain valid.
-type TargetedMacroSequenceCommand interface {
-	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macrocodec.X6Sequence) (MacroProgress, error)
-	SendX6MultiMacroSequenceAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroSequenceItem) (MacroProgress, error)
+// TargetedBatchCommand is deliberately separate from generic report admission.
+type TargetedBatchCommand interface {
+	SendBatchBound(context.Context, Binding, Batch) (MacroProgress, error)
 }
 
-// MacroLocalItem retains exact local source events; no unchecked raw blocks are accepted.
-type MacroLocalItem struct {
-	Button uint8
-	Events []macros.Event
-	Repeat int
-	Mode   uint8
-}
-
-// TargetedMacroLocalCommand is additive. Legacy commands need not implement it.
-type TargetedMacroLocalCommand interface {
-	SendX6MultiMacroLocalAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroLocalItem) (MacroProgress, error)
-}
-
-// MacroLocalAssignmentsAvailable reports capability without acquiring ownership
-// or invoking transport. Apply still repeats admission and binding checks.
-func (s *TargetedService) MacroLocalAssignmentsAvailable() bool {
-	_, ok := s.command.(TargetedMacroLocalCommand)
+// BatchAvailable reports capability without acquiring ownership or invoking
+// transport. ApplyBatchBound still repeats admission and binding checks.
+func (s *TargetedService) BatchAvailable() bool {
+	_, ok := s.command.(TargetedBatchCommand)
 	return ok
 }
 
-func (s *TargetedService) MacroSequenceAssignmentsAvailable() bool {
-	_, ok := s.command.(TargetedMacroSequenceCommand)
-	return ok
-}
-
-func (s *TargetedService) ApplyMultiMacroLocalAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroLocalItem) (MacroProgress, error) {
-	empty := MacroProgress{}
-	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
-	frozen := make([]MacroLocalItem, len(items))
-	buttons := make([]uint8, len(items))
-	seen := make(map[uint8]bool)
-	if len(items) == 0 {
-		return empty, errors.New("no macro local items")
-	}
-	for i, item := range items {
-		item.Events = append([]macros.Event(nil), item.Events...)
-		frozen[i] = item
-		if seen[item.Button] {
-			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
-		}
-		seen[item.Button] = true
-		buttons[i] = item.Button
-		destination, err := x6.MacroDestinationForButton(item.Button)
-		if err != nil {
-			return empty, err
-		}
-		if _, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode); err != nil {
-			return empty, err
-		}
-	}
-	if _, err := x6.EncodeMultiMacroAssignmentReport(config, buttons); err != nil {
-		return empty, err
-	}
-	command, ok := s.command.(TargetedMacroLocalCommand)
+// ApplyBatchBound sends an already encoded batch to the selected binding. The
+// batch is copied before the command can queue, so later caller mutation is ignored.
+func (s *TargetedService) ApplyBatchBound(ctx context.Context, binding Binding, batch Batch) (MacroProgress, error) {
+	batch = batch.Clone()
+	command, ok := s.command.(TargetedBatchCommand)
 	if !ok {
-		return empty, errors.New("bound macro local command unavailable")
+		return MacroProgress{}, errors.New("bound macro command unavailable")
 	}
 	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
-		return command.SendX6MultiMacroLocalAssignmentBound(ctx, binding, config, frozen)
-	})
-}
-
-func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Context, binding Binding, config x6.RemapConfig, items []MacroSequenceItem) (MacroProgress, error) {
-	empty := MacroProgress{}
-	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
-	if len(items) == 0 {
-		return empty, errors.New("no macro sequence items")
-	}
-	buttons := make([]uint8, len(items))
-	clonedItems := make([]MacroSequenceItem, len(items))
-	seen := make(map[uint8]bool, len(items))
-	for i, item := range items {
-		if seen[item.Button] {
-			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
-		}
-		seen[item.Button] = true
-		buttons[i] = item.Button
-		destination, err := x6.MacroDestinationForButton(item.Button)
-		if err != nil {
-			return empty, err
-		}
-		if _, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: item.Sequence}); err != nil {
-			return empty, err
-		}
-		clonedSeq := item.Sequence
-		clonedSeq.Buttons = append([]macros.EventType(nil), item.Sequence.Buttons...)
-		clonedItems[i] = MacroSequenceItem{
-			Button:   item.Button,
-			Sequence: clonedSeq,
-		}
-	}
-	if _, err := x6.EncodeMultiMacroAssignmentReport(config, buttons); err != nil {
-		return empty, err
-	}
-	command, ok := s.command.(TargetedMacroSequenceCommand)
-	if !ok {
-		return empty, errors.New("bound macro sequence command unavailable")
-	}
-	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
-		return command.SendX6MultiMacroSequenceAssignmentBound(ctx, binding, config, clonedItems)
-	})
-}
-
-func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macrocodec.X6Sequence) (MacroProgress, error) {
-	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
-	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
-	empty := MacroProgress{}
-	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
-		return empty, err
-	}
-	destination, err := x6.MacroDestinationForButton(assignment.Button)
-	if err != nil {
-		return empty, err
-	}
-	if _, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: sequence}); err != nil {
-		return empty, err
-	}
-	command, ok := s.command.(TargetedMacroSequenceCommand)
-	if !ok {
-		return empty, errors.New("bound macro sequence command unavailable")
-	}
-	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
-		return command.SendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence)
-	})
-}
-
-func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macrocodec.X6Click) (MacroProgress, error) {
-	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
-	empty := MacroProgress{}
-	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
-		return empty, err
-	}
-	destination, err := x6.MacroDestinationForButton(assignment.Button)
-	if err != nil {
-		return empty, err
-	}
-	if _, err := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: click}); err != nil {
-		return empty, err
-	}
-	command, ok := s.command.(TargetedMacroCommand)
-	if !ok {
-		return empty, errors.New("bound macro command unavailable")
-	}
-	return s.applyMacroBound(ctx, binding, func() (MacroProgress, error) {
-		return command.SendX6MacroAssignmentBound(ctx, binding, assignment, click)
+		return command.SendBatchBound(ctx, binding, batch)
 	})
 }
 

@@ -23,38 +23,49 @@ type macroCommandFake struct {
 	progress          mouse.MacroProgress
 	err               error
 	during            func()
-	assignment        protocol.MacroAssignment
-	sequence          macrocodec.X6Sequence
-	multiConfig       protocol.RemapConfig
-	items             []mouse.MacroSequenceItem
+	// batch is the last batch received; sequence/destination are decoded from its
+	// chunks when they form a legacy sequence upload.
+	batch       mouse.Batch
+	sequence    macrocodec.X6Sequence
+	destination byte
 }
 
 func (f *macroCommandFake) SendAndAwaitBound(_ context.Context, _ Binding, _ []byte, _ func([]byte) bool) error {
 	f.normal++
 	return nil
 }
-func (f *macroCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, a protocol.MacroAssignment, c macrocodec.X6Sequence) (mouse.MacroProgress, error) {
+func (f *macroCommandFake) SendBatchBound(_ context.Context, _ Binding, batch mouse.Batch) (mouse.MacroProgress, error) {
 	f.composite++
-	f.assignment = a
-	f.sequence = macrocodec.X6Sequence{Buttons: append([]macros.EventType(nil), c.Buttons...), Repeat: c.Repeat, Mode: c.Mode}
-	if f.during != nil {
-		f.during()
-	}
-	return f.progress, f.err
-}
-func (f *macroCommandFake) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ Binding, cfg protocol.RemapConfig, items []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
-	f.composite++
-	f.multiConfig = cfg
-	f.items = append([]mouse.MacroSequenceItem(nil), items...)
-	if len(items) == 1 {
-		f.assignment = protocol.MacroAssignment{Config: cfg, Button: items[0].Button}
-		f.sequence = macrocodec.X6Sequence{Buttons: append([]macros.EventType(nil), items[0].Sequence.Buttons...), Repeat: items[0].Sequence.Repeat, Mode: items[0].Sequence.Mode}
+	f.batch = batch
+	if upload, err := macrocodec.DecodeX6SequenceUpload(batch.Chunks); err == nil {
+		f.sequence = macrocodec.X6Sequence{Buttons: append([]macros.EventType(nil), upload.Sequence.Buttons...), Repeat: upload.Sequence.Repeat, Mode: upload.Sequence.Mode}
+		f.destination = upload.Destination
 	}
 	if f.during != nil {
 		f.during()
 	}
 	return f.progress, f.err
 }
+
+// multiSetup is the report08 a batch for these buttons must open with.
+func multiSetup(t *testing.T, config protocol.RemapConfig, buttons ...uint8) []byte {
+	t.Helper()
+	report, err := protocol.EncodeMultiMacroAssignmentReport(config, buttons)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func destinationFor(t *testing.T, button uint8) byte {
+	t.Helper()
+	destination, err := protocol.MacroDestinationForButton(button)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return destination
+}
+
 func macroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro) {
 	t.Helper()
 	lib, err := macros.Open(filepath.Join(t.TempDir(), "macros.json"))
@@ -99,6 +110,7 @@ func TestMacroApplyPrevalidationPreservesState(t *testing.T) {
 			case "capability":
 				m, _ = s.UpdateMacro(m.ID, m.Name, []macros.Event{{Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up}})
 				staged = s.StageMacroAssignment(m.ID, 6, 1)
+				attachPlainCommand(s, c)
 			}
 			before := s.GetRemapSnapshot()
 			config := cloneRemapConfig(staged.Pending)
@@ -171,8 +183,8 @@ func TestMacroApplyFreezesConfigBeforeSerialization(t *testing.T) {
 				t.Fatalf("caller config leaked through boundary wait: %+v", got)
 			}
 			if boundary == "macro-transport" {
-				if c.composite != 1 || c.normal != 0 || !reflect.DeepEqual(c.multiConfig, want) {
-					t.Fatalf("macro command changed: %+v calls=%d/%d", c.multiConfig, c.composite, c.normal)
+				if c.composite != 1 || c.normal != 0 || !reflect.DeepEqual(c.batch.Setup, multiSetup(t, want, 6)) {
+					t.Fatalf("macro command changed: %x calls=%d/%d", c.batch.Setup, c.composite, c.normal)
 				}
 			} else if c.normal == 0 || c.composite != 0 {
 				t.Fatalf("ordinary remap command changed: calls=%d/%d", c.composite, c.normal)
@@ -181,8 +193,23 @@ func TestMacroApplyFreezesConfigBeforeSerialization(t *testing.T) {
 	}
 }
 
+// plainMacroCommand has no batch support, like a transport that only sends plain reports.
+type plainMacroCommand struct{ fake *macroCommandFake }
+
+func (p plainMacroCommand) SendAndAwaitBound(ctx context.Context, b Binding, report []byte, keepReading func([]byte) bool) error {
+	return p.fake.SendAndAwaitBound(ctx, b, report, keepReading)
+}
+
+func attachPlainCommand(s *Service, c *macroCommandFake) {
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidates := []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/mock-a"}}
+	s.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, plainMacroCommand{c}))
+	s.SelectDevice(s.RefreshInventory(context.Background()).Devices[0].ID)
+}
+
 func TestMacroTimedStageApplyCapability(t *testing.T) {
 	s, c, m := macroFixture(t)
+	attachPlainCommand(s, c)
 	events := []macros.Event{{Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Down, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "KeyA", Action: macros.Up, DelayMS: 100}, {Type: macros.Keyboard, KeyCode: "ShiftLeft", Action: macros.Up, DelayMS: 100}}
 	m, err := s.UpdateMacro(m.ID, "captured chord", events)
 	if err != nil {
@@ -192,32 +219,33 @@ func TestMacroTimedStageApplyCapability(t *testing.T) {
 	if staged.Error.Code != "" || staged.MacroPending == nil || c.composite+c.normal != 0 {
 		t.Fatalf("stage rejected or wrote: %+v", staged)
 	}
-	// This legacy-only command must never receive a timed payload.
+	// A command without batch support must never receive a macro payload.
 	got := s.ApplyRemap(staged.Pending)
 	if got.Error.Code == "" || c.composite+c.normal != 0 || got.MacroProgress != (mouse.MacroProgress{}) || !reflect.DeepEqual(got.MacroPending, staged.MacroPending) {
 		t.Fatalf("missing capability mutated: %+v", got)
 	}
 }
 
-type localMacroCommandFake struct {
-	*macroCommandFake
-	localCalls int
-	localItems []mouse.MacroLocalItem
+// wantLocalBatch encodes the expected mixed local upload: item one is a legacy
+// click macro (repeat 255), item two the captured chord (repeat 1, mode 2).
+func wantLocalBatch(t *testing.T, config protocol.RemapConfig, first, second []macros.Event) mouse.Batch {
+	t.Helper()
+	batch, err := x6.MultiMacroLocalBatch(config, []x6.MacroLocalItem{{Button: 6, Events: first, Repeat: 255}, {Button: 7, Events: second, Repeat: 1, Mode: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return batch
 }
 
-func (f *localMacroCommandFake) SendX6MultiMacroLocalAssignmentBound(_ context.Context, _ Binding, config protocol.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
-	f.localCalls++
-	f.multiConfig = cloneRemapConfig(config)
-	f.localItems = make([]mouse.MacroLocalItem, len(items))
-	for i, item := range items {
-		item.Events = append([]macros.Event(nil), item.Events...)
-		f.localItems[i] = item
-	}
-	if f.during != nil {
-		f.during()
-	}
-	return f.progress, f.err
+// sameBytes compares the encoded reports; the batch's callbacks are not comparable.
+func sameBytes(got, want mouse.Batch) bool {
+	return reflect.DeepEqual(got.Setup, want.Setup) && reflect.DeepEqual(got.Chunks, want.Chunks) && got.Spacing == want.Spacing
 }
+
+type localMacroCommandFake struct {
+	*macroCommandFake
+}
+
 func localMacroFixture(t *testing.T) (*Service, *localMacroCommandFake, macros.Macro) {
 	s, c, m := macroFixture(t)
 	local := &localMacroCommandFake{macroCommandFake: c}
@@ -236,27 +264,9 @@ type officialSerializedCommand struct {
 	reports [][]byte
 }
 
-func (f *officialSerializedCommand) SendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding Binding, config protocol.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
-	buttons := make([]uint8, len(items))
-	var chunks [][]byte
-	for i, item := range items {
-		buttons[i] = item.Button
-		destination, err := protocol.MacroDestinationForButton(item.Button)
-		if err != nil {
-			return mouse.MacroProgress{}, err
-		}
-		encoded, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
-		if err != nil {
-			return mouse.MacroProgress{}, err
-		}
-		chunks = append(chunks, encoded...)
-	}
-	report, err := protocol.EncodeMultiMacroAssignmentReport(config, buttons)
-	if err != nil {
-		return mouse.MacroProgress{}, err
-	}
-	f.reports = append([][]byte{report}, chunks...)
-	return f.localMacroCommandFake.SendX6MultiMacroLocalAssignmentBound(ctx, binding, config, items)
+func (f *officialSerializedCommand) SendBatchBound(ctx context.Context, binding Binding, batch mouse.Batch) (mouse.MacroProgress, error) {
+	f.reports = append([][]byte{batch.Setup}, batch.Chunks...)
+	return f.localMacroCommandFake.SendBatchBound(ctx, binding, batch)
 }
 func officialFDSTake() []macros.Event {
 	var events []macros.Event
@@ -288,13 +298,13 @@ func TestX6OfficialFDSSavedSelectedStagedApplied(t *testing.T) {
 		t.Fatal(saved, err)
 	}
 	staged := s.StageMacroAssignmentWithMode(m.ID, 7, 3, 2)
-	if staged.Error.Code != "" || !reflect.DeepEqual(staged.MacroPending.Events, events) || len(command.reports) != 0 || command.localCalls+command.normal+command.composite != 0 {
+	if staged.Error.Code != "" || !reflect.DeepEqual(staged.MacroPending.Events, events) || len(command.reports) != 0 || command.normal+command.composite != 0 {
 		t.Fatal(staged, command)
 	}
 	config := cloneRemapConfig(staged.Pending)
 	config.Buttons[3].Action = x6.RemapFire
 	applied := s.ApplyRemap(config)
-	if applied.Error.Code != "" || applied.Firmware != "success" || applied.MacroProgress != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadConfirmed}) || !reflect.DeepEqual(applied.Applied, config) || !reflect.DeepEqual(applied.MacroApplied.Events, events) || command.localCalls != 1 || len(command.reports) != 4 {
+	if applied.Error.Code != "" || applied.Firmware != "success" || applied.MacroProgress != (mouse.MacroProgress{Assignment: mouse.MacroAssignmentACKConfirmed, Upload: mouse.MacroUploadConfirmed}) || !reflect.DeepEqual(applied.Applied, config) || !reflect.DeepEqual(applied.MacroApplied.Events, events) || command.composite != 1 || len(command.reports) != 4 {
 		t.Fatal(applied, command)
 	}
 	expected := make([]byte, 128)
@@ -357,7 +367,7 @@ func TestX6OfficialInvalidStageAndApplyNoMutation(t *testing.T) {
 			state.mu.Unlock()
 			before = s.GetRemapSnapshot()
 			rejected = s.ApplyRemap(staged.Pending)
-			if rejected.Error.Code == "" || rejected.Revision != before.Revision || !reflect.DeepEqual(rejected.MacroDrafts, before.MacroDrafts) || rejected.MacroProgress != before.MacroProgress || !reflect.DeepEqual(rejected.Pending, before.Pending) || c.localCalls+c.normal+c.composite != 0 {
+			if rejected.Error.Code == "" || rejected.Revision != before.Revision || !reflect.DeepEqual(rejected.MacroDrafts, before.MacroDrafts) || rejected.MacroProgress != before.MacroProgress || !reflect.DeepEqual(rejected.Pending, before.Pending) || c.normal+c.composite != 0 {
 				t.Fatal(before, rejected, c)
 			}
 			saved, _ := s.ReadMacro(invalid.ID)
@@ -404,7 +414,7 @@ func TestMacroLocalMixedApplyAndStaleCompletion(t *testing.T) {
 				c.progress.Upload = mouse.MacroUploadNotStarted
 			}
 			got := s.ApplyRemap(config)
-			if c.localCalls != 1 || c.composite+c.normal != 0 || len(c.localItems) != 2 || c.localItems[0].Button != 6 || c.localItems[1].Button != 7 || !reflect.DeepEqual(c.localItems[1].Events, chord.Events) || !reflect.DeepEqual(c.multiConfig, config) || got.MacroProgress != c.progress {
+			if c.composite != 1 || c.normal != 0 || !reflect.DeepEqual(c.batch.Setup, multiSetup(t, config, 6, 7)) || !sameBytes(c.batch, wantLocalBatch(t, config, m.Events, chord.Events)) || got.MacroProgress != c.progress {
 				t.Fatalf("mixed transport contract: %+v command=%+v", got, c)
 			}
 			if mutation == "none" {
@@ -422,7 +432,7 @@ func TestMacroLocalMixedApplyAndStaleCompletion(t *testing.T) {
 				}
 			}
 			s.RetryRemapPersistence()
-			if c.localCalls != 1 {
+			if c.composite != 1 {
 				t.Fatal("automatic transport retry")
 			}
 		})
@@ -498,7 +508,7 @@ func TestMacroOrderedSequenceApplyFrozenDraft(t *testing.T) {
 					staged.MacroPending.Name = "mutated snapshot"
 					staged.MacroPending.Events[2].Type = macros.MouseLeft
 					got := s.ApplyRemap(staged.Pending)
-					if got.Error.Code != "" || got.Firmware != "success" || !reflect.DeepEqual(got.MacroApplied, want) || c.assignment.Button != destination || c.sequence.Repeat != repeat || !reflect.DeepEqual(c.sequence.Buttons, []macros.EventType{first, second}) || c.composite != 1 || c.normal != 0 {
+					if got.Error.Code != "" || got.Firmware != "success" || !reflect.DeepEqual(got.MacroApplied, want) || c.destination != destinationFor(t, destination) || c.sequence.Repeat != repeat || !reflect.DeepEqual(c.sequence.Buttons, []macros.EventType{first, second}) || c.composite != 1 || c.normal != 0 {
 						t.Fatalf("ordered frozen assignment lost: snapshot=%+v command=%+v", got, c)
 					}
 					got.MacroApplied.Events[0].DelayMS = 42
@@ -643,7 +653,7 @@ func TestMacroApplySuccessOnlyStateAdvanceNormalRemapRegression(t *testing.T) {
 	if got.Error.Code != "" || got.Firmware != "success" || got.MacroApplied == nil || got.MacroProgress != c.progress || got.Persistence != "not_supported" || c.composite != 1 || c.normal != 0 {
 		t.Fatalf("%+v command=%+v", got, c)
 	}
-	if !reflect.DeepEqual(c.assignment.Config, pending) || c.assignment.Button != 7 || c.sequence.Repeat != 255 {
+	if !reflect.DeepEqual(c.batch.Setup, multiSetup(t, pending, 7)) || c.sequence.Repeat != 255 {
 		t.Fatal("unrelated fields or assignment lost")
 	}
 	s.ClearMacroAssignment()
@@ -905,8 +915,8 @@ func TestSimultaneousMultiMacroAssignment(t *testing.T) {
 	if applied.MacroAppliedDrafts[6].ID != m1.ID || applied.MacroAppliedDrafts[7].ID != m2.ID {
 		t.Fatalf("applied drafts mismatch: %+v", applied.MacroAppliedDrafts)
 	}
-	if c.composite != 1 || len(c.items) != 2 {
-		t.Fatalf("command mismatch: calls=%d items=%d", c.composite, len(c.items))
+	if c.composite != 1 || !reflect.DeepEqual(c.batch.Setup, multiSetup(t, staged7.Pending, 6, 7)) {
+		t.Fatalf("command mismatch: calls=%d setup=%x", c.composite, c.batch.Setup)
 	}
 
 	// Clear button 6 while keeping button 7

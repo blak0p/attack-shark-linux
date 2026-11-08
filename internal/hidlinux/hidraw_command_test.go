@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -73,12 +72,12 @@ func TestHidrawSendAndAwaitTable(t *testing.T) {
 				opener:      opener,
 			}
 
-			payload := make([]byte, protocol.DPIReportLength)
+			payload := make([]byte, fixtureConfigLength)
 			payload[0] = 0x04
 			var seen [][]byte
 			err := backend.SendAndAwait(context.Background(), payload, func(report []byte) bool {
 				seen = append(seen, append([]byte(nil), report...))
-				return !protocol.MatchesDPIACK(report)
+				return !fixtureACK(4, report)
 			})
 			if tt.wantError == "" {
 				if err != nil {
@@ -140,10 +139,10 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 
 	applyDone := make(chan error, 1)
 	go func() {
-		payload := make([]byte, protocol.DPIReportLength)
+		payload := make([]byte, fixtureConfigLength)
 		payload[0] = 0x04
 		applyDone <- backend.SendAndAwait(context.Background(), payload, func(report []byte) bool {
-			return !protocol.MatchesDPIACK(report)
+			return !fixtureACK(4, report)
 		})
 	}()
 
