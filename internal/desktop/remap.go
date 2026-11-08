@@ -3,10 +3,10 @@ package desktop
 import (
 	"context"
 	"errors"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type remapState struct {
@@ -16,8 +16,8 @@ type remapState struct {
 	macroProgress              mouse.MacroProgress
 	mu                         sync.Mutex
 	applyMu                    sync.Mutex
-	pending, applied, factory  x6.RemapConfig
-	retry                      *x6.RemapConfig
+	pending, applied, factory  device.RemapConfig
+	retry                      *device.RemapConfig
 	revision                   uint64
 	firmware, persistence      string
 	err                        Error
@@ -29,7 +29,7 @@ type remapComponent struct {
 	legacy  *remapState
 }
 
-func newRemapState(applied, factory x6.RemapConfig) *remapState {
+func newRemapState(applied, factory device.RemapConfig) *remapState {
 	return &remapState{
 		applied:         cloneRemapConfig(applied),
 		pending:         cloneRemapConfig(applied),
@@ -53,7 +53,7 @@ func (c *remapComponent) stateForBinding(binding Binding) *remapState {
 	defer s.mu.Unlock()
 	state := c.states[binding.ID]
 	if state == nil {
-		factory := x6.DefaultRemapConfig()
+		factory := device.DefaultRemapConfig()
 		applied := factory
 		if s.remapPersistence != nil && !binding.SessionOnly {
 			if persisted, err := s.remapPersistence.Load(binding); err == nil && persisted.Remap != nil {
@@ -68,7 +68,7 @@ func (c *remapComponent) stateForBinding(binding Binding) *remapState {
 
 func (c *remapComponent) snapshot() RemapSnapshot { return remapSnapshotOf(c.currentState()) }
 
-func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
+func (c *remapComponent) apply(config device.RemapConfig) RemapSnapshot {
 	// Freeze caller-owned data before waiting on either serialization lock.
 	config = cloneRemapConfig(config)
 	s := c.service
@@ -83,7 +83,7 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 	state := c.stateForBinding(binding)
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
-	if err := x6.NewRemapOperation().Validate(config); err != nil {
+	if err := s.model.RemapOperation().Validate(config); err != nil {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
@@ -134,7 +134,7 @@ func (c *remapComponent) apply(config x6.RemapConfig) RemapSnapshot {
 
 // The caller holds operationMu and state.applyMu. Inventory serializes the
 // physical write; saveDeviceConfig serializes shared DeviceConfig mutations.
-func (c *remapComponent) applyBound(binding Binding, state *remapState, revision uint64, pending x6.RemapConfig) {
+func (c *remapComponent) applyBound(binding Binding, state *remapState, revision uint64, pending device.RemapConfig) {
 	s := c.service
 	if !s.bindingCurrent(binding) {
 		failRemap(state, StaleBinding)
@@ -147,7 +147,7 @@ func (c *remapComponent) applyBound(binding Binding, state *remapState, revision
 		failRemap(state, StaleBinding)
 		return
 	}
-	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewRemapOperation(), pending); err != nil {
+	if err := inventory.ApplyOperationBound(context.Background(), binding, s.model.RemapOperation(), pending); err != nil {
 		if errors.Is(err, mouse.ErrStaleBinding) || errors.Is(err, mouse.ErrRevisionChanged) {
 			failRemap(state, StaleBinding)
 		} else {
@@ -171,7 +171,7 @@ func (c *remapComponent) applyBound(binding Binding, state *remapState, revision
 	}
 	deviceErr := error(nil)
 	if persistence != nil {
-		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &pending })
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *device.DeviceConfig) { config.Remap = &pending })
 	}
 	profileErr := s.saveActiveProfile(binding, func(p *profileConfiguration) {
 		remapPending := cloneRemapConfig(pending)
@@ -225,7 +225,7 @@ func (c *remapComponent) retryBound(binding Binding, state *remapState) RemapSna
 	}
 	deviceErr := error(nil)
 	if persistence != nil {
-		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.Remap = &retry })
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *device.DeviceConfig) { config.Remap = &retry })
 	}
 	profileErr := s.saveActiveProfile(binding, func(p *profileConfiguration) {
 		remapRetry := cloneRemapConfig(retry)
@@ -261,7 +261,7 @@ func (c *remapComponent) reconcileFactoryReset() {
 	state := c.currentState()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	defaults := x6.DefaultRemapConfig()
+	defaults := device.DefaultRemapConfig()
 	state.pending, state.applied, state.retry = cloneRemapConfig(defaults), cloneRemapConfig(defaults), nil
 	state.revision++
 	state.macroPending, state.macroApplied, state.macroProgress = nil, nil, mouse.MacroProgress{}
@@ -293,12 +293,12 @@ func pickMacroDraft(m map[uint8]*MacroDraft) *MacroDraft {
 }
 
 func remapSnapshotLocked(state *remapState) RemapSnapshot {
-	actions := []x6.RemapAction{
-		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
-		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
-		x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus,
-		x6.RemapBrowserCalculator, x6.RemapBrowserEmail, x6.RemapBrowserForward, x6.RemapBrowserBackward, x6.RemapBrowserStop,
-		x6.RemapBrowserMyComputer, x6.RemapBrowserRefresh, x6.RemapBrowserHome, x6.RemapBrowserSearch,
+	actions := []device.RemapAction{
+		device.RemapOff, device.RemapLeft, device.RemapRight, device.RemapMiddle, device.RemapForward, device.RemapBackward, device.RemapDoubleClick, device.RemapFire,
+		device.RemapMediaPlayer, device.RemapPlayPause, device.RemapStop, device.RemapPreviousTrack, device.RemapNextTrack, device.RemapVolumeUp, device.RemapVolumeDown, device.RemapMute,
+		device.RemapScrollUp, device.RemapScrollDown, device.RemapDPICycle, device.RemapDPIPlus, device.RemapDPIMinus,
+		device.RemapBrowserCalculator, device.RemapBrowserEmail, device.RemapBrowserForward, device.RemapBrowserBackward, device.RemapBrowserStop,
+		device.RemapBrowserMyComputer, device.RemapBrowserRefresh, device.RemapBrowserHome, device.RemapBrowserSearch,
 	}
 	drafts := make(map[uint8]MacroDraft, len(state.macroPendingMap))
 	for b, d := range state.macroPendingMap {
@@ -338,10 +338,10 @@ func remapSnapshotLocked(state *remapState) RemapSnapshot {
 	}
 }
 
-func cloneRemapConfig(config x6.RemapConfig) x6.RemapConfig {
-	return x6.RemapConfig{Buttons: append([]x6.RemapButton(nil), config.Buttons...)}
+func cloneRemapConfig(config device.RemapConfig) device.RemapConfig {
+	return device.RemapConfig{Buttons: append([]device.RemapButton(nil), config.Buttons...)}
 }
-func remapConfigsEqual(left, right x6.RemapConfig) bool {
+func remapConfigsEqual(left, right device.RemapConfig) bool {
 	if len(left.Buttons) != len(right.Buttons) {
 		return false
 	}

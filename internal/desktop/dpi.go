@@ -2,10 +2,10 @@ package desktop
 
 import (
 	"context"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"log/slog"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 // dpiComponent owns the DPI state transitions; Service remains the Wails facade.
@@ -45,7 +45,7 @@ func (c *dpiComponent) reconcileFactoryReset() {
 	state := c.currentState()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	factory := x6.DocumentedResetDPIConfig()
+	factory := device.DocumentedResetDPIConfig()
 	state.applied, state.pending = factory, factory
 	state.revision++
 	state.firmware, state.persistence, state.retry, state.err = "success", "success", nil, Error{}
@@ -97,7 +97,7 @@ func (c *dpiComponent) stage(config DPIConfig) Snapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	next := fromDTO(config)
-	if _, err := x6.EncodeDPIReport(next); err != nil {
+	if err := c.service.model.DPIOperation().Validate(next); err != nil {
 		state.err = Error{Code: InvalidConfiguration}
 		return snapshotLocked(state)
 	}
@@ -204,7 +204,7 @@ func (c *dpiComponent) applyFailure(err error) Snapshot {
 	return snapshotLocked(state)
 }
 
-func (c *dpiComponent) applyBound(binding Binding, revision uint64, config x6.DPIConfig) error {
+func (c *dpiComponent) applyBound(binding Binding, revision uint64, config device.DPIConfig) error {
 	s := c.service
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
