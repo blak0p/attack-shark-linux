@@ -8,7 +8,7 @@ metadata:
 ---
 
 ## Activation Contract
-Load when a function in `internal/desktop`, `internal/x6`, `internal/mouse`, or
+Load when a function in `internal/desktop`, `internal/attackshark/x6`, `internal/mouse`, or
 `internal/hidlinux` returns an error that may reach the UI, or when adding a new
 failure mode.
 

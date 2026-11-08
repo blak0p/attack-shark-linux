@@ -23,7 +23,7 @@ func errorCode(err error, status bool) ErrorCode {
 }
 ```
 
-The domain layer preserves the chain with `%w` (`internal/x6/dpi.go:16`):
+The domain layer preserves the chain with `%w` (`internal/attackshark/x6/dpi.go:16`):
 
 ```go
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
@@ -74,11 +74,11 @@ order is always **state lock, then service lock**, never reversed
 ## 5. Copy before crossing a boundary
 
 `desktop.LightingEffects()` returns a deep copy so callers cannot mutate the
-internal catalog (`internal/x6/lighting.go:72`); `snapshotLocked` copies under
+internal catalog (`internal/attackshark/x6/lighting.go:72`); `snapshotLocked` copies under
 lock before handing data to the UI (see `snapshot-dto`).
 
 ## 6. Naming without stutter
 
-`DPIConfig` lives in package `x6` (`internal/x6/dpi.go:10` re-exports
+`DPIConfig` lives in package `x6` (`internal/attackshark/x6/dpi.go:10` re-exports
 `protocol.DPIConfig` as `x6.DPIConfig`) — not `x6.X6DPIConfig`. Getters are
 unprefixed (`Store.Load`, `Service.Selection`).

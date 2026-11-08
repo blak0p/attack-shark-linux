@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type recordingSwitchCommand struct {
@@ -39,7 +40,7 @@ func (c *recordingSwitchCommand) SendAndAwaitBound(_ context.Context, _ mouse.Bi
 	return nil
 }
 
-func (c *recordingSwitchCommand) SendX6MacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.MacroAssignment, _ macros.X6Sequence) (mouse.MacroProgress, error) {
+func (c *recordingSwitchCommand) SendX6MacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.MacroAssignment, _ macrocodec.X6Sequence) (mouse.MacroProgress, error) {
 	c.calls++
 	if c.failAtCall != 0 && c.calls == c.failAtCall {
 		if c.failWithErr != nil {

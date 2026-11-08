@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 type macroNode struct {
@@ -348,8 +349,8 @@ func TestCompositeLocalQueuedFreezeAndRevalidation(t *testing.T) {
 func TestCompositeMultiSequenceOrderAndProgress(t *testing.T) {
 	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
 	cfg := x6.DefaultRemapConfig()
-	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
-	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	s1 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
 	items := []mouse.MacroSequenceItem{
 		{Button: 6, Sequence: s1},
 		{Button: 7, Sequence: s2},
@@ -359,8 +360,8 @@ func TestCompositeMultiSequenceOrderAndProgress(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	report, _ := x6.EncodeMultiMacroAssignmentReport(cfg, []uint8{6, 7})
-	chunks1, _ := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: 5, Sequence: s1})
-	chunks2, _ := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: 6, Sequence: s2})
+	chunks1, _ := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: 5, Sequence: s1})
+	chunks2, _ := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: 6, Sequence: s2})
 	wantWrites := append([][]byte{report}, chunks1...)
 	wantWrites = append(wantWrites, chunks2...)
 	if !reflect.DeepEqual(n.writes, wantWrites) {
@@ -373,8 +374,8 @@ func TestCompositeMultiSequenceOrderAndProgress(t *testing.T) {
 
 func TestCompositeMultiSequenceGuards(t *testing.T) {
 	cfg := x6.DefaultRemapConfig()
-	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
-	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	s1 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
 	items := []mouse.MacroSequenceItem{
 		{Button: 6, Sequence: s1},
 		{Button: 7, Sequence: s2},
@@ -447,13 +448,13 @@ func onlyReport08(writes [][]byte) bool {
 }
 
 var macroACK = []byte{3, 0x10, 0x50, 0, 9}
-var macroClick = macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
+var macroClick = macrocodec.X6Click{Button: macros.MouseLeft, Repeat: 1}
 
 func TestCompositePlaybackModes(t *testing.T) {
 	for _, mode := range []uint8{1, 2, 3, 255} {
 		b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
 		a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
-		s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft}, Repeat: 1, Mode: mode}
+		s := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft}, Repeat: 1, Mode: mode}
 		p, err := b.sendX6MacroSequenceAssignmentBound(context.Background(), binding, a, s, noMacroWait)
 		if mode > 2 {
 			if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
@@ -464,7 +465,7 @@ func TestCompositePlaybackModes(t *testing.T) {
 		if err != nil || len(n.writes) != 4 || p.Upload != mouse.MacroUploadConfirmed {
 			t.Fatal(p, err)
 		}
-		got, err := macros.DecodeX6SequenceUpload(n.writes[1:])
+		got, err := macrocodec.DecodeX6SequenceUpload(n.writes[1:])
 		if err != nil || got.Sequence.Mode != mode || got.Sequence.Repeat != 1 || n.writes[3][1] != 12 {
 			t.Fatal(got, err)
 		}
@@ -474,10 +475,10 @@ func TestCompositePlaybackModes(t *testing.T) {
 func TestCompositeSequenceOrderAndProgress(t *testing.T) {
 	b, binding, n, _ := macroFixture(t, [][]byte{{3, 0x10, 0x50, 0, 8}, macroACK})
 	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
-	s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 2}
+	s := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 2}
 	p, err := b.sendX6MacroSequenceAssignmentBound(context.Background(), binding, a, s, noMacroWait)
 	r, _ := x6.EncodeMacroAssignmentReport(a)
-	chunks, _ := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: 6, Sequence: s})
+	chunks, _ := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: 6, Sequence: s})
 	if err != nil || !reflect.DeepEqual(n.writes, append([][]byte{r}, chunks...)) || p.Upload != mouse.MacroUploadConfirmed {
 		t.Fatal(p, err, n.writes)
 	}
@@ -485,8 +486,8 @@ func TestCompositeSequenceOrderAndProgress(t *testing.T) {
 
 func TestCompositeSequenceGuards(t *testing.T) {
 	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
-	s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
-	for _, invalid := range []macros.X6Sequence{{}, {Buttons: s.Buttons, Repeat: 256}, {Buttons: []macros.EventType{"unknown"}, Repeat: 1}, {Buttons: append(s.Buttons, macros.MouseLeft), Repeat: 1}} {
+	s := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	for _, invalid := range []macrocodec.X6Sequence{{}, {Buttons: s.Buttons, Repeat: 256}, {Buttons: []macros.EventType{"unknown"}, Repeat: 1}, {Buttons: append(s.Buttons, macros.MouseLeft), Repeat: 1}} {
 		b, binding, n, _ := macroFixture(t, nil)
 		p, err := b.sendX6MacroSequenceAssignmentBound(context.Background(), binding, a, invalid, noMacroWait)
 		if err == nil || len(n.writes) != 0 || p != (mouse.MacroProgress{}) {
@@ -541,7 +542,7 @@ func TestCompositeMacroOrderAndProgress(t *testing.T) {
 		progress, err := b.sendX6MacroAssignmentBound(context.Background(), binding, assignment, macroClick, noMacroWait)
 		report, _ := x6.EncodeMacroAssignmentReport(assignment)
 		destination, _ := x6.MacroDestinationForButton(button)
-		chunks, _ := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: macroClick})
+		chunks, _ := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: macroClick})
 		want := append([][]byte{report}, chunks...)
 		if err != nil || !reflect.DeepEqual(n.writes, want) || progress.Assignment != mouse.MacroAssignmentACKConfirmed || progress.Upload != mouse.MacroUploadConfirmed {
 			t.Fatalf("button %d: %+v %v", button, progress, err)
@@ -668,7 +669,7 @@ func TestCompositeMacroPhaseGuards(t *testing.T) {
 }
 
 func TestMacroInvalidBeforeIO(t *testing.T) {
-	for _, click := range []macros.X6Click{{}, {Button: macros.MouseLeft, Repeat: 256}, {Button: macros.MouseRight, Repeat: 0}} {
+	for _, click := range []macrocodec.X6Click{{}, {Button: macros.MouseLeft, Repeat: 256}, {Button: macros.MouseRight, Repeat: 0}} {
 		if err := (&HidrawBackend{}).SendX6MacroBound(context.Background(), mouse.Binding{}, click); err == nil {
 			t.Fatal("invalid template accepted")
 		}
@@ -685,7 +686,7 @@ func TestMacroBatchAndDispatch(t *testing.T) {
 				b.activePath = binding.Path
 				b.listener = func(r []byte) bool { seen = append(seen, r); return true }
 				waits := 0
-				click := macros.X6Click{Button: button, Repeat: repeat}
+				click := macrocodec.X6Click{Button: button, Repeat: repeat}
 				err := b.sendX6MacroBound(context.Background(), binding, click, func(ctx context.Context, d time.Duration) error {
 					waits++
 					if d != 1200*time.Millisecond || len(n.writes) != waits {
@@ -693,7 +694,7 @@ func TestMacroBatchAndDispatch(t *testing.T) {
 					}
 					return nil
 				})
-				want, _ := macros.EncodeX6Reports(click)
+				want, _ := macrocodec.EncodeX6Reports(click)
 				if err != nil || !reflect.DeepEqual(n.writes, want) || !reflect.DeepEqual(seen, reports) || waits != 2 || !n.isClosed() {
 					t.Fatalf("batch failed: %v", err)
 				}

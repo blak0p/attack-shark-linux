@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -87,18 +88,18 @@ const (
 
 // TargetedMacroCommand is deliberately separate from generic report admission.
 type TargetedMacroCommand interface {
-	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error)
+	SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macrocodec.X6Click) (MacroProgress, error)
 }
 
 // MacroSequenceItem associates one button with an offline sequence.
 type MacroSequenceItem struct {
 	Button   uint8
-	Sequence macros.X6Sequence
+	Sequence macrocodec.X6Sequence
 }
 
 // TargetedMacroSequenceCommand is additive: legacy click-only commands remain valid.
 type TargetedMacroSequenceCommand interface {
-	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Sequence) (MacroProgress, error)
+	SendX6MacroSequenceAssignmentBound(context.Context, Binding, x6.MacroAssignment, macrocodec.X6Sequence) (MacroProgress, error)
 	SendX6MultiMacroSequenceAssignmentBound(context.Context, Binding, x6.RemapConfig, []MacroSequenceItem) (MacroProgress, error)
 }
 
@@ -148,7 +149,7 @@ func (s *TargetedService) ApplyMultiMacroLocalAssignmentBound(ctx context.Contex
 		if err != nil {
 			return empty, err
 		}
-		if _, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode); err != nil {
+		if _, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode); err != nil {
 			return empty, err
 		}
 	}
@@ -183,7 +184,7 @@ func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Con
 		if err != nil {
 			return empty, err
 		}
-		if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence}); err != nil {
+		if _, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: item.Sequence}); err != nil {
 			return empty, err
 		}
 		clonedSeq := item.Sequence
@@ -205,7 +206,7 @@ func (s *TargetedService) ApplyMultiMacroSequenceAssignmentBound(ctx context.Con
 	})
 }
 
-func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (MacroProgress, error) {
+func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, sequence macrocodec.X6Sequence) (MacroProgress, error) {
 	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
 	sequence.Buttons = append([]macros.EventType(nil), sequence.Buttons...)
 	empty := MacroProgress{}
@@ -216,7 +217,7 @@ func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context,
 	if err != nil {
 		return empty, err
 	}
-	if _, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence}); err != nil {
+	if _, err := macrocodec.EncodeX6SequenceUpload(macrocodec.X6SequenceUpload{Destination: destination, Sequence: sequence}); err != nil {
 		return empty, err
 	}
 	command, ok := s.command.(TargetedMacroSequenceCommand)
@@ -228,7 +229,7 @@ func (s *TargetedService) ApplyMacroSequenceAssignmentBound(ctx context.Context,
 	})
 }
 
-func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macros.X6Click) (MacroProgress, error) {
+func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding Binding, assignment x6.MacroAssignment, click macrocodec.X6Click) (MacroProgress, error) {
 	assignment.Config.Buttons = append([]x6.RemapButton(nil), assignment.Config.Buttons...)
 	empty := MacroProgress{}
 	if _, err := x6.EncodeMacroAssignmentReport(assignment); err != nil {
@@ -238,7 +239,7 @@ func (s *TargetedService) ApplyMacroAssignmentBound(ctx context.Context, binding
 	if err != nil {
 		return empty, err
 	}
-	if _, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click}); err != nil {
+	if _, err := macrocodec.EncodeX6Upload(macrocodec.X6Upload{Destination: destination, Click: click}); err != nil {
 		return empty, err
 	}
 	command, ok := s.command.(TargetedMacroCommand)

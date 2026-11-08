@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 // dpiComponent owns the DPI state transitions; Service remains the Wails facade.

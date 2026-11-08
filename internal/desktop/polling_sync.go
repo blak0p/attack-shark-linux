@@ -3,7 +3,7 @@ package desktop
 import (
 	"sync"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type BoundPollingSync func(Binding, uint64, x6.PollingRate) error
