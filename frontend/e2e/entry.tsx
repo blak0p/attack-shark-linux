@@ -144,7 +144,7 @@ const service = {
     macros.set(id, macro); macroCalls.push("UpdateMacro"); return structuredClone(macro);
   },
   DeleteMacro: async (id: string) => { readMacro(id); macros.delete(id); macroCalls.push("DeleteMacro"); },
-  GetApplicationVersion: undefined, CheckForUpdate: undefined,
+  GetApplicationVersion: undefined, GetInstallSource: undefined, CheckForUpdate: undefined,
   RefreshStatus: async () => currentDPI, GetSnapshot: async () => currentDPI,
   RefreshInventory: async () => inventory(),
   SelectDevice: async (id: DeviceID) => {
