@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
 	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
@@ -40,35 +39,7 @@ func (c *recordingSwitchCommand) SendAndAwaitBound(_ context.Context, _ mouse.Bi
 	return nil
 }
 
-func (c *recordingSwitchCommand) SendX6MacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.MacroAssignment, _ macrocodec.X6Sequence) (mouse.MacroProgress, error) {
-	c.calls++
-	if c.failAtCall != 0 && c.calls == c.failAtCall {
-		if c.failWithErr != nil {
-			return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, c.failWithErr
-		}
-		return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, errors.New("macro ack failed")
-	}
-	if c.during != nil {
-		c.during()
-	}
-	return mouse.MacroProgress{Upload: mouse.MacroUploadConfirmed, Assignment: mouse.MacroAssignmentACKConfirmed}, nil
-}
-
-func (c *recordingSwitchCommand) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.RemapConfig, _ []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
-	c.calls++
-	if c.failAtCall != 0 && c.calls == c.failAtCall {
-		if c.failWithErr != nil {
-			return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, c.failWithErr
-		}
-		return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, errors.New("macro ack failed")
-	}
-	if c.during != nil {
-		c.during()
-	}
-	return mouse.MacroProgress{Upload: mouse.MacroUploadConfirmed, Assignment: mouse.MacroAssignmentACKConfirmed}, nil
-}
-
-func (c *recordingSwitchCommand) SendX6MultiMacroLocalAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.RemapConfig, _ []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
+func (c *recordingSwitchCommand) SendBatchBound(_ context.Context, _ mouse.Binding, _ mouse.Batch) (mouse.MacroProgress, error) {
 	c.calls++
 	if c.failAtCall != 0 && c.calls == c.failAtCall {
 		if c.failWithErr != nil {

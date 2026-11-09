@@ -8,23 +8,19 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 func TestAdapterSendAndAwaitWritesEncodedDPIAndFiltersACK(t *testing.T) {
-	want, err := protocol.EncodeDPIReport(protocol.DefaultDPIConfig())
-	if err != nil {
-		t.Fatalf("EncodeDPIReport() error = %v", err)
-	}
+	want := fixturePayload(fixtureConfigID, fixtureConfigLength)
 	cleanup := make([]string, 0, 3)
 	claim := &applyClaim{reports: [][]byte{{0x03, 0x10, 0x40, 0x00, 8}, {0x03, 0x10, 0x50, 0x00, 0x04}}, cleanup: &cleanup}
 	adapter := applyAdapter(claim)
 
 	var seen [][]byte
-	err = adapter.SendAndAwait(context.Background(), want, func(report []byte) bool {
+	err := adapter.SendAndAwait(context.Background(), want, func(report []byte) bool {
 		seen = append(seen, append([]byte(nil), report...))
-		return !protocol.MatchesDPIACK(report)
+		return !fixtureACK(4, report)
 	})
 	if err != nil {
 		t.Fatalf("SendAndAwait() error = %v", err)
@@ -32,8 +28,8 @@ func TestAdapterSendAndAwaitWritesEncodedDPIAndFiltersACK(t *testing.T) {
 	if !bytes.Equal(claim.written, want) {
 		t.Fatalf("written report = %x, want %x", claim.written, want)
 	}
-	if len(claim.written) != protocol.DPIReportLength {
-		t.Fatalf("written report length = %d, want %d", len(claim.written), protocol.DPIReportLength)
+	if len(claim.written) != fixtureConfigLength {
+		t.Fatalf("written report length = %d, want %d", len(claim.written), fixtureConfigLength)
 	}
 	if claim.requestType != 0x21 || claim.request != 0x09 || claim.value != 0x0304 || claim.index != 2 {
 		t.Fatalf("SET_REPORT setup = (%#x, %#x, %#x, %#x), want (0x21, 0x09, 0x0304, 0x2)", claim.requestType, claim.request, claim.value, claim.index)
@@ -51,7 +47,7 @@ func TestAdapterSendAndAwaitRevalidatesBeforeWriting(t *testing.T) {
 	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: []byte{0x05, 0x01, 0x09, 0x02}}, fixtureRegistry(t))
 	adapter.sources[candidateKey(validCandidate())] = validCandidate()
 
-	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return true })
+	err := adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func([]byte) bool { return true })
 	if !IsErrorKind(err, Mismatch) {
 		t.Fatalf("SendAndAwait() error = %v, want typed mismatch", err)
 	}
@@ -66,8 +62,8 @@ func TestAdapterSendAndAwaitDiscoversEmptyCacheBeforeWriting(t *testing.T) {
 	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate()}}
 	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
-	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func(report []byte) bool {
-		return !protocol.MatchesDPIACK(report)
+	err := adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func(report []byte) bool {
+		return !fixtureACK(4, report)
 	})
 	if err != nil {
 		t.Fatalf("SendAndAwait() error = %v", err)
@@ -87,7 +83,7 @@ func TestAdapterSendAndAwaitReturnsDiscoveryFailureBeforeTransfer(t *testing.T) 
 	discovery := &fakeDiscovery{err: wantErr}
 	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
-	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
+	err := adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func([]byte) bool { return false })
 	if !IsErrorKind(err, IO) || !errors.Is(err, wantErr) {
 		t.Fatalf("SendAndAwait() error = %v, want I/O wrapping %v", err, wantErr)
 	}
@@ -100,7 +96,7 @@ func TestAdapterSendAndAwaitPreservesDiagnosticOperation(t *testing.T) {
 	claim := &applyClaim{readErr: context.DeadlineExceeded}
 	adapter := applyAdapter(claim)
 
-	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return true })
+	err := adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func([]byte) bool { return true })
 	if got, want := DiagnosticOperation(err), "ack_failure"; got != want {
 		t.Fatalf("DiagnosticOperation() = %q, want %q", got, want)
 	}
@@ -117,7 +113,7 @@ func TestAdapterSendAndAwaitRejectsMultipleDiscoveredCandidatesBeforeTransfer(t 
 	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate(), second}}
 	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
-	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
+	err := adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func([]byte) bool { return false })
 	if !IsErrorKind(err, Mismatch) {
 		t.Fatalf("SendAndAwait() error = %v, want typed mismatch", err)
 	}
@@ -142,7 +138,7 @@ func TestAdapterSendAndAwaitMapsWaitErrors(t *testing.T) {
 			claim := &applyClaim{readErr: tt.err}
 			adapter := applyAdapter(claim)
 
-			err := adapter.SendAndAwait(tt.ctx, make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
+			err := adapter.SendAndAwait(tt.ctx, make([]byte, fixtureConfigLength), func([]byte) bool { return false })
 			if !IsErrorKind(err, tt.kind) || !errors.Is(err, tt.err) {
 				t.Fatalf("SendAndAwait() error = %v, want %s wrapping %v", err, tt.kind, tt.err)
 			}
@@ -157,7 +153,7 @@ func TestAdapterSendAndAwaitDoesNotOverlapStatusRead(t *testing.T) {
 
 	commandDone := make(chan error, 1)
 	go func() {
-		commandDone <- adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func(report []byte) bool { return !protocol.MatchesDPIACK(report) })
+		commandDone <- adapter.SendAndAwait(context.Background(), make([]byte, fixtureConfigLength), func(report []byte) bool { return !fixtureACK(4, report) })
 	}()
 	<-claim.writeEntered
 

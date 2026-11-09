@@ -3,12 +3,13 @@ package desktop
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func remapMultiMacroFixture(t *testing.T) (*Service, *macroCommandFake, macros.Macro, macros.Macro) {
@@ -72,11 +73,11 @@ func TestSimultaneousMultiMacroStagingAndApply(t *testing.T) {
 	if applied.MacroApplied == nil {
 		t.Fatalf("MacroApplied backwards compatibility broken")
 	}
-	if cmd.composite != 1 || len(cmd.items) != 2 {
-		t.Fatalf("expected 1 composite call with 2 items, got calls=%d items=%d", cmd.composite, len(cmd.items))
+	if cmd.composite != 1 {
+		t.Fatalf("expected 1 composite call, got %d", cmd.composite)
 	}
-	if cmd.items[0].Button != 6 || cmd.items[1].Button != 7 {
-		t.Fatalf("command items buttons mismatch: %+v", cmd.items)
+	if !reflect.DeepEqual(cmd.batch.Setup, multiSetup(t, s7.Pending, 6, 7)) {
+		t.Fatalf("command buttons/config mismatch: %x", cmd.batch.Setup)
 	}
 
 	// 3. Clear one button's macro while keeping the other

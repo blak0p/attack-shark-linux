@@ -179,7 +179,6 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 	}
 	buttons := make([]uint8, len(drafts))
 	seen := make(map[uint8]bool, len(drafts))
-	legacy := true
 	for i, draft := range drafts {
 		if draft == nil || seen[draft.Button] {
 			return InvalidConfiguration
@@ -193,8 +192,6 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 		if _, err := macrocodec.EncodeX6LocalUpload(destination, draft.Events, draft.Repeat, draft.Mode); err != nil {
 			return InvalidConfiguration
 		}
-		_, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
-		legacy = legacy && valid
 	}
 	if _, err := protocol.EncodeMultiMacroAssignmentReport(pending, buttons); err != nil {
 		return InvalidConfiguration
@@ -205,7 +202,7 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 	if inventory == nil {
 		return StaleBinding
 	}
-	if (legacy && !inventory.MacroSequenceAssignmentsAvailable()) || (!legacy && !inventory.MacroLocalAssignmentsAvailable()) {
+	if !inventory.BatchAvailable() {
 		logApplyError(ApplyFailed, "macro_assignments_unavailable", nil)
 		return ApplyFailed
 	}
@@ -238,14 +235,14 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		failRemap(state, StaleBinding)
 		return
 	}
-	items := make([]mouse.MacroSequenceItem, len(drafts))
-	localItems := make([]mouse.MacroLocalItem, len(drafts))
+	items := make([]x6.MacroSequenceItem, len(drafts))
+	localItems := make([]x6.MacroLocalItem, len(drafts))
 	legacy := true
 	for i, draft := range drafts {
 		sequence, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
 		legacy = legacy && valid
-		localItems[i] = mouse.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
-		items[i] = mouse.MacroSequenceItem{
+		localItems[i] = x6.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
+		items[i] = x6.MacroSequenceItem{
 			Button:   draft.Button,
 			Sequence: sequence,
 		}
@@ -253,9 +250,9 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 	var progress mouse.MacroProgress
 	var err error
 	if legacy {
-		progress, err = inventory.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, pending, items)
+		progress, err = x6.ApplyMultiMacroSequenceAssignmentBound(context.Background(), inventory, binding, pending, items)
 	} else {
-		progress, err = inventory.ApplyMultiMacroLocalAssignmentBound(context.Background(), binding, pending, localItems)
+		progress, err = x6.ApplyMultiMacroLocalAssignmentBound(context.Background(), inventory, binding, pending, localItems)
 	}
 	libraryCurrent := true
 	for _, draft := range drafts {

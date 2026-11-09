@@ -3,8 +3,8 @@ package x6
 import (
 	"fmt"
 
-	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -43,6 +43,12 @@ func (Profile) HIDFacts() mouse.HIDFacts {
 		StatusInput:             transport.InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83},
 		ConfigurationReportSize: protocol.DPIReportLength,
 		Connection:              transport.Dongle,
+		FeatureReports: []mouse.FeatureReport{
+			{ID: 0x04, Length: protocol.DPIReportLength},
+			{ID: 0x06, Length: protocol.PollingReportLength},
+			{ID: 0x05, Length: protocol.LightingReportLength},
+			{ID: 0x08, Length: protocol.RemapReportLength},
+		},
 	}
 }
 func (Profile) Codec() mouse.Codec { return dpiCodec{} }
