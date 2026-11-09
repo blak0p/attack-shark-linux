@@ -24,7 +24,7 @@ The user interface follows GNOME HIG design principles with an uncluttered dark 
 
 - **Navigation Rail (Left Sidebar)**: Switch between the five core configuration panels:
   - **◉ Performance**: DPI stages, polling rate, and normal sleep timeout.
-  - **☼ Lighting**: RGB effect modes, speed variants, and color presets.
+  - **☼ Lighting**: RGB effect modes, speed variants, and a custom color picker.
   - **⌁ Controls**: Sensor enhancements (Angle snap, Ripple control, Lift-off distance) and key response debounce.
   - **↺ Button remapping**: 7-button customization with staging and draft confirmation.
   - **▣ Device**: Hardware status, live battery monitoring, device inventory, and factory reset.
@@ -104,8 +104,8 @@ The **Lighting** view configures the RGB LED lighting strip and illuminated logo
 ### 2. Speed Variants & Color Templates
 
 - **Animation Speed Slider**: For animated lighting effects, adjust the animation speed step-by-step.
-- **Color Presets**: Only colors the selected effect really supports are shown. `Breathing` offers green, violet, blue, and cyan; `Fixed` uses the custom color picker only, which starts at green. Effects without a color choice show no swatches.
-- **Custom Color**: `Fixed` and `Breathing` also accept any color from the **Custom color** picker. The app writes it to the device as RGB and saves it in the active profile; choosing a preset again clears it.
+- **Color**: `Fixed` and `Breathing` show only the **Custom color** picker, which starts at the effect's default color (green). Effects without a color choice show no color controls.
+- **Custom Color**: the picker accepts any color. The app writes it to the device as RGB and saves it in the active profile.
 - **Feedback**: Uses the same progress indicator and brief `Applied` confirmation as other settings.
 
 ---
