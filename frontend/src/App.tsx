@@ -72,6 +72,9 @@ export function App({ service }: { service: DesktopService }) {
     return () => { live = false; };
   }, [service]);
   const deviceName = deviceInfo?.Name;
+  useEffect(() => {
+    if (deviceName) document.title = deviceName;
+  }, [deviceName]);
   const {
     snapshot,
     polling,

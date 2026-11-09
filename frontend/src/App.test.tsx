@@ -27,6 +27,7 @@ it("shows the model name and key table the backend delivers", async () => {
   render(<App service={service} />);
   expect((await screen.findAllByText("Test Model Z")).length).toBeGreaterThan(0);
   expect(screen.queryByText("Attack Shark X6")).not.toBeInTheDocument();
+  await waitFor(() => expect(document.title).toBe("Test Model Z"));
   expect(deviceKeyCode("KeyA")).toBe(4);
   expect(deviceKeyCode("KeyB")).toBeUndefined();
   setDeviceKeyCodes(expected);
