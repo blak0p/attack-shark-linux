@@ -155,8 +155,8 @@ export function App({ service }: { service: DesktopService }) {
   );
   const slots = lightingSlots(lightingEffect);
   const customColor = lightingEffect?.CustomColor === true;
-  // A single preset duplicates the custom picker's default, so hide it.
-  const presetSlots = customColor && slots.length <= 1 ? [] : slots;
+  // Effects that accept any color show only the picker; presets are redundant.
+  const presetSlots = customColor ? [] : slots;
   const pickerColor = (
     lighting?.Pending.Color ??
     slots.find((slot) => slot.templateID === lighting?.Pending.TemplateID)?.color ??
