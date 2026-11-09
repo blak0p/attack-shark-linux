@@ -16,6 +16,9 @@ const (
 	pollingReportLength  = 9
 	lightingReportLength = 13
 	remapReportLength    = 59
+	// dpiReportLength is a protocol fact still owned here until the command
+	// interface moves into the model driver.
+	dpiReportLength = 56
 )
 
 // SendAndAwaitBound revalidates one captured binding and uses only its matching
@@ -49,7 +52,7 @@ func (b *HidrawBackend) SendAndAwaitBound(ctx context.Context, binding mouse.Bin
 	if !ok || candidateKey(candidate) != binding.Path || candidate.VendorID != binding.ID.VendorID || candidate.ProductID != binding.ID.ProductID || !serialMatches {
 		return mouse.ErrStaleBinding
 	}
-	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err != nil {
+	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, statusInputFor(b.registry, candidate.VendorID, candidate.ProductID)); err != nil {
 		return mouse.ErrStaleBinding
 	}
 	path, err := b.hidrawPath(candidate)

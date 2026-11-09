@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
-	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 type targetedHidrawInventory struct{ *HidrawBackend }
 
 func (i targetedHidrawInventory) Enumerate(ctx context.Context) ([]transport.Candidate, error) {
-	return i.HidrawBackend.Enumerate(ctx, transport.X6Match())
+	return i.HidrawBackend.Enumerate(ctx, fixtureDongleMatch())
 }
 
 type routedHidrawOpener struct {
@@ -84,7 +84,7 @@ func TestTargetedPollingRoutesToBoundHidrawNode(t *testing.T) {
 	path := filepath.Join(root, "dev/hidraw4")
 	defaultNode := newCommandHidrawNode(nil)
 	opener := &routedHidrawOpener{nodes: map[string]*commandHidrawNode{filepath.Join(root, "dev/hidraw3"): defaultNode, path: node}}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestTargetedDPIRoutesToSelectedHidrawNode(t *testing.T) {
 	})
 	defaultNode := newCommandHidrawNode(nil)
 	opener := &routedHidrawOpener{nodes: map[string]*commandHidrawNode{filepath.Join(root, "dev/hidraw3"): defaultNode, path: node}}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 30 * time.Millisecond, opener: opener}
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestTargetedPollingDoesNotAcceptUnrelatedACK(t *testing.T) {
 	root := fixtureRoot(t)
 	node := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
 	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestTargetedPollingFailsClosedBeforeNodeOpen(t *testing.T) {
 			root := fixtureRoot(t)
 			node := newCommandHidrawNode(nil)
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-			backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
+			backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: 20 * time.Millisecond, opener: opener}
 			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
 			if err != nil {
 				t.Fatal(err)
@@ -241,7 +241,7 @@ func TestTargetedPollingFailsClosedBeforeNodeOpen(t *testing.T) {
 				tc.mutate(&binding, root)
 			}
 			if tc.name == "stale serial" {
-				fresh, err := backend.Enumerate(context.Background(), transport.X6Match())
+				fresh, err := backend.Enumerate(context.Background(), fixtureDongleMatch())
 				if err != nil || len(fresh) != 1 || fresh[0].Serial != "replacement" || binding.ID.Serial == fresh[0].Serial {
 					t.Fatalf("fresh inventory = %#v, %v; selected binding = %#v; want changed serial", fresh, err, binding)
 				}

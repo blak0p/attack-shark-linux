@@ -48,7 +48,7 @@ func TestAdapterSendAndAwaitWritesEncodedDPIAndFiltersACK(t *testing.T) {
 
 func TestAdapterSendAndAwaitRevalidatesBeforeWriting(t *testing.T) {
 	claim := &applyClaim{}
-	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: []byte{0x05, 0x01, 0x09, 0x02}})
+	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: []byte{0x05, 0x01, 0x09, 0x02}}, fixtureRegistry(t))
 	adapter.sources[candidateKey(validCandidate())] = validCandidate()
 
 	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return true })
@@ -64,7 +64,7 @@ func TestAdapterSendAndAwaitDiscoversEmptyCacheBeforeWriting(t *testing.T) {
 	claim := &applyClaim{reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}}}
 	usb := &applyUSB{claim: claim}
 	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate()}}
-	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
 	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func(report []byte) bool {
 		return !protocol.MatchesDPIACK(report)
@@ -85,7 +85,7 @@ func TestAdapterSendAndAwaitReturnsDiscoveryFailureBeforeTransfer(t *testing.T) 
 	claim := &applyClaim{}
 	usb := &applyUSB{claim: claim}
 	discovery := &fakeDiscovery{err: wantErr}
-	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
 	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
 	if !IsErrorKind(err, IO) || !errors.Is(err, wantErr) {
@@ -115,7 +115,7 @@ func TestAdapterSendAndAwaitRejectsMultipleDiscoveredCandidatesBeforeTransfer(t 
 	claim := &applyClaim{}
 	usb := &applyUSB{claim: claim}
 	discovery := &fakeDiscovery{candidates: []Candidate{validCandidate(), second}}
-	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor})
+	adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 
 	err := adapter.SendAndAwait(context.Background(), make([]byte, protocol.DPIReportLength), func([]byte) bool { return false })
 	if !IsErrorKind(err, Mismatch) {
@@ -213,7 +213,7 @@ func (f *applyClaim) ControlTransfer(_ context.Context, requestType, request uin
 }
 
 func (f *applyClaim) ReadInterruptIN(_ context.Context, endpoint uint8, use func([]byte) bool) error {
-	if endpoint != statusEndpoint {
+	if endpoint != fixtureStatusEndpoint {
 		return errors.New("unexpected endpoint")
 	}
 	f.mu.Lock()
@@ -236,7 +236,11 @@ func (f *applyClaim) Close() error {
 
 func applyAdapter(claim *applyClaim) *Adapter {
 	candidate := validCandidate()
-	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: x6ReportDescriptor})
+	registry, err := newFixtureRegistry()
+	if err != nil {
+		panic(err)
+	}
+	adapter := NewAdapter(&applyUSB{claim: claim}, fakeSysfs{descriptor: x6ReportDescriptor}, registry)
 	adapter.sources[candidateKey(candidate)] = candidate
 	return adapter
 }

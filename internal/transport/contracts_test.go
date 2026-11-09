@@ -5,13 +5,6 @@ import (
 	"testing"
 )
 
-func TestX6MatchUsesCapturedDeviceIdentity(t *testing.T) {
-	match := X6Match()
-	if match.VendorID != 0x1D57 || match.ProductID != 0xFA60 {
-		t.Fatalf("X6Match() = %#v, want Attack Shark X6 identity", match)
-	}
-}
-
 func TestGenericContractsRepresentPassiveAndCommandTransport(t *testing.T) {
 	var _ PassiveInputTransport = passiveTransportStub{}
 	var _ CommandTransport = commandTransportStub{}

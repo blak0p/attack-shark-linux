@@ -10,6 +10,12 @@ import (
 
 const x6ProfileID = "attack-shark-x6"
 
+// The X6 shares one vendor ID across its dongle and cable modes.
+var (
+	dongleMatch = transport.Match{VendorID: 0x1D57, ProductID: 0xFA60}
+	wiredMatch  = transport.Match{VendorID: 0x1D57, ProductID: 0xFA61}
+)
+
 // NewProfile exposes the existing X6 validation and codec behavior through the
 // model-neutral profile contract without changing X6 callers.
 func NewProfile() mouse.Profile { return Profile{} }
@@ -19,17 +25,24 @@ func NewWiredProfile() mouse.Profile { return wiredProfile{} }
 
 type wiredProfile struct{ Profile }
 
-func (wiredProfile) Match() transport.Match { return transport.X6WiredMatch() }
+func (wiredProfile) Match() transport.Match { return wiredMatch }
+
+func (p wiredProfile) HIDFacts() mouse.HIDFacts {
+	facts := p.Profile.HIDFacts()
+	facts.Connection = transport.Wired
+	return facts
+}
 
 type Profile struct{}
 
 func (Profile) ID() string                     { return x6ProfileID }
-func (Profile) Match() transport.Match         { return transport.X6Match() }
+func (Profile) Match() transport.Match         { return dongleMatch }
 func (Profile) AllowsSeriallessIdentity() bool { return true }
 func (Profile) HIDFacts() mouse.HIDFacts {
 	return mouse.HIDFacts{
 		StatusInput:             transport.InputDescriptor{InterfaceNumber: 2, UsagePage: 1, Usage: 0x80, EndpointAddress: 0x83},
 		ConfigurationReportSize: protocol.DPIReportLength,
+		Connection:              transport.Dongle,
 	}
 }
 func (Profile) Codec() mouse.Codec { return dpiCodec{} }

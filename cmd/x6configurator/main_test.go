@@ -271,7 +271,7 @@ func TestDesktopCompositionSelectsSoleSeriallessValidatedX6(t *testing.T) {
 		nil,
 		nil,
 		registry,
-		x6InventorySource{backend: profileValidBackendFake{candidate: candidate, valid: true, observed: &observed}},
+		x6InventorySource{backend: profileValidBackendFake{candidate: candidate, valid: true, observed: &observed}, registry: registry},
 		nil,
 	)
 
