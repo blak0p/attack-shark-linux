@@ -147,7 +147,7 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
 	state.mu.Lock()
-	pending := state.pending
+	pending, previousStage := state.pending, state.applied.ActiveStage
 	state.mu.Unlock()
 	s.mu.Lock()
 	inventory := s.inventory
@@ -184,6 +184,9 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 				return snapshot
 			}
 			s.cancelSync(binding)
+			if pending.ActiveStage != previousStage {
+				c.refreshStageLighting(ctx, inventory, binding)
+			}
 		}
 	} else if err := s.writer.ApplyAndPersist(ctx, pending, s.store); err != nil {
 		return c.applyFailure(err)
@@ -260,4 +263,30 @@ func (c *dpiComponent) applyBound(binding Binding, revision uint64, config devic
 	state.persistence = "success"
 	state.mu.Unlock()
 	return nil
+}
+
+// refreshStageLighting re-sends the lighting report after an active stage
+// change when the lighting mode follows DPI stages. The firmware repaints the
+// LED only on a physical DPI press or a 0x05 write; the official app has the
+// same gap. A failure is logged only: the DPI write already succeeded.
+// The caller holds operationMu.
+func (c *dpiComponent) refreshStageLighting(ctx context.Context, inventory *mouse.TargetedService, binding Binding) {
+	s := c.service
+	lighting := s.lightingComponent.stateForBinding(binding)
+	lighting.mu.Lock()
+	selection := lighting.pending
+	if lighting.applied != nil {
+		selection = *lighting.applied
+	}
+	lighting.mu.Unlock()
+	if selection.Mode != x6.LightingStaticDPI && selection.Mode != x6.LightingBreathingDPI {
+		return
+	}
+	settingsState := s.settingsStateForBinding(binding)
+	settingsState.mu.Lock()
+	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
+	settingsState.mu.Unlock()
+	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewLightingSettingsOperation(), settings); err != nil {
+		slog.Warn("dpi stage LED refresh failed", "mode", selection.Mode, "error", err)
+	}
 }
