@@ -164,3 +164,18 @@ func TestModelValidateMacroAssignments(t *testing.T) {
 		t.Fatal("invalid pending remap accepted")
 	}
 }
+
+func TestModelDeclaresNameAndOfficialKeyTable(t *testing.T) {
+	model := Model()
+	if model.Name() != "Attack Shark X6" {
+		t.Fatalf("Name = %q", model.Name())
+	}
+	codes := model.KeyCodes()
+	if len(codes) != 104 || codes["KeyA"] != 4 || codes["NumpadEnter"] != 0x28 || codes["MetaRight"] != 0xe7 {
+		t.Fatalf("KeyCodes = %v", codes)
+	}
+	codes["KeyA"] = 99
+	if model.KeyCodes()["KeyA"] != 4 {
+		t.Fatal("KeyCodes must return a copy")
+	}
+}

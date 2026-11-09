@@ -69,3 +69,11 @@ func TestServiceValidatesDPIThroughInjectedModelOperation(t *testing.T) {
 		t.Fatalf("DPI validations through the model = %d, want 1", model.dpiValidated)
 	}
 }
+
+// DeviceInfo hands the frontend exactly what the injected model declares.
+func TestDeviceInfoComesFromTheModel(t *testing.T) {
+	info := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).DeviceInfo()
+	if info.Name != "Stub Mouse" || len(info.KeyCodes) != 2 || info.KeyCodes["KeyA"] != 4 || info.KeyCodes["Enter"] != 0x28 {
+		t.Fatalf("DeviceInfo = %+v", info)
+	}
+}

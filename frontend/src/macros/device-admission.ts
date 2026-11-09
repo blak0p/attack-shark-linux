@@ -3,7 +3,7 @@ import type { MacroEvent } from "../desktop-contract";
 export type DeviceAdmission = { eligible: boolean; reason: string };
 const mouseTypes = ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"];
 import { i18n } from "../i18n";
-import { x6KeyCode } from "./x6keys";
+import { deviceKeyCode } from "./device-keys";
 
 // Mirrors Go's local admission and forward codec limits, not physical playback.
 // Local storage is deliberately broader; this pure gate never edits events.
@@ -18,7 +18,7 @@ export function deviceAdmission(events: readonly MacroEvent[], repeat = 1, mode 
     let identity: string;
     let raw: number;
     if (event.type === "keyboard") {
-      const code = x6KeyCode(event.key_code ?? "");
+      const code = deviceKeyCode(event.key_code ?? "");
       if (code === undefined) return reject(i18n.t("admission.keyboardIdentity"));
       identity = event.key_code!;
       raw = code;

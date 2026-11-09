@@ -5,7 +5,7 @@ import { LanguageSelect } from "./LanguageSelect";
 
 export function TopBar({
   title,
-  subtitle = "Attack Shark X6",
+  subtitle,
   children,
   center,
 }: {

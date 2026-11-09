@@ -1,5 +1,10 @@
 # Local macros and safe X6 software admission
 
+> The model-neutral macro library lives in `internal/macros`. The X6 codec, key
+> table and admission described below live in `internal/attackshark/x6/macrocodec`
+> and `internal/attackshark/x6`; generic code reaches them through `device.Model`.
+> See `docs/architecture/device-models.md`.
+
 Saved keyboard and timed mouse takes can be staged and explicitly applied when
 they fit the audited official ordinary-key conversion and safe host bounds below. Local storage remains broader than
 assignment admission. Transport confirmation is **not measured physical playback**.
@@ -153,7 +158,7 @@ not run in this bounded change. The constructor preserves absent mouse key field
   `DecodeX6Upload` carries a checked destination through framing and roundtrip.
   Only existing remap groups **1, 2, 3, 5, 6, 7, 8** are admitted; mixed IDs
   are rejected. Legacy report APIs remain strict destination05 wrappers.
-- `x6.MacroDestinationForButton` is the canonical checked logical-button lookup:
+- `protocol.MacroDestinationForButton` is the canonical checked logical-button lookup:
   buttons1–7 map to groups1/2/3/7/8/5/6, not their logical button numbers.
   `x6.MacroAssignment{Config: RemapConfig, Button: uint8}` and
   `EncodeMacroAssignmentReport` validate both inputs, preserve unrelated pending
@@ -258,8 +263,9 @@ source timing **after each event**, and does not overwrite terminal timing.
 repeat/mode limits and the traced terminal 10 rule. Empty local sequences map to
 an empty slice; they still cannot be encoded as a timed block.
 
-The canonical [`x6keys.json`](x6keys.json) is embedded by Go and imported directly
-by frontend `x6keys.ts`. Independent expected-row/range tests in both languages
+The canonical `internal/attackshark/x6/macrocodec/x6keys.json` is embedded by Go
+and delivered to the frontend by the backend (`DeviceInfo().KeyCodes`); the
+frontend no longer imports it. Independent expected-row/range tests in both languages
 assert every identity/code and the exact cardinality; neither derives expected
 values from the JSON under test. Own-property lookup rejects `__proto__`,
 `constructor` and `toString`, as well as unknown/lowercase/padded identities.

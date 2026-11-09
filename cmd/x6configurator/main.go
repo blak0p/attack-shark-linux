@@ -314,12 +314,13 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		filepath.Join(dataDir, "applied-dpi.json"),
 		filepath.Join(dataDir, "factory-defaults.json"),
 	)
+	model := x6.Model()
 	inventory := mouse.NewTargetedService(registry, source, command)
 	deviceStore := configstore.NewDeviceStore(filepath.Join(dataDir, "devices-v2.json"))
 	migrate := func(binding mouse.Binding) error {
 		_, err := deviceStore.MigrateV1(
 			filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"),
-			[]configstore.MigrationTarget{{ID: binding.ID, Profile: binding.ProfileID, Model: "Attack Shark X6"}}, false,
+			[]configstore.MigrationTarget{{ID: binding.ID, Profile: binding.ProfileID, Model: model.Name()}}, false,
 		)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -337,7 +338,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.DPIConfig = config
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, combined)
+		return deviceStore.Save(binding.ID, binding.ProfileID, model.Name(), 3, combined)
 	}
 	loadPolling := func(binding mouse.Binding) (x6.DeviceConfig, error) {
 		config := x6.DefaultDeviceConfig()
@@ -345,14 +346,14 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		return config, err
 	}
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
+		return deviceStore.Save(binding.ID, binding.ProfileID, model.Name(), 3, config)
 	}
 	loadProfileSeed := func(binding mouse.Binding) (x6.DeviceConfig, error) {
 		var config x6.DeviceConfig
 		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
 		return config, err
 	}
-	service := desktop.Compose(x6.Model(), status, writer, store, macroLibraryOption(dataDir)).
+	service := desktop.Compose(model, status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).

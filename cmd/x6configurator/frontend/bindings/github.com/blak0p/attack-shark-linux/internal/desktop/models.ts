@@ -120,6 +120,40 @@ export class DebounceSnapshot {
     }
 }
 
+/**
+ * DeviceInfo describes the model behind the service so the frontend shows its
+ * name and admits only macro keys the device can bind. It has no JSON tags so
+ * the frontend sees PascalCase keys like every desktop type.
+ */
+export class DeviceInfo {
+    "Name": string;
+    "KeyCodes": { [_: string]: number };
+
+    /** Creates a new DeviceInfo instance. */
+    constructor($$source: Partial<DeviceInfo> = {}) {
+        if (!("Name" in $$source)) {
+            this["Name"] = "";
+        }
+        if (!("KeyCodes" in $$source)) {
+            this["KeyCodes"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DeviceInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DeviceInfo {
+        const $$createField1_0 = $$createType20;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("KeyCodes" in $$parsedSource) {
+            $$parsedSource["KeyCodes"] = $$createField1_0($$parsedSource["KeyCodes"]);
+        }
+        return new DeviceInfo($$parsedSource as Partial<DeviceInfo>);
+    }
+}
+
 export const Device = mouse$0.Device;
 export type Device = mouse$0.Device;
 
@@ -819,6 +853,7 @@ const $$createType16 = $Create.Array($Create.Any);
 const $$createType17 = ResetLaneResult.createFrom;
 const $$createType18 = $Create.Array($$createType17);
 const $$createType19 = DPIConfig.createFrom;
+const $$createType20 = $Create.Map($Create.Any, $Create.Any);
 
 /**
  * InstallSource describes a package-manager installation. All fields are empty

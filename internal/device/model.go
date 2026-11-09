@@ -19,6 +19,12 @@ type MacroSpec struct {
 // its lighting catalog and macro admission/encoding. The application wiring
 // injects the concrete model; generic packages never import it.
 type Model interface {
+	// Name is the product name shown to the user.
+	Name() string
+	// KeyCodes maps the browser physical key identities the model can bind in a
+	// macro to their raw key code. Callers receive a copy.
+	KeyCodes() map[string]byte
+
 	DPIOperation() mouse.CommandOperation
 	PollingOperation() mouse.CommandOperation
 	LightingOperation() mouse.CommandOperation

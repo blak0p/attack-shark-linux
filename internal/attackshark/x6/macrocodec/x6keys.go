@@ -26,3 +26,12 @@ var x6KeyboardCodes = func() map[string]byte {
 	}
 	return keys
 }()
+
+// OfficialKeyCodes returns a copy of the official browser-identity key table.
+func OfficialKeyCodes() map[string]byte {
+	copied := make(map[string]byte, len(x6KeyboardCodes))
+	for identity, code := range x6KeyboardCodes {
+		copied[identity] = code
+	}
+	return copied
+}

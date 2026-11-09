@@ -361,3 +361,7 @@ func (stubCodec) MatchesACK(report []byte) bool {
 	return stubOperation{id: 0x04}.MatchesACK(report)
 }
 func (stubCodec) Defaults() any { return device.DefaultDPIConfig() }
+
+func (stubModel) Name() string { return "Stub Mouse" }
+
+func (stubModel) KeyCodes() map[string]byte { return map[string]byte{"KeyA": 4, "Enter": 0x28} }
