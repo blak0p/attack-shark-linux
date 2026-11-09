@@ -3,7 +3,7 @@ import { copyMacroEvent } from "./macros/macro-file";
 import * as bindings from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/service";
 import type { Action, EventType, Macro as GeneratedMacro } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/macros/models";
 import type { RemapSnapshot as GeneratedRemapSnapshot } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/desktop/models";
-import { RemapAction as GeneratedRemapAction, type RemapConfig as GeneratedRemapConfig } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/protocol/x6/models";
+import { RemapAction as GeneratedRemapAction, type RemapConfig as GeneratedRemapConfig } from "../../cmd/x6configurator/frontend/bindings/github.com/blak0p/attack-shark-linux/internal/device/models";
 import type { DesktopService, Macro, MacroEvent, MacroDraft, RemapSnapshot, RemapConfig, ProfilesService, ProfileSnapshot, WatcherService, WatcherSettingsSnapshot, WatcherRule, AutostartService, AutostartSnapshot, GamesService } from "./desktop-contract";
 
 const bindingRemap = (config: RemapConfig): GeneratedRemapConfig => ({
@@ -77,6 +77,7 @@ const gamesCall = <T,>(method: keyof GamesService): Promise<T> =>
   Call.ByName(`github.com/blak0p/attack-shark-linux/internal/desktop.Service.${method}`);
 
 export const desktopService: DesktopService & ProfilesService & WatcherService & AutostartService & GamesService = {
+  DeviceInfo: bindings.DeviceInfo,
   GetLauncherPath: () => gamesCall('GetLauncherPath'),
   ListInstalledGames: () => gamesCall('ListInstalledGames'),
   PickGameFolder: () => gamesCall('PickGameFolder'),

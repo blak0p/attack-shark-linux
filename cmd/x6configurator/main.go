@@ -18,7 +18,7 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 	"github.com/blak0p/attack-shark-linux/internal/update"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -49,27 +49,30 @@ type x6InventoryBackend interface {
 }
 
 // x6InventorySource preserves the serial-bearing candidates discovered by hidraw.
-type x6InventorySource struct{ backend x6InventoryBackend }
+// Device identity comes only from the registered profiles.
+type x6InventorySource struct {
+	backend  x6InventoryBackend
+	registry *mouse.ProfileRegistry
+}
+
+// newX6Registry is the one place the desktop binary registers its models.
+func newX6Registry() (*mouse.ProfileRegistry, error) {
+	return mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
+}
 
 func (s x6InventorySource) Enumerate(ctx context.Context) ([]transport.Candidate, error) {
-	var candidates []transport.Candidate
-	var err error
-	if combined, ok := s.backend.(transport.X6Enumerator); ok {
-		candidates, err = combined.EnumerateX6(ctx)
-	} else {
-		candidates, err = s.backend.Enumerate(ctx, x6.NewProfile().Match())
-	}
+	candidates, err := transport.EnumerateAll(ctx, s.backend, s.registry.Matches()...)
 	if err != nil {
 		return nil, err
 	}
 	// Preference is based on validated paths, never VID/PID discovery alone.
 	eligible := make([]transport.Candidate, 0, len(candidates))
 	for _, c := range candidates {
-		if (c.VendorID == transport.X6Match().VendorID && (c.ProductID == transport.X6Match().ProductID || c.ProductID == transport.X6WiredMatch().ProductID)) && s.backend.ProfileValid(ctx, c, x6.NewProfile().HIDFacts()) {
+		if profile, ok := s.registry.Lookup(c.VendorID, c.ProductID); ok && s.backend.ProfileValid(ctx, c, profile.HIDFacts()) {
 			eligible = append(eligible, c)
 		}
 	}
-	preferred := transport.PreferX6Wired(eligible)
+	preferred := transport.PreferWired(eligible, s.registry.WiredPairs()...)
 	if len(preferred) == 1 && len(eligible) == 2 {
 		result := make([]transport.Candidate, 0, len(candidates)-1)
 		for _, c := range candidates {
@@ -107,14 +110,14 @@ func emergencyReset(ctx context.Context) error {
 		return err
 	}
 	dataDir = filepath.Join(dataDir, "attack-shark-linux")
-	backend := hidlinux.NewHidrawBackend()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
+	registry, err := newX6Registry()
 	if err != nil {
 		return err
 	}
-	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend}, backend)
+	backend := hidlinux.NewHidrawBackend(registry)
+	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend, registry: registry}, backend)
 	store := configstore.New(filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"))
-	service := desktop.Compose(nil, nil, store).AttachInventory(inventory)
+	service := desktop.Compose(x6.Model(), nil, nil, store).AttachInventory(inventory)
 	_, err = composeEmergencyReset(dataDir, inventory, service).Run(ctx)
 	return err
 }
@@ -164,8 +167,12 @@ func startDesktop(trayMode bool) error {
 		slog.Warn("app lock not acquired", "error", err)
 	}
 
-	backend := hidlinux.NewHidrawBackend()
-	service, passive := composeDesktopService(dataDir, backend)
+	registry, err := newX6Registry()
+	if err != nil {
+		return err
+	}
+	backend := hidlinux.NewHidrawBackend(registry)
+	service, passive := composeDesktopService(dataDir, registry, backend)
 	defer startProcessWatcher(service, configstore.NewWatcherStore(filepath.Join(dataDir, "watcher-v1.json")))()
 	updater := releaseUpdater()
 	if updater != nil {
@@ -284,21 +291,21 @@ func launchInstalledAppImage() error {
 }
 
 func newDesktopService(dataDir string) *desktop.Service {
-	service, _ := composeDesktopService(dataDir, nil)
+	registry, _ := newX6Registry()
+	service, _ := composeDesktopService(dataDir, registry, nil)
 	return service
 }
 
 // composeDesktopService shares one HidrawBackend between status and Apply.
 // Both operations use the validated vendor hidraw node; no USB interface is
 // claimed, detached, reset, rebound, or otherwise taken from the kernel.
-func composeDesktopService(dataDir string, backend *hidlinux.HidrawBackend) (*desktop.Service, *x6.Service) {
+func composeDesktopService(dataDir string, registry *mouse.ProfileRegistry, backend *hidlinux.HidrawBackend) (*desktop.Service, *x6.Service) {
 	if backend == nil {
-		backend = hidlinux.NewHidrawBackend()
+		backend = hidlinux.NewHidrawBackend(registry)
 	}
 	status := x6.NewService(backend)
 	writer := x6.NewCommandService(backend)
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
-	service := composeDesktopServiceWithTargeted(dataDir, status, writer, registry, x6InventorySource{backend: backend}, backend)
+	service := composeDesktopServiceWithTargeted(dataDir, status, writer, registry, x6InventorySource{backend: backend, registry: registry}, backend)
 	return service, status
 }
 
@@ -307,12 +314,13 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		filepath.Join(dataDir, "applied-dpi.json"),
 		filepath.Join(dataDir, "factory-defaults.json"),
 	)
+	model := x6.Model()
 	inventory := mouse.NewTargetedService(registry, source, command)
 	deviceStore := configstore.NewDeviceStore(filepath.Join(dataDir, "devices-v2.json"))
 	migrate := func(binding mouse.Binding) error {
 		_, err := deviceStore.MigrateV1(
 			filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"),
-			[]configstore.MigrationTarget{{ID: binding.ID, Profile: binding.ProfileID, Model: "Attack Shark X6"}}, false,
+			[]configstore.MigrationTarget{{ID: binding.ID, Profile: binding.ProfileID, Model: model.Name()}}, false,
 		)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -330,7 +338,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 			return err
 		}
 		combined.DPIConfig = config
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, combined)
+		return deviceStore.Save(binding.ID, binding.ProfileID, model.Name(), 3, combined)
 	}
 	loadPolling := func(binding mouse.Binding) (x6.DeviceConfig, error) {
 		config := x6.DefaultDeviceConfig()
@@ -338,14 +346,14 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		return config, err
 	}
 	savePolling := func(binding mouse.Binding, config x6.DeviceConfig) error {
-		return deviceStore.Save(binding.ID, binding.ProfileID, "Attack Shark X6", 3, config)
+		return deviceStore.Save(binding.ID, binding.ProfileID, model.Name(), 3, config)
 	}
 	loadProfileSeed := func(binding mouse.Binding) (x6.DeviceConfig, error) {
 		var config x6.DeviceConfig
 		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
 		return config, err
 	}
-	service := desktop.Compose(status, writer, store, macroLibraryOption(dataDir)).
+	service := desktop.Compose(model, status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
@@ -356,5 +364,5 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 }
 
 func composeEmergencyReset(dataDir string, inventory *mouse.TargetedService, service *desktop.Service) *desktop.EmergencyReset {
-	return desktop.NewEmergencyReset(inventory, service, configstore.NewStatePurger(dataDir))
+	return desktop.NewEmergencyReset(x6.Model(), inventory, service, configstore.NewStatePurger(dataDir))
 }

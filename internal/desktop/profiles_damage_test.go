@@ -1,18 +1,18 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestProfilesDamagedExistingFilesAreNotReseeded(t *testing.T) {
 	for _, damage := range []string{"index", "payload"} {
 		t.Run(damage, func(t *testing.T) {
 			root := t.TempDir()
-			s := profileService(t, root, func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil })
+			s := profileService(t, root, func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil })
 			selectProfileDevice(t, s, 0)
 			initial := s.GetProfiles()
 			if initial.Error.Code != "" {
@@ -32,7 +32,7 @@ func TestProfilesDamagedExistingFilesAreNotReseeded(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Restart with a valid seed: damaged existing files must still win over it.
-			restarted := profileService(t, root, func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil })
+			restarted := profileService(t, root, func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil })
 			selectProfileDevice(t, restarted, 0)
 			got := restarted.GetProfiles()
 			if got.Error.Code != ProfileUnavailable || got.Applied {
@@ -50,7 +50,7 @@ func TestProfilesDamagedExistingFilesAreNotReseeded(t *testing.T) {
 	}
 }
 func TestProfilesUnattachedCompatibility(t *testing.T) {
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	before := s.GetSnapshot()
 	if got := s.GetProfiles(); got.Error.Code != SelectionRequired || got.Applied {
 		t.Fatalf("profiles: %+v", got)

@@ -1,22 +1,22 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type remapSelectionPersistence struct {
-	load func(Binding) (x6.DeviceConfig, error)
-	save func(Binding, x6.DeviceConfig) error
+	load func(Binding) (device.DeviceConfig, error)
+	save func(Binding, device.DeviceConfig) error
 }
 
-func (p remapSelectionPersistence) Load(b Binding) (x6.DeviceConfig, error) { return p.load(b) }
-func (p remapSelectionPersistence) Save(b Binding, config x6.DeviceConfig) error {
+func (p remapSelectionPersistence) Load(b Binding) (device.DeviceConfig, error) { return p.load(b) }
+func (p remapSelectionPersistence) Save(b Binding, config device.DeviceConfig) error {
 	if p.save != nil {
 		return p.save(b, config)
 	}
@@ -24,7 +24,7 @@ func (p remapSelectionPersistence) Save(b Binding, config x6.DeviceConfig) error
 }
 
 func TestRemapOwnerTracksSelectedState(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	owner := service.remapComponent
 	if owner == nil || owner.service != service || owner.currentState() != owner.legacy {
 		t.Fatal("remap owner is not wired to facade")
@@ -37,30 +37,30 @@ func TestRemapOwnerTracksSelectedState(t *testing.T) {
 		t.Fatal("remap state is not isolated by device")
 	}
 	snapshot := remapSnapshotOf(a)
-	snapshot.Pending.Buttons[0].Action = x6.RemapFire
-	if remapSnapshotOf(a).Pending.Buttons[0].Action == x6.RemapFire {
+	snapshot.Pending.Buttons[0].Action = device.RemapFire
+	if remapSnapshotOf(a).Pending.Buttons[0].Action == device.RemapFire {
 		t.Fatal("snapshot aliases owner state")
 	}
 }
 
 func TestRemapApplyAndRetryPreserveSharedConfig(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	command := &remapCommandFake{ack: true}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command))
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command))
 	selected := service.RefreshInventory(context.Background()).Selected
 	if selected == nil {
 		t.Fatal("no selection")
 	}
-	stored := x6.DefaultDeviceConfig()
-	stored.DPI[0], stored.PollingRate, stored.NormalSleepMinutes, stored.ResponseTimeMs = 1600, x6.PollingRate500, 12, 4
+	stored := device.DefaultDeviceConfig()
+	stored.DPI[0], stored.PollingRate, stored.NormalSleepMinutes, stored.ResponseTimeMs = 1600, device.PollingRate500, 12, 4
 	saves := 0
 	service.remapPersistence = remapSelectionPersistence{
-		load: func(Binding) (x6.DeviceConfig, error) { return stored, nil },
-		save: func(binding Binding, config x6.DeviceConfig) error {
+		load: func(Binding) (device.DeviceConfig, error) { return stored, nil },
+		save: func(binding Binding, config device.DeviceConfig) error {
 			saves++
 			if binding != *selected {
 				t.Fatalf("save binding = %#v, want %#v", binding, *selected)
@@ -75,18 +75,18 @@ func TestRemapApplyAndRetryPreserveSharedConfig(t *testing.T) {
 			return nil
 		},
 	}
-	draft := x6.DefaultRemapConfig()
-	draft.Buttons[0].Action = x6.RemapFire
+	draft := device.DefaultRemapConfig()
+	draft.Buttons[0].Action = device.RemapFire
 	failed := service.ApplyRemap(draft)
 	if failed.Error.Code != PersistenceFailed || !failed.RetryAvailable {
 		t.Fatal("missing persistence-only retry")
 	}
-	draft.Buttons[0].Action = x6.RemapMute
+	draft.Buttons[0].Action = device.RemapMute
 	got := service.RetryRemapPersistence()
 	if got.Error.Code != "" || got.RetryAvailable || got.Persistence != "success" || command.calls != 1 || saves != 2 {
 		t.Fatalf("retry = %#v, writes=%d saves=%d", got, command.calls, saves)
 	}
-	if stored.Remap == nil || stored.Remap.Buttons[0].Action != x6.RemapFire {
+	if stored.Remap == nil || stored.Remap.Buttons[0].Action != device.RemapFire {
 		t.Fatal("retry did not persist captured acknowledged config")
 	}
 }
@@ -94,7 +94,7 @@ func TestRemapApplyAndRetryPreserveSharedConfig(t *testing.T) {
 // Loading A synchronously switches selection before the bound apply accesses
 // state again. No goroutine scheduling or elapsed-time assumption is involved.
 func TestRemapApplyKeepsCapturedStateWhenSelectionChangesDuringLoad(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestRemapApplyKeepsCapturedStateWhenSelectionChangesDuringLoad(t *testing.T
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"},
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "beta", Path: "/dev/hidraw1"},
 	}}, command)
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(inventory)
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(inventory)
 	devices := service.RefreshInventory(context.Background())
 	if len(devices.Devices) != 2 {
 		t.Fatalf("inventory = %#v", devices)
@@ -113,23 +113,23 @@ func TestRemapApplyKeepsCapturedStateWhenSelectionChangesDuringLoad(t *testing.T
 		t.Fatal(err)
 	}
 	switched := false
-	service.remapPersistence = remapSelectionPersistence{load: func(binding Binding) (x6.DeviceConfig, error) {
+	service.remapPersistence = remapSelectionPersistence{load: func(binding Binding) (device.DeviceConfig, error) {
 		if binding.ID == a && !switched {
 			switched = true
 			if err := inventory.Select(b); err != nil {
 				t.Fatal(err)
 			}
 		}
-		return x6.DefaultDeviceConfig(), nil
+		return device.DefaultDeviceConfig(), nil
 	}}
-	config := x6.DefaultRemapConfig()
-	config.Buttons[0].Action = x6.RemapFire
+	config := device.DefaultRemapConfig()
+	config.Buttons[0].Action = device.RemapFire
 	got := service.ApplyRemap(config)
 	if !switched {
 		t.Fatal("selection hook was not exercised")
 	}
 	other := service.GetRemapSnapshot()
-	if other.Error.Code != "" || !remapConfigsEqual(other.Pending, x6.DefaultRemapConfig()) {
+	if other.Error.Code != "" || !remapConfigsEqual(other.Pending, device.DefaultRemapConfig()) {
 		t.Fatalf("B was mutated by A apply: error = %q, firmware = %q", other.Error.Code, other.Firmware)
 	}
 	if got.Error.Code != StaleBinding {

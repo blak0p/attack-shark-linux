@@ -342,6 +342,7 @@ go vet ./...         # static analysis
 | [docs/app-x6.md](docs/app-x6.md) | Complete UI map of the official Windows app |
 | [docs/capture-plan.md](docs/capture-plan.md) | How captures are produced |
 | [docs/config-baseline.md](docs/config-baseline.md) | Factory defaults and per-device configuration semantics |
+| [docs/architecture/device-models.md](docs/architecture/device-models.md) | How device models are separated and how to add a new model |
 
 ## Security
 

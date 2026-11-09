@@ -82,7 +82,7 @@ func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
 }
 ```
 
-And `x6.LightingEffects()` deep-copies the catalog (`internal/x6/lighting.go:72`):
+And `x6.LightingEffects()` deep-copies the catalog (`internal/attackshark/x6/lighting.go:72`):
 
 ```go
 func LightingEffects() []LightingEffect {

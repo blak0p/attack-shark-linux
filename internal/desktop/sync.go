@@ -1,10 +1,9 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"sync"
 	"time"
-
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 const syncDebounceDelay = time.Second
@@ -19,7 +18,7 @@ type SyncScheduler interface {
 
 // BoundSync applies one complete configuration to its captured binding.
 // Later work supplies the binding validation and acknowledgement boundary.
-type BoundSync func(Binding, uint64, x6.DPIConfig) error
+type BoundSync func(Binding, uint64, device.DPIConfig) error
 
 // BindingValidator confirms that a captured binding is still current before I/O.
 type BindingValidator func(Binding) bool
@@ -36,7 +35,7 @@ type SyncCoordinator struct {
 
 type syncState struct {
 	revision uint64
-	desired  x6.DPIConfig
+	desired  device.DPIConfig
 	cancel   SyncCancel
 }
 
@@ -45,17 +44,17 @@ func NewSyncCoordinator(scheduler SyncScheduler, valid BindingValidator, apply B
 }
 
 // Schedule replaces a binding's desired configuration and restarts its debounce.
-func (c *SyncCoordinator) Schedule(binding Binding, config x6.DPIConfig) (uint64, error) {
+func (c *SyncCoordinator) Schedule(binding Binding, config device.DPIConfig) (uint64, error) {
 	return c.schedule(binding, 0, config)
 }
 
 // ScheduleAt keeps a binding's debounce revision aligned with desktop state.
-func (c *SyncCoordinator) ScheduleAt(binding Binding, revision uint64, config x6.DPIConfig) error {
+func (c *SyncCoordinator) ScheduleAt(binding Binding, revision uint64, config device.DPIConfig) error {
 	_, err := c.schedule(binding, revision, config)
 	return err
 }
 
-func (c *SyncCoordinator) schedule(binding Binding, revision uint64, config x6.DPIConfig) (uint64, error) {
+func (c *SyncCoordinator) schedule(binding Binding, revision uint64, config device.DPIConfig) (uint64, error) {
 	c.mu.Lock()
 	state := c.states[binding]
 	if state == nil {

@@ -3,9 +3,9 @@ package desktop
 import (
 	"context"
 	"errors"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type lightingComponent struct {
@@ -19,7 +19,7 @@ type lightingComponent struct {
 func (c *lightingComponent) currentState() *lightingState {
 	binding, ok := c.service.selectedBinding()
 	if !ok {
-		return newLightingState()
+		return newLightingState(c.service.model)
 	}
 	return c.stateForBinding(binding)
 }
@@ -29,7 +29,7 @@ func (c *lightingComponent) stateForBinding(binding Binding) *lightingState {
 	defer c.service.mu.Unlock()
 	state := c.states[binding.ID]
 	if state == nil {
-		state = newLightingState()
+		state = newLightingState(c.service.model)
 		c.states[binding.ID] = state
 	}
 	return state
@@ -39,11 +39,11 @@ func (c *lightingComponent) snapshot() LightingSnapshot {
 	return lightingSnapshotOf(c.currentState())
 }
 
-func (c *lightingComponent) stage(selection x6.LightingSelection) LightingSnapshot {
+func (c *lightingComponent) stage(selection device.LightingSelection) LightingSnapshot {
 	state := c.currentState()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if err := x6.NewLightingOperation().Validate(selection); err != nil {
+	if err := c.service.model.LightingOperation().Validate(selection); err != nil {
 		state.err = Error{Code: InvalidConfiguration}
 		return lightingSnapshotLocked(state)
 	}
@@ -60,7 +60,7 @@ func (c *lightingComponent) apply() LightingSnapshot {
 	defer s.operationMu.Unlock()
 	binding, ok := s.selectedBinding()
 	if !ok {
-		return failLighting(newLightingState(), SelectionRequired)
+		return failLighting(newLightingState(s.model), SelectionRequired)
 	}
 	state := c.stateForBinding(binding)
 	state.applyMu.Lock()
@@ -81,12 +81,12 @@ func (c *lightingComponent) apply() LightingSnapshot {
 	settingsState.applyMu.Lock()
 	defer settingsState.applyMu.Unlock()
 	settingsState.mu.Lock()
-	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
+	settings := device.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
 	settingsState.mu.Unlock()
 	if !s.bindingCurrent(binding) {
 		return failLighting(state, StaleBinding)
 	}
-	if err := inventory.ApplyOperationBound(context.Background(), binding, x6.NewLightingSettingsOperation(), settings); err != nil {
+	if err := inventory.ApplyOperationBound(context.Background(), binding, s.model.LightingSettingsOperation(), settings); err != nil {
 		if errors.Is(err, mouse.ErrStaleBinding) {
 			return failLighting(state, StaleBinding)
 		}
@@ -120,8 +120,8 @@ func failLighting(state *lightingState, code ErrorCode) LightingSnapshot {
 	return lightingSnapshotLocked(state)
 }
 
-func newLightingState() *lightingState {
-	return &lightingState{pending: x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen}}
+func newLightingState(model device.Model) *lightingState {
+	return &lightingState{effects: model.LightingEffects(), pending: device.LightingSelection{Mode: device.LightingFixed, TemplateID: device.LightingTemplateFixedGreen}}
 }
 
 func lightingSnapshotOf(state *lightingState) LightingSnapshot {
@@ -131,10 +131,10 @@ func lightingSnapshotOf(state *lightingState) LightingSnapshot {
 }
 
 func lightingSnapshotLocked(state *lightingState) LightingSnapshot {
-	var applied *x6.LightingSelection
+	var applied *device.LightingSelection
 	if state.applied != nil {
 		copy := *state.applied
 		applied = &copy
 	}
-	return LightingSnapshot{Pending: state.pending, Applied: applied, Effects: x6.LightingEffects(), Revision: state.revision, Firmware: state.firmware, Error: state.err}
+	return LightingSnapshot{Pending: state.pending, Applied: applied, Effects: state.effects, Revision: state.revision, Firmware: state.firmware, Error: state.err}
 }

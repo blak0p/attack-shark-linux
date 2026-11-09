@@ -21,7 +21,7 @@ or converting between domain (`x6`/`mouse`) types and the API surface
 - Snapshots are taken **under the state lock** (`snapshotLocked`) and returned as
   value copies. The lock is released before any emission.
 - Event payloads are immutable copies. `LightingEffects()` deep-copies the catalog
-  so callers cannot mutate internal state (`internal/x6/lighting.go:72`).
+  so callers cannot mutate internal state (`internal/attackshark/x6/lighting.go:72`).
 - `nil` vs pointer semantics are deliberate: `*int`/`*x6.LightingSelection`
   distinguish "absent" from "zero" in `Snapshot`/`LightingSnapshot`.
 - Never return a pointer to internal state, a locked struct, or a slice/map that

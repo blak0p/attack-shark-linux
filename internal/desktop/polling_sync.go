@@ -1,12 +1,11 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"sync"
-
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
-type BoundPollingSync func(Binding, uint64, x6.PollingRate) error
+type BoundPollingSync func(Binding, uint64, device.PollingRate) error
 
 // PollingSyncCoordinator independently coalesces polling edits per immutable binding.
 type PollingSyncCoordinator struct {
@@ -19,7 +18,7 @@ type PollingSyncCoordinator struct {
 
 type pollingSyncState struct {
 	revision uint64
-	rate     x6.PollingRate
+	rate     device.PollingRate
 	cancel   SyncCancel
 }
 
@@ -27,7 +26,7 @@ func NewPollingSyncCoordinator(scheduler SyncScheduler, valid BindingValidator, 
 	return &PollingSyncCoordinator{scheduler: scheduler, valid: valid, apply: apply, states: make(map[Binding]*pollingSyncState)}
 }
 
-func (c *PollingSyncCoordinator) ScheduleAt(binding Binding, revision uint64, rate x6.PollingRate) error {
+func (c *PollingSyncCoordinator) ScheduleAt(binding Binding, revision uint64, rate device.PollingRate) error {
 	c.mu.Lock()
 	state := c.states[binding]
 	if state == nil {

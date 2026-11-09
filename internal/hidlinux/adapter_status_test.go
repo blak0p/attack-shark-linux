@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestAdapterDiscoveryRejectsEveryMismatchBeforeUSBAccess(t *testing.T) {
@@ -17,11 +17,11 @@ func TestAdapterDiscoveryRejectsEveryMismatchBeforeUSBAccess(t *testing.T) {
 		candidate  Candidate
 		descriptor []byte
 	}{
-		{name: "wrong vendor", candidate: Candidate{VendorID: 0xffff, ProductID: x6ProductID, Bus: 1, PortPath: "1-2", Interfaces: validInterfaces()}, descriptor: x6ReportDescriptor},
-		{name: "unstable physical path", candidate: Candidate{VendorID: x6VendorID, ProductID: x6ProductID, Bus: 1, PortPath: "", Interfaces: validInterfaces()}, descriptor: x6ReportDescriptor},
-		{name: "missing interface", candidate: candidateWithInterface(InterfaceDescriptor{Number: 1, AlternateSetting: 0, Class: hidClass, Endpoints: []uint8{statusEndpoint}}), descriptor: x6ReportDescriptor},
-		{name: "wrong alternate setting", candidate: candidateWithInterface(InterfaceDescriptor{Number: 2, AlternateSetting: 1, Class: hidClass, Endpoints: []uint8{statusEndpoint}}), descriptor: x6ReportDescriptor},
-		{name: "non HID interface", candidate: candidateWithInterface(InterfaceDescriptor{Number: 2, AlternateSetting: 0, Class: 0xff, Endpoints: []uint8{statusEndpoint}}), descriptor: x6ReportDescriptor},
+		{name: "wrong vendor", candidate: Candidate{VendorID: 0xffff, ProductID: fixtureDongleProduct, Bus: 1, PortPath: "1-2", Interfaces: validInterfaces()}, descriptor: x6ReportDescriptor},
+		{name: "unstable physical path", candidate: Candidate{VendorID: fixtureVendorID, ProductID: fixtureDongleProduct, Bus: 1, PortPath: "", Interfaces: validInterfaces()}, descriptor: x6ReportDescriptor},
+		{name: "missing interface", candidate: candidateWithInterface(InterfaceDescriptor{Number: 1, AlternateSetting: 0, Class: hidClass, Endpoints: []uint8{fixtureStatusEndpoint}}), descriptor: x6ReportDescriptor},
+		{name: "wrong alternate setting", candidate: candidateWithInterface(InterfaceDescriptor{Number: 2, AlternateSetting: 1, Class: hidClass, Endpoints: []uint8{fixtureStatusEndpoint}}), descriptor: x6ReportDescriptor},
+		{name: "non HID interface", candidate: candidateWithInterface(InterfaceDescriptor{Number: 2, AlternateSetting: 0, Class: 0xff, Endpoints: []uint8{fixtureStatusEndpoint}}), descriptor: x6ReportDescriptor},
 		{name: "missing status endpoint", candidate: candidateWithInterface(InterfaceDescriptor{Number: 2, AlternateSetting: 0, Class: hidClass, Endpoints: []uint8{0x81}}), descriptor: x6ReportDescriptor},
 		{name: "wrong HID usage", candidate: candidateWithInterface(), descriptor: []byte{0x05, 0x01, 0x09, 0x02}},
 	}
@@ -29,8 +29,8 @@ func TestAdapterDiscoveryRejectsEveryMismatchBeforeUSBAccess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			usb := &statusUSB{}
-			adapter := NewStatusAdapter(&statusDiscovery{candidates: []Candidate{tt.candidate}}, usb, fakeSysfs{descriptor: tt.descriptor})
-			candidates, err := adapter.Enumerate(context.Background(), transport.X6Match())
+			adapter := NewStatusAdapter(&statusDiscovery{candidates: []Candidate{tt.candidate}}, usb, fakeSysfs{descriptor: tt.descriptor}, fixtureRegistry(t))
+			candidates, err := adapter.Enumerate(context.Background(), fixtureDongleMatch())
 			if tt.name == "wrong vendor" {
 				if !IsErrorKind(err, NotFound) || len(candidates) != 0 {
 					t.Fatalf("Enumerate() = %v, %v; want typed not-found and no recognized candidate", candidates, err)
@@ -69,8 +69,8 @@ func TestAdapterMapsDiscoveryAndOperationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			adapter := NewStatusAdapter(&statusDiscovery{err: tt.err}, &statusUSB{}, fakeSysfs{})
-			_, err := adapter.Enumerate(context.Background(), transport.X6Match())
+			adapter := NewStatusAdapter(&statusDiscovery{err: tt.err}, &statusUSB{}, fakeSysfs{}, fixtureRegistry(t))
+			_, err := adapter.Enumerate(context.Background(), fixtureDongleMatch())
 			if !IsErrorKind(err, tt.kind) || !errors.Is(err, tt.err) {
 				t.Fatalf("Enumerate() error = %v, want %s wrapping %v", err, tt.kind, tt.err)
 			}
@@ -101,32 +101,41 @@ func TestClassifyPreservesTransportErrorPrecedenceAndWrapsENOENTAsDisconnected(t
 	}
 }
 
-func TestAdapterStatusRunsOnlyOnExplicitRequestAndKeepsAbsentBatteryUnavailable(t *testing.T) {
+func TestAdapterStatusRunsOnlyOnExplicitRequestAndReadsOneReport(t *testing.T) {
 	tests := []struct {
-		name              string
-		reports           [][]byte
-		wantBattery       int
-		wantBatteryExists bool
+		name    string
+		reports [][]byte
 	}{
-		{name: "battery report", reports: [][]byte{{0x03, 0x10, 0x40, 0x00, 8}}, wantBattery: 80, wantBatteryExists: true},
-		{name: "no battery report", reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 4}}, wantBatteryExists: false},
+		{name: "battery report", reports: [][]byte{{0x03, 0x10, 0x40, 0x00, 8}}},
+		{name: "no battery report", reports: [][]byte{{0x03, 0x10, 0x50, 0x00, 4}}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			usb := &statusUSB{reports: tt.reports}
 			discovery := &statusDiscovery{candidates: []Candidate{candidateWithInterface()}}
-			service := x6.NewService(NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}))
+			adapter := NewStatusAdapter(discovery, usb, fakeSysfs{descriptor: x6ReportDescriptor}, fixtureRegistry(t))
 			if discovery.calls != 0 || usb.opens != 0 || usb.reads != 0 {
 				t.Fatalf("construction performed status I/O: discovery=%d opens=%d reads=%d", discovery.calls, usb.opens, usb.reads)
 			}
 
-			status, err := service.Status(context.Background())
-			if err != nil {
-				t.Fatalf("Status() error = %v", err)
+			candidates, err := adapter.Enumerate(context.Background(), fixtureDongleMatch())
+			if err != nil || len(candidates) != 1 || candidates[0].Connection != transport.Dongle {
+				t.Fatalf("Enumerate() = %#v, %v", candidates, err)
 			}
-			if status.Connection != x6.Dongle || status.BatteryAvailable != tt.wantBatteryExists || status.BatteryPercent != tt.wantBattery {
-				t.Fatalf("Status() = %#v", status)
+			source, err := adapter.ValidateDescriptor(context.Background(), candidates[0], fixtureStatusInput)
+			if err != nil {
+				t.Fatalf("ValidateDescriptor() error = %v", err)
+			}
+			var got [][]byte
+			if err := adapter.ReadInterruptIN(context.Background(), source, func(report []byte) bool {
+				got = append(got, append([]byte(nil), report...))
+				return false
+			}); err != nil {
+				t.Fatalf("ReadInterruptIN() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.reports) {
+				t.Fatalf("reports = %x, want %x", got, tt.reports)
 			}
 			if discovery.calls != 1 || usb.opens != 1 || usb.reads != 1 {
 				t.Fatalf("explicit status I/O calls: discovery=%d opens=%d reads=%d, want one each", discovery.calls, usb.opens, usb.reads)
@@ -179,7 +188,7 @@ func (*statusClaim) ControlTransfer(context.Context, uint8, uint8, uint16, uint1
 }
 
 func (f *statusClaim) ReadInterruptIN(_ context.Context, endpoint uint8, use func([]byte) bool) error {
-	if endpoint != statusEndpoint {
+	if endpoint != fixtureStatusEndpoint {
 		return errors.New("unexpected endpoint")
 	}
 	f.usb.reads++
@@ -196,9 +205,9 @@ func candidateWithInterface(interfaces ...InterfaceDescriptor) Candidate {
 	if len(interfaces) == 0 {
 		interfaces = validInterfaces()
 	}
-	return Candidate{VendorID: x6VendorID, ProductID: x6ProductID, Bus: 1, PortPath: "1-2", Interfaces: interfaces}
+	return Candidate{VendorID: fixtureVendorID, ProductID: fixtureDongleProduct, Bus: 1, PortPath: "1-2", Interfaces: interfaces}
 }
 
 func validInterfaces() []InterfaceDescriptor {
-	return []InterfaceDescriptor{{Number: 2, AlternateSetting: 0, Class: hidClass, Endpoints: []uint8{statusEndpoint}}}
+	return []InterfaceDescriptor{{Number: 2, AlternateSetting: 0, Class: hidClass, Endpoints: []uint8{fixtureStatusEndpoint}}}
 }

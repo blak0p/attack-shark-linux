@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -66,18 +65,19 @@ func TestHidrawSendAndAwaitTable(t *testing.T) {
 			}
 			opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
 			backend := &HidrawBackend{
+				registry:    fixtureRegistry(t),
 				sysRoot:     filepath.Join(root, "sys"),
 				devRoot:     filepath.Join(root, "dev"),
 				readTimeout: 20 * time.Millisecond,
 				opener:      opener,
 			}
 
-			payload := make([]byte, protocol.DPIReportLength)
+			payload := make([]byte, fixtureConfigLength)
 			payload[0] = 0x04
 			var seen [][]byte
 			err := backend.SendAndAwait(context.Background(), payload, func(report []byte) bool {
 				seen = append(seen, append([]byte(nil), report...))
-				return !protocol.MatchesDPIACK(report)
+				return !fixtureACK(4, report)
 			})
 			if tt.wantError == "" {
 				if err != nil {
@@ -115,12 +115,13 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 	commandNode := newCommandHidrawNode([][]byte{{0x03, 0x10, 0x50, 0x00, 0x04}})
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), nodes: []hidrawNode{listenerNode, commandNode}}
 	backend := &HidrawBackend{
+		registry:    fixtureRegistry(t),
 		sysRoot:     filepath.Join(root, "sys"),
 		devRoot:     filepath.Join(root, "dev"),
 		readTimeout: time.Second,
 		opener:      opener,
 	}
-	if _, err := backend.Enumerate(context.Background(), transport.X6Match()); err != nil {
+	if _, err := backend.Enumerate(context.Background(), fixtureDongleMatch()); err != nil {
 		t.Fatal(err)
 	}
 	source := transport.InputSource{Path: "1:1-4"}
@@ -138,10 +139,10 @@ func TestHidrawSendAndAwaitCoordinatesWithListener(t *testing.T) {
 
 	applyDone := make(chan error, 1)
 	go func() {
-		payload := make([]byte, protocol.DPIReportLength)
+		payload := make([]byte, fixtureConfigLength)
 		payload[0] = 0x04
 		applyDone <- backend.SendAndAwait(context.Background(), payload, func(report []byte) bool {
-			return !protocol.MatchesDPIACK(report)
+			return !fixtureACK(4, report)
 		})
 	}()
 

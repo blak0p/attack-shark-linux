@@ -82,7 +82,11 @@ func launchWithProfile(ref string, command []string) int {
 				return nil, configErr
 			}
 			// The second result is the status reader, which the wrapper does not need.
-			service, _ := composeDesktopService(dataDir, nil)
+			registry, err := newX6Registry()
+			if err != nil {
+				return nil, err
+			}
+			service, _ := composeDesktopService(dataDir, registry, nil)
 			return service, nil
 		},
 		timeout: wrapperSwitchTimeout,

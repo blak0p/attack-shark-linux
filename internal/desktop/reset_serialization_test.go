@@ -1,11 +1,11 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"bytes"
 	"context"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 	"testing"
 )
 
@@ -79,7 +79,7 @@ func TestResetSerializesSettingsAndLightingApplies(t *testing.T) {
 			close(release)
 			<-resetDone
 			<-applyDone
-			if len(command.reports) != 1 || !bytes.Equal(command.reports[0], capturedResetBytes(t, "050f015003a800ff00010401ff")) {
+			if len(command.reports) != 1 || !bytes.Equal(command.reports[0], mustEncodeLightingSettings(t, device.DocumentedResetLightingSettings())) {
 				t.Fatalf("post-reset %s reports: %x", lane, command.reports)
 			}
 		})
@@ -88,13 +88,13 @@ func TestResetSerializesSettingsAndLightingApplies(t *testing.T) {
 
 func newCapturedApplyRuntime(t *testing.T, command *capturedApplyCommand) *Service {
 	t.Helper()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "reset", Path: "/dev/hidraw-reset"}
 	inventory := mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(inventory)
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(inventory)
 	s.RefreshInventory(context.Background())
 	return s
 }

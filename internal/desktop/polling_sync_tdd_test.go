@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"os"
@@ -8,20 +9,19 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestPollingComponentOwnsSelectedStateAndPreservesSleepPersistence(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if service.pollingComponent == nil || service.pollingComponent.states == nil {
 		t.Fatal("polling component must own initialized per-device state")
 	}
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	service.AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
 	service.RefreshInventory(context.Background())
 	service.StageNormalSleep(12)
-	service.StagePollingRate(x6.PollingRate500)
+	service.StagePollingRate(device.PollingRate500)
 	if got := service.GetNormalSleepSnapshot().Pending; got != 12 {
 		t.Fatalf("sleep pending = %v; want 12 after polling stage", got)
 	}
@@ -30,36 +30,36 @@ func TestPollingComponentOwnsSelectedStateAndPreservesSleepPersistence(t *testin
 func TestPollingSyncCoordinatorCoalescesLatestTargetedRevision(t *testing.T) {
 	scheduler := &fakeSyncScheduler{}
 	var calls []pollingCall
-	coordinator := NewPollingSyncCoordinator(scheduler, func(Binding) bool { return true }, func(binding Binding, revision uint64, rate x6.PollingRate) error {
+	coordinator := NewPollingSyncCoordinator(scheduler, func(Binding) bool { return true }, func(binding Binding, revision uint64, rate device.PollingRate) error {
 		calls = append(calls, pollingCall{binding: binding, revision: revision, rate: rate})
 		return nil
 	})
 	binding := testBinding("alpha")
 
-	if err := coordinator.ScheduleAt(binding, 1, x6.PollingRate125); err != nil {
+	if err := coordinator.ScheduleAt(binding, 1, device.PollingRate125); err != nil {
 		t.Fatalf("ScheduleAt(first) error = %v", err)
 	}
-	if err := coordinator.ScheduleAt(binding, 2, x6.PollingRate1000); err != nil {
+	if err := coordinator.ScheduleAt(binding, 2, device.PollingRate1000); err != nil {
 		t.Fatalf("ScheduleAt(latest) error = %v", err)
 	}
 	scheduler.Advance(syncDebounceDelay)
 
-	if len(calls) != 1 || calls[0].binding != binding || calls[0].revision != 2 || calls[0].rate != x6.PollingRate1000 {
+	if len(calls) != 1 || calls[0].binding != binding || calls[0].revision != 2 || calls[0].rate != device.PollingRate1000 {
 		t.Fatalf("calls = %#v; want one latest targeted polling apply", calls)
 	}
 }
 
 func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	serial := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &pollingCommandFake{}
 	scheduler := &fakeSyncScheduler{}
 	saves := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{serial}}, command)).
 		AttachPollingPersistence(
-			func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), os.ErrNotExist },
-			func(Binding, x6.DeviceConfig) error {
+			func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), os.ErrNotExist },
+			func(Binding, device.DeviceConfig) error {
 				saves++
 				if saves == 1 {
 					return errors.New("disk full")
@@ -69,7 +69,7 @@ func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *te
 		).
 		attachPollingAutomaticSave(scheduler)
 	service.RefreshInventory(context.Background())
-	service.StagePollingRate(x6.PollingRate500)
+	service.StagePollingRate(device.PollingRate500)
 	scheduler.Advance(syncDebounceDelay)
 	if command.calls != 0 {
 		t.Fatalf("scheduler writes = %d, want 0 before explicit apply", command.calls)
@@ -77,7 +77,7 @@ func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *te
 	service.ApplyPollingRate(context.Background())
 
 	failed := service.GetPollingSnapshot()
-	if command.calls != 1 || failed.Applied != x6.PollingRate500 || failed.Firmware != "success" || failed.Persistence != "failed" || !failed.RetryAvailable {
+	if command.calls != 1 || failed.Applied != device.PollingRate500 || failed.Firmware != "success" || failed.Persistence != "failed" || !failed.RetryAvailable {
 		t.Fatalf("acknowledged polling result = %#v, calls=%d; want applied before retryable save failure", failed, command.calls)
 	}
 	if got := service.RetryPollingPersistence(); got.Persistence != "success" || got.RetryAvailable || saves != 2 {
@@ -86,8 +86,8 @@ func TestPollingServiceAcknowledgesBeforeSaveRetriesAndExcludesSessionOnly(t *te
 }
 
 func TestResetToFactoryWithoutRunnerDoesNotStagePolling(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
-	service.StagePollingRate(x6.PollingRate125)
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
+	service.StagePollingRate(device.PollingRate125)
 	result := service.ResetToFactory(context.Background())
 	if result.Error.Code != SelectionRequired || !result.RetryAvailable {
 		t.Fatalf("ResetToFactory() = %#v, want retryable selection failure", result)
@@ -104,17 +104,17 @@ func TestPollingPersistenceExcludesSessionOnlyBindings(t *testing.T) {
 }
 
 func TestPollingApplyAndPersistenceCompletionEmitSnapshots(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	serial := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	scheduler := &fakeSyncScheduler{}
 	events := &pollingEventSink{}
 	saves := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{serial}}, &pollingCommandFake{})).
 		AttachListener(nil, events).
 		AttachPollingPersistence(
-			func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), os.ErrNotExist },
-			func(Binding, x6.DeviceConfig) error {
+			func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), os.ErrNotExist },
+			func(Binding, device.DeviceConfig) error {
 				saves++
 				if saves == 1 {
 					return errors.New("disk full")
@@ -124,7 +124,7 @@ func TestPollingApplyAndPersistenceCompletionEmitSnapshots(t *testing.T) {
 		).
 		attachPollingAutomaticSave(scheduler)
 	service.RefreshInventory(context.Background())
-	service.StagePollingRate(x6.PollingRate500)
+	service.StagePollingRate(device.PollingRate500)
 	scheduler.Advance(syncDebounceDelay)
 	service.ApplyPollingRate(context.Background())
 
@@ -141,22 +141,22 @@ func TestPollingApplyAndPersistenceCompletionEmitSnapshots(t *testing.T) {
 		t.Fatalf("polling completion events after retry = %#v; want persistence retry completion", events.events)
 	}
 	retried, ok := events.events[1].payload.(PollingConfigurationEvent)
-	if !ok || retried.Snapshot.Persistence != "success" || retried.Snapshot.Persisted == nil || *retried.Snapshot.Persisted != x6.PollingRate500 {
+	if !ok || retried.Snapshot.Persistence != "success" || retried.Snapshot.Persisted == nil || *retried.Snapshot.Persisted != device.PollingRate500 {
 		t.Fatalf("retry completion = %#v; want persisted polling result", events.events[1].payload)
 	}
 }
 
 func TestPollingApplyFailureEmitsFailureSnapshot(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	serial := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	scheduler := &fakeSyncScheduler{}
 	events := &pollingEventSink{}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{serial}}, &pollingCommandFake{err: errors.New("ack timeout")})).
 		AttachListener(nil, events).
 		attachPollingAutomaticSave(scheduler)
 	service.RefreshInventory(context.Background())
-	service.StagePollingRate(x6.PollingRate250)
+	service.StagePollingRate(device.PollingRate250)
 	scheduler.Advance(syncDebounceDelay)
 	service.ApplyPollingRate(context.Background())
 
@@ -164,7 +164,7 @@ func TestPollingApplyFailureEmitsFailureSnapshot(t *testing.T) {
 		t.Fatalf("polling completion events = %#v; want one polling failure event", events.events)
 	}
 	failed, ok := events.events[0].payload.(PollingConfigurationEvent)
-	if !ok || failed.Snapshot.Desired != x6.PollingRate250 || failed.Snapshot.Applied != x6.PollingRate1000 || failed.Snapshot.Firmware != "failed" {
+	if !ok || failed.Snapshot.Desired != device.PollingRate250 || failed.Snapshot.Applied != device.PollingRate1000 || failed.Snapshot.Firmware != "failed" {
 		t.Fatalf("failure completion = %#v; want failed polling snapshot", events.events[0].payload)
 	}
 }
@@ -172,7 +172,7 @@ func TestPollingApplyFailureEmitsFailureSnapshot(t *testing.T) {
 type pollingCall struct {
 	binding  Binding
 	revision uint64
-	rate     x6.PollingRate
+	rate     device.PollingRate
 }
 
 type pollingCommandFake struct {

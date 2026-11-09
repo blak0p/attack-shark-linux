@@ -1,11 +1,11 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestSyncCoordinatorCoalescesEditsAfterOneSecond(t *testing.T) {
@@ -168,12 +168,12 @@ func (s *fakeSyncScheduler) Count() int {
 type recordedBoundWrite struct {
 	binding  Binding
 	revision uint64
-	config   x6.DPIConfig
+	config   device.DPIConfig
 }
 
 type recordingBoundWriter struct{ calls []recordedBoundWrite }
 
-func (w *recordingBoundWriter) Apply(binding Binding, revision uint64, config x6.DPIConfig) error {
+func (w *recordingBoundWriter) Apply(binding Binding, revision uint64, config device.DPIConfig) error {
 	w.calls = append(w.calls, recordedBoundWrite{binding, revision, config})
 	return nil
 }
@@ -182,8 +182,8 @@ func testBinding(serial string) Binding {
 	return Binding{ID: DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: serial}, ProfileID: "x6", Path: "/dev/hidraw0", InventoryRevision: 1}
 }
 
-func dpiConfig(dpi int) x6.DPIConfig {
-	config := x6.DefaultDPIConfig()
+func dpiConfig(dpi int) device.DPIConfig {
+	config := device.DefaultDPIConfig()
 	config.DPI[0] = dpi
 	return config
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type combinedInventoryFake struct {
@@ -14,7 +14,7 @@ type combinedInventoryFake struct {
 	combined bool
 }
 
-func (f *combinedInventoryFake) EnumerateX6(context.Context) ([]transport.Candidate, error) {
+func (f *combinedInventoryFake) EnumerateMatches(context.Context, ...transport.Match) ([]transport.Candidate, error) {
 	f.combined = true
 	return []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa60, Connection: transport.Dongle}, {VendorID: 0x1d57, ProductID: 0xfa61, Connection: transport.Wired}}, nil
 }
@@ -22,7 +22,7 @@ func TestPairedInventorySelectsAndAppliesCable(t *testing.T) {
 	backend := &combinedInventoryFake{profileValidBackendFake: profileValidBackendFake{valid: true}}
 	registry, _ := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
 	command := &targetedCommandFake{}
-	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend}, command)
+	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend, registry: registry}, command)
 	devices, err := inventory.Refresh(context.Background())
 	binding, selected := inventory.Selection()
 	if err != nil || !selected || len(devices) != 1 || binding.ID.ProductID != 0xfa61 {
@@ -42,7 +42,7 @@ type preferenceInventoryFake struct {
 	candidates []transport.Candidate
 }
 
-func (f *preferenceInventoryFake) EnumerateX6(context.Context) ([]transport.Candidate, error) {
+func (f *preferenceInventoryFake) EnumerateMatches(context.Context, ...transport.Match) ([]transport.Candidate, error) {
 	return f.candidates, nil
 }
 
@@ -52,7 +52,7 @@ func TestCableArrivalRejectsCapturedDongleBinding(t *testing.T) {
 	backend := &preferenceInventoryFake{profileValidBackendFake: profileValidBackendFake{valid: true}, candidates: []transport.Candidate{d}}
 	registry, _ := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
 	command := &targetedCommandFake{}
-	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend}, command)
+	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend, registry: registry}, command)
 	if _, err := inventory.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,8 @@ func TestCableArrivalRejectsCapturedDongleBinding(t *testing.T) {
 
 func TestProductionInventoryUsesCombinedUSBScan(t *testing.T) {
 	backend := &combinedInventoryFake{}
-	candidates, err := (x6InventorySource{backend: backend}).Enumerate(context.Background())
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
+	candidates, err := (x6InventorySource{backend: backend, registry: registry}).Enumerate(context.Background())
 	if err != nil || !backend.combined || len(candidates) != 2 || candidates[1].ProductID != 0xfa61 || candidates[1].Connection != transport.Wired {
 		t.Fatalf("inventory = %+v, %v combined=%t", candidates, err, backend.combined)
 	}

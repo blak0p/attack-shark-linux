@@ -3,7 +3,8 @@ import { App } from "../src/App";
 import type { DesktopService, DPIConfig, RemapConfig, RemapSnapshot, RemapAction, Macro, MacroEvent, MacroPlaybackMode } from "../src/desktop-contract";
 import "../src/styles.css";
 import { deviceAdmission } from "../src/macros/device-admission";
-import { x6KeyCode } from "../src/macros/x6keys";
+import { deviceKeyCode } from "../src/macros/device-keys";
+import { expected as officialKeyTable } from "../src/macros/test-key-table";
 
 // Browser-only service: no Wails runtime, bindings, or physical HID is exercised.
 const ids = ["alpha", "beta"].map((Serial, index) => ({
@@ -144,6 +145,7 @@ const service = {
     macros.set(id, macro); macroCalls.push("UpdateMacro"); return structuredClone(macro);
   },
   DeleteMacro: async (id: string) => { readMacro(id); macros.delete(id); macroCalls.push("DeleteMacro"); },
+  DeviceInfo: async () => ({ Name: "Attack Shark X6", KeyCodes: { ...officialKeyTable } }),
   GetApplicationVersion: undefined, GetInstallSource: undefined, CheckForUpdate: undefined,
   RefreshStatus: async () => currentDPI, GetSnapshot: async () => currentDPI,
   RefreshInventory: async () => inventory(),
@@ -255,7 +257,7 @@ const service = {
     failNext = false;
     const hasMacros = allDrafts.length > 0;
     for (const d of allDrafts) admittedUploads.push({ button: d.Button, source: structuredClone(d.Events), rawCodes: d.Events.map(event =>
-      event.type === "keyboard" ? x6KeyCode(event.key_code!)! : 0xf1 + ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].indexOf(event.type)) });
+      event.type === "keyboard" ? deviceKeyCode(event.key_code!)! : 0xf1 + ["mouse_left", "mouse_right", "mouse_middle", "mouse_back", "mouse_forward"].indexOf(event.type)) });
     remaps.set(selected.ID.Serial, {
       ...current, Pending: structuredClone(config), Revision: current.Revision + 1,
       Applied: failed ? current.Applied : structuredClone(config),

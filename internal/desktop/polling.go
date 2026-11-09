@@ -3,16 +3,16 @@ package desktop
 import (
 	"context"
 	"errors"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type pollingState struct {
 	mu, applyMu               sync.Mutex
-	desired, applied, factory x6.PollingRate
-	persisted, retry          *x6.PollingRate
+	desired, applied, factory device.PollingRate
+	persisted, retry          *device.PollingRate
 	revision                  uint64
 	err                       Error
 	firmware, persistence     string
@@ -89,11 +89,11 @@ func (c *pollingComponent) currentState() *pollingState {
 	return state
 }
 func (c *pollingComponent) snapshot() PollingSnapshot { return pollingSnapshotOf(c.currentState()) }
-func (c *pollingComponent) stage(rate x6.PollingRate) PollingSnapshot {
+func (c *pollingComponent) stage(rate device.PollingRate) PollingSnapshot {
 	state := c.currentState()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if err := x6.NewPollingOperation().Validate(rate); err != nil {
+	if err := c.service.model.PollingOperation().Validate(rate); err != nil {
 		return pollingSnapshotLocked(state)
 	}
 	state.desired = rate
@@ -121,7 +121,7 @@ func (c *pollingComponent) retryPersistence() PollingSnapshot {
 	s.mu.Unlock()
 	deviceErr := error(nil)
 	if persistence != nil {
-		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = *retry })
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *device.DeviceConfig) { config.PollingRate = *retry })
 	}
 	profileErr := s.saveActiveProfile(binding, func(config *profileConfiguration) { config.Device.PollingRate = *retry })
 	if (persistence != nil && deviceErr != nil) || profileErr != nil {
@@ -159,12 +159,12 @@ func (c *pollingComponent) apply(ctx context.Context) PollingSnapshot {
 	}
 	return pollingSnapshotOf(state)
 }
-func (c *pollingComponent) applyPollingBound(binding Binding, revision uint64, rate x6.PollingRate) error {
+func (c *pollingComponent) applyPollingBound(binding Binding, revision uint64, rate device.PollingRate) error {
 	c.service.operationMu.Lock()
 	defer c.service.operationMu.Unlock()
 	return c.applyBound(context.Background(), binding, revision, rate)
 }
-func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revision uint64, rate x6.PollingRate) error {
+func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revision uint64, rate device.PollingRate) error {
 	s := c.service
 	if !s.bindingCurrent(binding) {
 		return mouse.ErrStaleBinding
@@ -190,7 +190,7 @@ func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revi
 	if inventory == nil {
 		return mouse.ErrStaleBinding
 	}
-	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewPollingOperation(), rate); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, s.model.PollingOperation(), rate); err != nil {
 		state.mu.Lock()
 		state.firmware, state.err = "failed", Error{Code: errorCode(err, false)}
 		state.mu.Unlock()
@@ -210,7 +210,7 @@ func (c *pollingComponent) applyBound(ctx context.Context, binding Binding, revi
 	}
 	deviceErr := error(nil)
 	if persistence != nil {
-		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *x6.DeviceConfig) { config.PollingRate = rate })
+		deviceErr = s.saveDeviceConfig(binding, persistence, func(config *device.DeviceConfig) { config.PollingRate = rate })
 	}
 	profileErr := s.saveActiveProfile(binding, func(config *profileConfiguration) { config.Device.PollingRate = rate })
 	if (persistence != nil && deviceErr != nil) || profileErr != nil {
@@ -237,17 +237,17 @@ func (c *pollingComponent) emitConfiguration(binding Binding, snapshot PollingSn
 func (c *pollingComponent) reconcileFactoryReset() {
 	state := c.currentState()
 	state.mu.Lock()
-	state.desired, state.applied, state.persisted, state.retry = x6.PollingRate1000, x6.PollingRate1000, nil, nil
+	state.desired, state.applied, state.persisted, state.retry = device.PollingRate1000, device.PollingRate1000, nil, nil
 	state.revision++
 	state.firmware, state.persistence = "success", "success"
 	state.mu.Unlock()
 }
 func pollingPersistenceAllowed(binding Binding) bool { return !binding.SessionOnly }
 func newPollingState() *pollingState {
-	return &pollingState{desired: x6.PollingRate1000, applied: x6.PollingRate1000, factory: x6.PollingRate1000}
+	return &pollingState{desired: device.PollingRate1000, applied: device.PollingRate1000, factory: device.PollingRate1000}
 }
-func newPollingStateFromConfig(config x6.DeviceConfig) *pollingState {
-	return &pollingState{desired: config.PollingRate, applied: config.PollingRate, persisted: &config.PollingRate, factory: x6.PollingRate1000}
+func newPollingStateFromConfig(config device.DeviceConfig) *pollingState {
+	return &pollingState{desired: config.PollingRate, applied: config.PollingRate, persisted: &config.PollingRate, factory: device.PollingRate1000}
 }
 func pollingSnapshotOf(state *pollingState) PollingSnapshot {
 	state.mu.Lock()

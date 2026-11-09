@@ -2,7 +2,6 @@
 package hidlinux
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,25 +9,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 const (
-	x6VendorID     = 0x1D57
-	x6ProductID    = 0xFA60
-	hidClass       = 0x03
-	statusEndpoint = 0x83
+	hidClass = 0x03
 	// statusReadDeadline bounds each passive read. The X6 dongle emits its
 	// battery report periodically roughly every 1.5 s, so a deadline of 3 s
 	// (two report periods) guarantees the read catches the next report even
 	// when it starts immediately after one was consumed. A shorter deadline
 	// races the report cadence and fails with status_read_failed.
 	statusReadDeadline   = 3 * time.Second
-	dpiReportLength      = 56
 	setReportRequestType = 0x21
 	setReportRequest     = 0x09
-	dpiReportValue       = 0x0304
-	hidInterface         = 2
+	// featureReportType is the HID SET_REPORT wValue high byte; the low byte is
+	// the report ID.
+	featureReportType = 0x0300
 )
 
 var (
@@ -162,27 +159,29 @@ type Adapter struct {
 	discovery Discovery
 	usb       USB
 	sysfs     Sysfs
+	registry  *mouse.ProfileRegistry
 	sources   map[string]Candidate
 }
 
-func NewAdapter(usb USB, sysfs Sysfs) *Adapter {
-	return &Adapter{usb: usb, sysfs: sysfs, sources: make(map[string]Candidate)}
+func NewAdapter(usb USB, sysfs Sysfs, registry *mouse.ProfileRegistry) *Adapter {
+	return &Adapter{usb: usb, sysfs: sysfs, registry: registry, sources: make(map[string]Candidate)}
 }
 
 // NewStatusAdapter is passive: construction is inert and I/O begins only through Status.
-func NewStatusAdapter(discovery Discovery, usb USB, sysfs Sysfs) *Adapter {
-	adapter := NewAdapter(usb, sysfs)
+func NewStatusAdapter(discovery Discovery, usb USB, sysfs Sysfs, registry *mouse.ProfileRegistry) *Adapter {
+	adapter := NewAdapter(usb, sysfs, registry)
 	adapter.discovery = discovery
 	return adapter
 }
 
-// WithValidatedCandidate claims interface 2/alternate setting 0 for a validated candidate.
+// WithValidatedCandidate claims the profile status interface/alternate setting 0 for a validated candidate.
 // Production and test backends share the same validated seam contract.
 func (a *Adapter) WithValidatedCandidate(ctx context.Context, candidate Candidate, use func(Claim) error) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if err := a.validateCandidate(ctx, candidate); err != nil {
+	facts, err := a.validateCandidate(ctx, candidate)
+	if err != nil {
 		return err
 	}
 
@@ -198,7 +197,7 @@ func (a *Adapter) WithValidatedCandidate(ctx context.Context, candidate Candidat
 	}
 	defer configuration.Close()
 
-	claim, err := configuration.Claim(ctx, 2, 0)
+	claim, err := configuration.Claim(ctx, facts.StatusInput.InterfaceNumber, 0)
 	if err != nil {
 		return classify(err)
 	}
@@ -214,8 +213,20 @@ func (a *Adapter) Enumerate(ctx context.Context, match transport.Match) ([]trans
 	return a.enumerateLocked(ctx, match)
 }
 
+func (a *Adapter) matchesAny(candidate Candidate, matches []transport.Match) bool {
+	if _, ok := profileFor(a.registry, candidate.VendorID, candidate.ProductID); !ok {
+		return false
+	}
+	for _, match := range matches {
+		if candidate.VendorID == match.VendorID && candidate.ProductID == match.ProductID {
+			return true
+		}
+	}
+	return false
+}
+
 // enumerateLocked refreshes the candidate cache while the adapter mutex is held.
-func (a *Adapter) enumerateLocked(ctx context.Context, match transport.Match) ([]transport.Candidate, error) {
+func (a *Adapter) enumerateLocked(ctx context.Context, matches ...transport.Match) ([]transport.Candidate, error) {
 	if a.discovery == nil {
 		return nil, &Error{Kind: NotFound, Err: errors.New("USB discovery is unavailable")}
 	}
@@ -225,18 +236,18 @@ func (a *Adapter) enumerateLocked(ctx context.Context, match transport.Match) ([
 	}
 	result := make([]transport.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.VendorID != match.VendorID || candidate.ProductID != match.ProductID || !matchesX6Identity(candidate) {
+		if !a.matchesAny(candidate, matches) {
 			continue
 		}
 		key := candidateKey(candidate)
 		if key == "" {
 			key = "invalid physical path"
 			a.sources[key] = candidate
-			result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: x6Connection(candidate)})
+			result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: candidateConnection(a.registry, candidate)})
 			continue
 		}
 		a.sources[key] = candidate
-		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: x6Connection(candidate)})
+		result = append(result, transport.Candidate{Path: key, VendorID: candidate.VendorID, ProductID: candidate.ProductID, Connection: candidateConnection(a.registry, candidate)})
 	}
 	if len(result) == 0 {
 		return nil, &Error{Kind: NotFound, Err: errors.New("validated X6 VID:PID was not found")}
@@ -252,10 +263,10 @@ func (a *Adapter) ValidateDescriptor(ctx context.Context, source transport.Candi
 	if !ok {
 		return transport.InputSource{}, &Error{Kind: NotFound, Err: errors.New("discovered device is no longer present")}
 	}
-	if wanted.InterfaceNumber != 2 || wanted.UsagePage != 1 || wanted.Usage != 0x80 || wanted.EndpointAddress != statusEndpoint {
+	if profile, registered := profileFor(a.registry, candidate.VendorID, candidate.ProductID); registered && wanted != profile.HIDFacts().StatusInput {
 		return transport.InputSource{}, &Error{Kind: Mismatch, Err: errors.New("unsupported status descriptor request")}
 	}
-	if err := a.validateCandidate(ctx, candidate); err != nil {
+	if _, err := a.validateCandidate(ctx, candidate); err != nil {
 		return transport.InputSource{}, err
 	}
 	return transport.InputSource{Path: source.Path}, nil
@@ -271,8 +282,8 @@ func (a *Adapter) ReadInterruptIN(ctx context.Context, source transport.InputSou
 	}
 	bounded, cancel := context.WithTimeout(ctx, statusReadDeadline)
 	defer cancel()
-	return a.withValidatedCandidate(bounded, candidate, func(claim Claim) error {
-		return claim.ReadInterruptIN(bounded, statusEndpoint, use)
+	return a.withValidatedCandidate(bounded, candidate, func(claim Claim, facts mouse.HIDFacts) error {
+		return claim.ReadInterruptIN(bounded, facts.StatusInput.EndpointAddress, use)
 	})
 }
 
@@ -281,11 +292,11 @@ func (a *Adapter) ReadInterruptIN(ctx context.Context, source transport.InputSou
 func (a *Adapter) SendAndAwait(ctx context.Context, payload []byte, continueReading func([]byte) bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if len(payload) != dpiReportLength {
-		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI SET_REPORT length = %d, want %d", len(payload), dpiReportLength)}
+	if want, ok := reportLengthAccepted(a.registry, len(payload)); !ok {
+		return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI SET_REPORT length = %d, want %d", len(payload), want)}
 	}
 	if len(a.sources) == 0 {
-		if _, err := a.enumerateLocked(ctx, transport.X6Match()); err != nil {
+		if _, err := a.enumerateLocked(ctx, registeredMatches(a.registry)...); err != nil {
 			return &diagnosticError{operation: "discovery", err: err}
 		}
 	}
@@ -295,15 +306,18 @@ func (a *Adapter) SendAndAwait(ctx context.Context, payload []byte, continueRead
 	}
 	bounded, cancel := context.WithTimeout(ctx, statusReadDeadline)
 	defer cancel()
-	return a.withValidatedCandidate(bounded, candidate, func(claim Claim) error {
-		count, err := claim.ControlTransfer(bounded, setReportRequestType, setReportRequest, dpiReportValue, hidInterface, payload)
+	return a.withValidatedCandidate(bounded, candidate, func(claim Claim, facts mouse.HIDFacts) error {
+		if len(payload) != facts.ConfigurationReportSize {
+			return &Error{Kind: Mismatch, Err: fmt.Errorf("DPI SET_REPORT length = %d, want %d", len(payload), facts.ConfigurationReportSize)}
+		}
+		count, err := claim.ControlTransfer(bounded, setReportRequestType, setReportRequest, featureReportType|uint16(payload[0]), uint16(facts.StatusInput.InterfaceNumber), payload)
 		if err != nil {
 			return &diagnosticError{operation: "transfer", err: err}
 		}
 		if count != len(payload) {
 			return &diagnosticError{operation: "transfer", err: fmt.Errorf("DPI SET_REPORT wrote %d bytes, want %d", count, len(payload))}
 		}
-		if err := claim.ReadInterruptIN(bounded, statusEndpoint, continueReading); err != nil {
+		if err := claim.ReadInterruptIN(bounded, facts.StatusInput.EndpointAddress, continueReading); err != nil {
 			return &diagnosticError{operation: "ack_failure", err: err}
 		}
 		return nil
@@ -323,8 +337,9 @@ func (a *Adapter) commandCandidate() (Candidate, error) {
 	panic("unreachable")
 }
 
-func (a *Adapter) withValidatedCandidate(ctx context.Context, candidate Candidate, use func(Claim) error) error {
-	if err := a.validateCandidate(ctx, candidate); err != nil {
+func (a *Adapter) withValidatedCandidate(ctx context.Context, candidate Candidate, use func(Claim, mouse.HIDFacts) error) error {
+	facts, err := a.validateCandidate(ctx, candidate)
+	if err != nil {
 		return &diagnosticError{operation: "discovery", err: err}
 	}
 	device, err := a.usb.Open(ctx, candidate)
@@ -337,40 +352,31 @@ func (a *Adapter) withValidatedCandidate(ctx context.Context, candidate Candidat
 		return &diagnosticError{operation: "usb_claim_open", err: classify(err)}
 	}
 	defer configuration.Close()
-	claim, err := configuration.Claim(ctx, 2, 0)
+	claim, err := configuration.Claim(ctx, facts.StatusInput.InterfaceNumber, 0)
 	if err != nil {
 		return &diagnosticError{operation: "usb_claim_open", err: classify(err)}
 	}
 	defer claim.Close()
-	return classify(use(claim))
+	return classify(use(claim, facts))
 }
 
-func (a *Adapter) validateCandidate(ctx context.Context, candidate Candidate) error {
-	if !matchesX6Identity(candidate) || !hasPhysicalPath(candidate) || !hasValidatedInterface(candidate.Interfaces) {
-		return &Error{Kind: Mismatch, Err: errors.New("candidate does not match the validated X6 path")}
+func (a *Adapter) validateCandidate(ctx context.Context, candidate Candidate) (mouse.HIDFacts, error) {
+	profile, registered := profileFor(a.registry, candidate.VendorID, candidate.ProductID)
+	if !registered || !hasPhysicalPath(candidate) || !hasValidatedInterface(candidate.Interfaces, profile.HIDFacts().StatusInput) {
+		return mouse.HIDFacts{}, &Error{Kind: Mismatch, Err: errors.New("candidate does not match the validated X6 path")}
 	}
+	facts := profile.HIDFacts()
 	if a.sysfs == nil {
-		return &Error{Kind: IO, Err: errors.New("sysfs descriptor reader is unavailable")}
+		return mouse.HIDFacts{}, &Error{Kind: IO, Err: errors.New("sysfs descriptor reader is unavailable")}
 	}
 	descriptor, err := a.sysfs.ReportDescriptor(ctx, candidate)
 	if err != nil {
-		return classify(err)
+		return mouse.HIDFacts{}, classify(err)
 	}
-	if !hasX6TopLevelUsage(descriptor) {
-		return &Error{Kind: Mismatch, Err: errors.New("HID report descriptor does not expose usage 1/0x80")}
+	if !hasTopLevelUsage(descriptor, facts.StatusInput) {
+		return mouse.HIDFacts{}, &Error{Kind: Mismatch, Err: errors.New("HID report descriptor does not expose usage 1/0x80")}
 	}
-	return nil
-}
-
-func matchesX6Identity(candidate Candidate) bool {
-	return candidate.VendorID == x6VendorID && (candidate.ProductID == x6ProductID || candidate.ProductID == transport.X6WiredMatch().ProductID)
-}
-
-func x6Connection(candidate Candidate) transport.Connection {
-	if candidate.VendorID == x6VendorID && candidate.ProductID == transport.X6WiredMatch().ProductID {
-		return transport.Wired
-	}
-	return transport.Dongle
+	return facts, nil
 }
 
 func hasPhysicalPath(candidate Candidate) bool {
@@ -384,20 +390,16 @@ func candidateKey(candidate Candidate) string {
 	return fmt.Sprintf("%d:%s", candidate.Bus, candidate.PortPath)
 }
 
-func hasValidatedInterface(interfaces []InterfaceDescriptor) bool {
+func hasValidatedInterface(interfaces []InterfaceDescriptor, input transport.InputDescriptor) bool {
 	for _, descriptor := range interfaces {
-		if descriptor.Number != 2 || descriptor.AlternateSetting != 0 || descriptor.Class != hidClass {
+		if descriptor.Number != input.InterfaceNumber || descriptor.AlternateSetting != 0 || descriptor.Class != hidClass {
 			continue
 		}
 		for _, endpoint := range descriptor.Endpoints {
-			if endpoint == statusEndpoint {
+			if endpoint == input.EndpointAddress {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-func hasX6TopLevelUsage(descriptor []byte) bool {
-	return bytes.Contains(descriptor, []byte{0x05, 0x01, 0x09, 0x80})
 }

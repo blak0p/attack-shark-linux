@@ -3,21 +3,14 @@
 package hidlinux
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
-
-// x6MacroSpacing is conservative engineering policy, not a validated firmware
-// minimum. Captured inter-chunk intervals were 811.726–1190.951ms.
-const x6MacroSpacing = 1200 * time.Millisecond
 
 type macroWait func(context.Context, time.Duration) error
 
@@ -32,17 +25,17 @@ func waitMacroChunk(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-// SendX6MacroBound uploads the strict report09 template. Success means only
-// normal upload status, not playback, readback or persistence. Never retries.
-func (b *HidrawBackend) SendX6MacroBound(ctx context.Context, binding mouse.Binding, click macros.X6Click) error {
-	return b.sendX6MacroBound(ctx, binding, click, waitMacroChunk)
+// SendChunksBound uploads model-encoded chunks Spacing apart. Success means only
+// the batch's final status, not playback, readback or persistence. Never retries.
+func (b *HidrawBackend) SendChunksBound(ctx context.Context, binding mouse.Binding, batch mouse.Batch) error {
+	return b.sendChunksBound(ctx, binding, batch, waitMacroChunk)
 }
 
-func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Binding, click macros.X6Click, wait macroWait) (err error) {
-	reports, err := macros.EncodeX6Reports(click)
-	if err != nil {
-		return err
+func (b *HidrawBackend) sendChunksBound(ctx context.Context, binding mouse.Binding, batch mouse.Batch, wait macroWait) (err error) {
+	if batch.Status == nil {
+		return errors.New("batch status classifier is required")
 	}
+	reports := batch.Clone().Chunks
 	if err = ctx.Err(); err != nil {
 		return err
 	}
@@ -80,139 +73,28 @@ func (b *HidrawBackend) sendX6MacroBound(ctx context.Context, binding mouse.Bind
 			return &diagnosticError{operation: "transfer", err: fmt.Errorf("macro chunk %d wrote %d bytes, want %d", i, count, len(report))}
 		}
 		if i < len(reports)-1 {
-			if err = wait(ctx, x6MacroSpacing); err != nil {
+			if err = wait(ctx, batch.Spacing); err != nil {
 				return err
 			}
 		}
 	}
 	// Pacing is outside the final ACK deadline. No per-chunk ACK is expected.
-	return b.awaitMacroStatus(ctx, node, binding, 9)
+	return b.awaitBatchStatus(ctx, node, binding, batch.Status)
 }
 
-// SendX6MacroAssignmentBound owns report08 and the whole report09 batch under
-// one command lock. Only report08 is resent when the receiver drops it; the
-// report09 batch is never retried and nothing is rolled back.
-func (b *HidrawBackend) SendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click) (mouse.MacroProgress, error) {
-	return b.sendX6MacroAssignmentBound(ctx, binding, assignment, click, waitMacroChunk)
+// SendBatchBound owns the setup report and the whole chunk batch under one
+// command lock. Only the setup report is resent when the receiver drops it; the
+// chunks are never retried and nothing is rolled back.
+func (b *HidrawBackend) SendBatchBound(ctx context.Context, binding mouse.Binding, batch mouse.Batch) (mouse.MacroProgress, error) {
+	return b.sendBatchBound(ctx, binding, batch, waitMacroChunk)
 }
 
-func (b *HidrawBackend) sendX6MacroAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, click macros.X6Click, wait macroWait) (progress mouse.MacroProgress, err error) {
-	report, err := x6.EncodeMacroAssignmentReport(assignment)
-	if err != nil {
-		return progress, err
+func (b *HidrawBackend) sendBatchBound(ctx context.Context, binding mouse.Binding, batch mouse.Batch, wait macroWait) (progress mouse.MacroProgress, err error) {
+	if len(batch.Setup) == 0 || batch.SetupKeepReading == nil || batch.Status == nil {
+		return progress, errors.New("batch requires a setup report, setup ACK matcher and status classifier")
 	}
-	destination, err := x6.MacroDestinationForButton(assignment.Button)
-	if err != nil {
-		return progress, err
-	}
-	chunks, err := macros.EncodeX6Upload(macros.X6Upload{Destination: destination, Click: click})
-	if err != nil {
-		return progress, err
-	}
-	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
-}
-
-// SendX6MacroSequenceAssignmentBound admits only the bounded offline sequence
-// codec and retains the composite command's ownership and progress semantics.
-func (b *HidrawBackend) SendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence) (mouse.MacroProgress, error) {
-	return b.sendX6MacroSequenceAssignmentBound(ctx, binding, assignment, sequence, waitMacroChunk)
-}
-
-func (b *HidrawBackend) sendX6MacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, assignment x6.MacroAssignment, sequence macros.X6Sequence, wait macroWait) (mouse.MacroProgress, error) {
-	report, err := x6.EncodeMacroAssignmentReport(assignment)
-	if err != nil {
-		return mouse.MacroProgress{}, err
-	}
-	destination, err := x6.MacroDestinationForButton(assignment.Button)
-	if err != nil {
-		return mouse.MacroProgress{}, err
-	}
-	chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: sequence})
-	if err != nil {
-		return mouse.MacroProgress{}, err
-	}
-	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
-}
-
-// SendX6MultiMacroSequenceAssignmentBound admits multiple macro sequences on distinct buttons.
-func (b *HidrawBackend) SendX6MultiMacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
-	return b.sendX6MultiMacroSequenceAssignmentBound(ctx, binding, config, items, waitMacroChunk)
-}
-
-func (b *HidrawBackend) sendX6MultiMacroSequenceAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroSequenceItem, wait macroWait) (mouse.MacroProgress, error) {
-	if len(items) == 0 {
-		return mouse.MacroProgress{}, errors.New("no macro sequence items")
-	}
-	buttons := make([]uint8, len(items))
-	seen := make(map[uint8]bool, len(items))
-	for i, item := range items {
-		if seen[item.Button] {
-			return mouse.MacroProgress{}, fmt.Errorf("duplicate macro button %d", item.Button)
-		}
-		seen[item.Button] = true
-		buttons[i] = item.Button
-	}
-	report, err := x6.EncodeMultiMacroAssignmentReport(config, buttons)
-	if err != nil {
-		return mouse.MacroProgress{}, err
-	}
-	var allChunks [][]byte
-	for _, item := range items {
-		destination, err := x6.MacroDestinationForButton(item.Button)
-		if err != nil {
-			return mouse.MacroProgress{}, err
-		}
-		chunks, err := macros.EncodeX6SequenceUpload(macros.X6SequenceUpload{Destination: destination, Sequence: item.Sequence})
-		if err != nil {
-			return mouse.MacroProgress{}, err
-		}
-		allChunks = append(allChunks, chunks...)
-	}
-	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, allChunks, wait)
-}
-
-// SendX6MultiMacroLocalAssignmentBound admits exact balanced local events and
-// retains the existing single report08/ordered report09/final ACK transaction.
-// Confirmation describes transport only, never physical playback.
-func (b *HidrawBackend) SendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
-	return b.sendX6MultiMacroLocalAssignmentBound(ctx, binding, config, items, waitMacroChunk)
-}
-
-func (b *HidrawBackend) sendX6MultiMacroLocalAssignmentBound(ctx context.Context, binding mouse.Binding, config x6.RemapConfig, items []mouse.MacroLocalItem, wait macroWait) (mouse.MacroProgress, error) {
-	empty := mouse.MacroProgress{}
-	config.Buttons = append([]x6.RemapButton(nil), config.Buttons...)
-	if len(items) == 0 {
-		return empty, errors.New("no macro local items")
-	}
-	buttons := make([]uint8, len(items))
-	seen := make(map[uint8]bool, len(items))
-	var chunks [][]byte
-	for i, item := range items {
-		item.Events = append([]macros.Event(nil), item.Events...)
-		if seen[item.Button] {
-			return empty, fmt.Errorf("duplicate macro button %d", item.Button)
-		}
-		seen[item.Button] = true
-		buttons[i] = item.Button
-		destination, err := x6.MacroDestinationForButton(item.Button)
-		if err != nil {
-			return empty, err
-		}
-		reports, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
-		if err != nil {
-			return empty, err
-		}
-		chunks = append(chunks, reports...)
-	}
-	report, err := x6.EncodeMultiMacroAssignmentReport(config, buttons)
-	if err != nil {
-		return empty, err
-	}
-	// All payloads/config/destinations are admitted before acquiring command ownership.
-	return b.sendX6MacroAssignmentReportsBound(ctx, binding, report, chunks, wait)
-}
-
-func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, binding mouse.Binding, report []byte, chunks [][]byte, wait macroWait) (progress mouse.MacroProgress, err error) {
+	batch = batch.Clone()
+	report, chunks := batch.Setup, batch.Chunks
 	if err = ctx.Err(); err != nil {
 		return progress, err
 	}
@@ -264,7 +146,7 @@ func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, b
 	}
 	// report08 is a whole settings report, so it gets the same resend as the
 	// plain remap command. The report09 chunks below are never resent.
-	if _, _, err = b.awaitACKWithResend(ctx, node, binding, report, func(r []byte) bool { return !x6.MatchesRemapACK(r) }); err != nil {
+	if _, _, err = b.awaitACKWithResend(ctx, node, binding, report, batch.SetupKeepReading); err != nil {
 		return progress, err
 	}
 	progress.Assignment = mouse.MacroAssignmentACKConfirmed
@@ -277,7 +159,7 @@ func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, b
 			return progress, err
 		}
 		if i < len(chunks)-1 {
-			if err = wait(ctx, x6MacroSpacing); err != nil {
+			if err = wait(ctx, batch.Spacing); err != nil {
 				return progress, err
 			}
 		}
@@ -285,14 +167,14 @@ func (b *HidrawBackend) sendX6MacroAssignmentReportsBound(ctx context.Context, b
 	if err = validate(); err != nil {
 		return progress, err
 	}
-	if err = b.awaitMacroStatus(ctx, node, binding, 9); err != nil {
+	if err = b.awaitBatchStatus(ctx, node, binding, batch.Status); err != nil {
 		return progress, err
 	}
 	progress.Upload = mouse.MacroUploadConfirmed
 	return progress, nil
 }
 
-func (b *HidrawBackend) awaitMacroStatus(ctx context.Context, node hidrawNode, binding mouse.Binding, id byte) error {
+func (b *HidrawBackend) awaitBatchStatus(ctx context.Context, node hidrawNode, binding mouse.Binding, classify func([]byte) mouse.BatchStatus) error {
 	bounded, cancel := context.WithTimeout(ctx, b.readTimeout)
 	defer cancel()
 	buffer := make([]byte, 64)
@@ -309,34 +191,15 @@ func (b *HidrawBackend) awaitMacroStatus(ctx context.Context, node hidrawNode, b
 		}
 		report := append([]byte(nil), buffer[:count]...)
 		b.dispatchListenerReport(binding.Path, report)
-		if bytes.Equal(report, []byte{3, 0x10, 0x50, 0, id}) {
+		switch classify(report) {
+		case mouse.StatusDone:
 			return nil
-		}
-		// A final09 status before assignment ACK must not authorize uploading.
-		if knownMacroInterleave(report) {
+		// A final status before the setup ACK must not authorize uploading.
+		case mouse.StatusIgnore:
 			continue
 		}
 		return &diagnosticError{operation: "ack_failure", err: fmt.Errorf("unexpected macro status %x", report)}
 	}
-}
-
-func knownMacroInterleave(r []byte) bool {
-	if len(r) != 5 || r[0] != 3 || r[1] != 0x10 {
-		return false
-	}
-	// Heartbeat byte 3 is not an ACK field: captured 031040010a is valid.
-	// This matches the existing X6 battery decoder's five-byte status shape.
-	if r[2] == 0x40 {
-		return true
-	}
-	if r[2] != 0x50 || r[3] != 0 {
-		return false
-	}
-	switch r[4] {
-	case 4, 5, 6, 8:
-		return true
-	}
-	return false
 }
 
 func (b *HidrawBackend) macroBindingPath(ctx context.Context, binding mouse.Binding) (string, error) {
@@ -356,7 +219,7 @@ func (b *HidrawBackend) macroBindingPath(ctx context.Context, binding mouse.Bind
 	if !ok || candidateKey(candidate) != binding.Path || candidate.VendorID != binding.ID.VendorID || candidate.ProductID != binding.ID.ProductID || !serialMatches {
 		return "", mouse.ErrStaleBinding
 	}
-	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, transport.InputDescriptor{InterfaceNumber: hidInterface, UsagePage: 1, Usage: 0x80, EndpointAddress: statusEndpoint}); err != nil {
+	if _, err := b.ValidateDescriptor(ctx, transport.Candidate{Path: binding.Path}, statusInputFor(b.registry, candidate.VendorID, candidate.ProductID)); err != nil {
 		return "", mouse.ErrStaleBinding
 	}
 	path, err := b.hidrawPath(candidate)

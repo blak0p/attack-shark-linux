@@ -93,7 +93,7 @@ func TestHIDUEventMatches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := hidUEventMatches([]byte(tt.uevent), tt.cand); got != tt.want {
+			if got := hidUEventMatches([]byte(tt.uevent), tt.cand, 2); got != tt.want {
 				t.Fatalf("hidUEventMatches(%q, %+v) = %v, want %v", tt.uevent, tt.cand, got, tt.want)
 			}
 		})

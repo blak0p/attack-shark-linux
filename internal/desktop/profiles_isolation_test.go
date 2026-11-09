@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestProfileSwitchSelectionAtACK(t *testing.T) {
@@ -20,9 +20,9 @@ func TestProfileSwitchSelectionAtACK(t *testing.T) {
 			s, store, b := switchTestService(t, t.TempDir(), cmd)
 			source := s.GetProfiles().ActiveID
 			target := s.CreateProfile("target").ActiveID
-			p := profileConfiguration{Version: 1, Source: "local settings", Device: x6.DefaultDeviceConfig()}
+			p := profileConfiguration{Version: 1, Source: "local settings", Device: device.DefaultDeviceConfig()}
 			p.Device.DPI[0] = 3200
-			p.Device.PollingRate = x6.PollingRate500
+			p.Device.PollingRate = device.PollingRate500
 			raw, _ := json.Marshal(p)
 			if err := store.SaveActive(b.ID, b.ProfileID, raw); err != nil {
 				t.Fatal(err)
@@ -72,15 +72,15 @@ func TestProfilesRetryInvalidation(t *testing.T) {
 	target := s.CreateProfile("target").ActiveID
 	store.Switch(b.ID, b.ProfileID, source)
 	fail := true
-	load := func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }
-	save := func(Binding, x6.DeviceConfig) error {
+	load := func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }
+	save := func(Binding, device.DeviceConfig) error {
 		if fail {
 			return errors.New("disk")
 		}
 		return nil
 	}
 	s.AttachPollingPersistence(load, save).AttachNormalSleepPersistence(load, save)
-	s.AttachDevicePersistence(func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil }, func(Binding, x6.DPIConfig) error {
+	s.AttachDevicePersistence(func(Binding) (device.DPIConfig, error) { return device.DefaultDPIConfig(), nil }, func(Binding, device.DPIConfig) error {
 		if fail {
 			return errors.New("disk")
 		}
@@ -90,7 +90,7 @@ func TestProfilesRetryInvalidation(t *testing.T) {
 	d.DPI[0] = 2800
 	s.StageDPI(d)
 	s.ApplyDPI(context.Background())
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	s.ApplyPollingRate(context.Background())
 	s.StageNormalSleep(7)
 	s.ApplyNormalSleep()
@@ -125,10 +125,10 @@ func TestProfilesRestoreLightingAndMacros(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.StageMacroAssignment(m.ID, 6, 3)
-	if r := s.ApplyRemap(x6.DefaultRemapConfig()); r.Error.Code != "" {
+	if r := s.ApplyRemap(device.DefaultRemapConfig()); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	light := x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonTwo}
+	light := device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonTwo}
 	s.StageLighting(light)
 	if r := s.ApplyLighting(); r.Error.Code != "" {
 		t.Fatal(r)
@@ -147,7 +147,7 @@ func TestProfilesRestoreLightingAndMacros(t *testing.T) {
 	if r := s.GetProfiles(); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	if r := s.ApplyPollingRate(context.Background()); r.Error.Code != "" || r.Persistence != "success" {
 		t.Fatal(r)
 	}
@@ -161,7 +161,7 @@ func TestProfilesInflightRetrySerializesSwitch(t *testing.T) {
 	store.Switch(b.ID, b.ProfileID, source)
 	entered, release := make(chan struct{}), make(chan struct{})
 	fail := true
-	s.AttachDevicePersistence(func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil }, func(Binding, x6.DPIConfig) error {
+	s.AttachDevicePersistence(func(Binding) (device.DPIConfig, error) { return device.DefaultDPIConfig(), nil }, func(Binding, device.DPIConfig) error {
 		if fail {
 			return errors.New("disk")
 		}
@@ -180,7 +180,7 @@ func TestProfilesInflightRetrySerializesSwitch(t *testing.T) {
 	// Subsequent switch persistence uses the same saver, so remove its blocking seam
 	// only after retry finishes. Switch must not enter hardware before release.
 	switched := make(chan ProfileSnapshot, 1)
-	s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error { return nil })
+	s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error { return nil })
 	go func() { switched <- s.SwitchProfile(target) }()
 	select {
 	case r := <-switched:
@@ -196,7 +196,7 @@ func TestProfilesInflightRetrySerializesSwitch(t *testing.T) {
 	saved, _ := store.Read(b.ID, b.ProfileID, target)
 	var p profileConfiguration
 	json.Unmarshal(saved.Configuration, &p)
-	if p.Device.DPI[0] != x6.DefaultDPIConfig().DPI[0] {
+	if p.Device.DPI[0] != device.DefaultDPIConfig().DPI[0] {
 		t.Fatal("retry corrupted target")
 	}
 }
@@ -210,7 +210,7 @@ func TestProfilesSwitchRetainsFailedMacroProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.StageMacroAssignment(m.ID, 6, 3)
-	s.ApplyRemap(x6.DefaultRemapConfig())
+	s.ApplyRemap(device.DefaultRemapConfig())
 	if r := s.SwitchProfile(id); !r.Applied {
 		t.Fatal(r)
 	}
@@ -228,11 +228,11 @@ func TestProfilesNoStorePersistenceCompatibility(t *testing.T) {
 	cmd := &recordingSwitchCommand{}
 	s, _, _ := switchTestService(t, t.TempDir(), cmd)
 	s.profiles = nil
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	if r := s.ApplyPollingRate(context.Background()); r.Persistence != "" {
 		t.Errorf("polling persistence=%q", r.Persistence)
 	}
-	if r := s.ApplyRemap(x6.DefaultRemapConfig()); r.Persistence != "" {
+	if r := s.ApplyRemap(device.DefaultRemapConfig()); r.Persistence != "" {
 		t.Errorf("remap persistence=%q", r.Persistence)
 	}
 }
@@ -243,7 +243,7 @@ func TestProfileSwitchLegacyPersistenceFailure(t *testing.T) {
 	source := s.GetProfiles().ActiveID
 	target := s.CreateProfile("target").ActiveID
 	store.Switch(b.ID, b.ProfileID, source)
-	s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error { return errors.New("disk unavailable") })
+	s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error { return errors.New("disk unavailable") })
 	result := s.SwitchProfile(target)
 	list, _ := store.List(b.ID, b.ProfileID)
 	if result.Applied || result.Error.Code != PersistenceFailed || list.ActiveID != source {

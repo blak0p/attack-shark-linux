@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"sync"
 	"testing"
@@ -8,17 +9,16 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type listenerFake struct {
 	mu       sync.RWMutex
-	onStatus func(x6.StatusEvent)
+	onStatus func(device.StatusEvent)
 	ready    chan struct{}
 	once     sync.Once
 }
 
-func (f *listenerFake) Listen(ctx context.Context, onStatus func(x6.StatusEvent)) error {
+func (f *listenerFake) Listen(ctx context.Context, onStatus func(device.StatusEvent)) error {
 	f.mu.Lock()
 	f.onStatus = onStatus
 	f.mu.Unlock()
@@ -29,7 +29,7 @@ func (f *listenerFake) Listen(ctx context.Context, onStatus func(x6.StatusEvent)
 
 func newListenerFake() *listenerFake { return &listenerFake{ready: make(chan struct{})} }
 
-func (f *listenerFake) emit(event x6.StatusEvent) {
+func (f *listenerFake) emit(event device.StatusEvent) {
 	f.mu.RLock()
 	callback := f.onStatus
 	f.mu.RUnlock()
@@ -60,7 +60,7 @@ func (f *eventSinkFake) snapshot() (bool, []StatusEvent) {
 }
 
 func TestListenerComponentOwnsAttachmentAndEventSink(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if service.listenerComponent == nil {
 		t.Fatal("New must initialize listener ownership")
 	}
@@ -70,14 +70,14 @@ func TestListenerComponentOwnsAttachmentAndEventSink(t *testing.T) {
 	if service.listenerComponent.listener != listener || service.listenerComponent.events != sink {
 		t.Fatal("AttachListener must retain listener and sink in the listener component")
 	}
-	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, BatteryAvailable: true, BatteryPercent: 42})
+	service.handleStatusEvent(device.StatusEvent{Connection: transport.Dongle, BatteryAvailable: true, BatteryPercent: 42})
 	if emitted, events := sink.snapshot(); !emitted || len(events) != 1 || events[0].Battery == nil || *events[0].Battery != 42 {
 		t.Fatalf("listener component emission = %v, %+v; want one battery delta", emitted, events)
 	}
 }
 
 func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	listener := newListenerFake()
 	sink := &eventSinkFake{}
 	service.AttachListener(listener, sink)
@@ -92,13 +92,13 @@ func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 		t.Fatal("StartListener() never ran the listener")
 	}
 
-	listener.emit(x6.StatusEvent{Connection: x6.Dongle, BatteryPercent: 72, BatteryAvailable: true})
+	listener.emit(device.StatusEvent{Connection: transport.Dongle, BatteryPercent: 72, BatteryAvailable: true})
 	snapshot := service.GetSnapshot()
 	if snapshot.Connection != "dongle" || snapshot.Battery == nil || *snapshot.Battery != 72 {
 		t.Fatalf("after heartbeat snapshot = %#v; want dongle battery 72", snapshot)
 	}
 
-	listener.emit(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 4, StageAvailable: true})
+	listener.emit(device.StatusEvent{Connection: transport.Dongle, ActiveStage: 4, StageAvailable: true})
 	snapshot = service.GetSnapshot()
 	if snapshot.ObservedStage == nil || *snapshot.ObservedStage != 4 || snapshot.ObservedDPI == nil || *snapshot.ObservedDPI != 3200 || snapshot.Revision != 0 {
 		t.Fatalf("after stage event snapshot = %#v; want stage-only observation mapped from acknowledged state", snapshot)
@@ -117,12 +117,12 @@ func TestListenerFoldsStatusAndStageIntoSnapshot(t *testing.T) {
 }
 
 func TestStageObservationUsesAcknowledgedMappingAndPreemptsUnsentIntent(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	listener := newListenerFake()
 	service.AttachListener(listener, &eventSinkFake{})
-	service.StageDPI(ToDTO(x6.DPIConfig{StageMask: 0x3f, LiftDistance: 1, ActiveStage: 1, DPI: [8]int{1600, 1200, 3200, 2400, 5600, 26000, 50, 50}}))
+	service.StageDPI(ToDTO(device.DPIConfig{StageMask: 0x3f, LiftDistance: 1, ActiveStage: 1, DPI: [8]int{1600, 1200, 3200, 2400, 5600, 26000, 50, 50}}))
 
-	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 3, StageAvailable: true})
+	service.handleStatusEvent(device.StatusEvent{Connection: transport.Dongle, ActiveStage: 3, StageAvailable: true})
 	got := service.GetSnapshot()
 	if got.ObservedStage == nil || *got.ObservedStage != 3 || got.ObservedDPI == nil || *got.ObservedDPI != 1600 {
 		t.Fatalf("stage observation = %#v; want stage 3 mapped to acknowledged 1600 DPI", got)
@@ -133,10 +133,10 @@ func TestStageObservationUsesAcknowledgedMappingAndPreemptsUnsentIntent(t *testi
 }
 
 func TestStageObservationKeepsMissingAcknowledgedMappingUnknown(t *testing.T) {
-	applied := x6.DefaultDPIConfig()
+	applied := device.DefaultDPIConfig()
 	applied.StageMask = 0x03
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: applied})
-	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, ActiveStage: 3, StageAvailable: true})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: applied})
+	service.handleStatusEvent(device.StatusEvent{Connection: transport.Dongle, ActiveStage: 3, StageAvailable: true})
 
 	got := service.GetSnapshot()
 	if got.ObservedStage == nil || *got.ObservedStage != 3 || got.ObservedDPI != nil {
@@ -145,9 +145,9 @@ func TestStageObservationKeepsMissingAcknowledgedMappingUnknown(t *testing.T) {
 }
 
 func TestInventoryRefreshStartsNewStageObservationEpoch(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, nil))
 	selected := service.RefreshInventory(context.Background()).Selected
 	service.handleAttributedStatusEvent(StatusEvent{ID: selected.ID, Path: selected.Path, InventoryRevision: selected.InventoryRevision, ActiveStage: intPtr(3)})
 	if service.GetSnapshot().ObservedStage == nil {

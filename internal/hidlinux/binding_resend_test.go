@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 )
 
 // scriptedNode releases scripted reports: initial ones after the first write,
@@ -73,11 +72,11 @@ func resendHarnessWithSilence(t *testing.T, node *scriptedNode, delay, silence, 
 	root := fixtureRoot(t)
 	writeFixtureFile(t, filepath.Join(root, "sys/bus/usb/devices/1-4/serial"), "A\n")
 	opener := &countingHidrawOpener{path: filepath.Join(root, "dev/hidraw3"), node: node}
-	backend := &HidrawBackend{sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: readTimeout, resendDelay: delay, silenceDelay: silence, maxAttempts: 4, opener: opener}
-	payload := make([]byte, protocol.DPIReportLength)
+	backend := &HidrawBackend{registry: fixtureRegistry(t), sysRoot: filepath.Join(root, "sys"), devRoot: filepath.Join(root, "dev"), readTimeout: readTimeout, resendDelay: delay, silenceDelay: silence, maxAttempts: 4, opener: opener}
+	payload := make([]byte, fixtureConfigLength)
 	payload[0] = 0x04
 	binding := mouse.Binding{ID: mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "A"}, ProfileID: "x6", Path: "1:1-4"}
-	return backend.SendAndAwaitBound(context.Background(), binding, payload, func(r []byte) bool { return !protocol.MatchesDPIACK(r) })
+	return backend.SendAndAwaitBound(context.Background(), binding, payload, func(r []byte) bool { return !fixtureACK(4, r) })
 }
 
 func TestSendAndAwaitBoundResendsAfterMotionRejection(t *testing.T) {

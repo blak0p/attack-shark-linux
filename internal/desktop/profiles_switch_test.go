@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,9 +11,7 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type recordingSwitchCommand struct {
@@ -39,35 +38,7 @@ func (c *recordingSwitchCommand) SendAndAwaitBound(_ context.Context, _ mouse.Bi
 	return nil
 }
 
-func (c *recordingSwitchCommand) SendX6MacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.MacroAssignment, _ macros.X6Sequence) (mouse.MacroProgress, error) {
-	c.calls++
-	if c.failAtCall != 0 && c.calls == c.failAtCall {
-		if c.failWithErr != nil {
-			return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, c.failWithErr
-		}
-		return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, errors.New("macro ack failed")
-	}
-	if c.during != nil {
-		c.during()
-	}
-	return mouse.MacroProgress{Upload: mouse.MacroUploadConfirmed, Assignment: mouse.MacroAssignmentACKConfirmed}, nil
-}
-
-func (c *recordingSwitchCommand) SendX6MultiMacroSequenceAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.RemapConfig, _ []mouse.MacroSequenceItem) (mouse.MacroProgress, error) {
-	c.calls++
-	if c.failAtCall != 0 && c.calls == c.failAtCall {
-		if c.failWithErr != nil {
-			return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, c.failWithErr
-		}
-		return mouse.MacroProgress{Upload: mouse.MacroUploadNotStarted, Assignment: mouse.MacroAssignmentNotStarted}, errors.New("macro ack failed")
-	}
-	if c.during != nil {
-		c.during()
-	}
-	return mouse.MacroProgress{Upload: mouse.MacroUploadConfirmed, Assignment: mouse.MacroAssignmentACKConfirmed}, nil
-}
-
-func (c *recordingSwitchCommand) SendX6MultiMacroLocalAssignmentBound(_ context.Context, _ mouse.Binding, _ protocol.RemapConfig, _ []mouse.MacroLocalItem) (mouse.MacroProgress, error) {
+func (c *recordingSwitchCommand) SendBatchBound(_ context.Context, _ mouse.Binding, _ mouse.Batch) (mouse.MacroProgress, error) {
 	c.calls++
 	if c.failAtCall != 0 && c.calls == c.failAtCall {
 		if c.failWithErr != nil {
@@ -84,7 +55,7 @@ func (c *recordingSwitchCommand) SendX6MultiMacroLocalAssignmentBound(_ context.
 func switchTestService(t *testing.T, root string, command *recordingSwitchCommand) (*Service, *configstore.ProfileStore, mouse.Binding) {
 	t.Helper()
 	store := configstore.NewProfileStore(root)
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,9 +67,9 @@ func switchTestService(t *testing.T, root string, command *recordingSwitchComman
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := Compose(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}, WithMacroLibrary(lib, nil)).
+	s := Compose(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}, WithMacroLibrary(lib, nil)).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command)).
-		AttachProfiles(store, func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil })
+		AttachProfiles(store, func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil })
 
 	inventory := s.RefreshInventory(context.Background())
 	selected := s.SelectDevice(inventory.Devices[0].ID)
@@ -130,26 +101,26 @@ func TestProfilesSwitchSuccessAndSnapshotUpdates(t *testing.T) {
 	gamingConfig := profileConfiguration{
 		Version: 1,
 		Source:  "local settings",
-		Device: x6.DeviceConfig{
-			DPIConfig: func() x6.DPIConfig {
-				d := x6.DefaultDPIConfig()
+		Device: device.DeviceConfig{
+			DPIConfig: func() device.DPIConfig {
+				d := device.DefaultDPIConfig()
 				d.DPI[0] = 3200
 				return d
 			}(),
-			PollingRate:        x6.PollingRate500,
+			PollingRate:        device.PollingRate500,
 			NormalSleepMinutes: 10.0,
 			ResponseTimeMs:     16,
-			Remap: func() *x6.RemapConfig {
-				r := x6.DefaultRemapConfig()
+			Remap: func() *device.RemapConfig {
+				r := device.DefaultRemapConfig()
 				if len(r.Buttons) > 1 {
-					r.Buttons[1].Action = protocol.RemapLeft
+					r.Buttons[1].Action = device.RemapLeft
 				}
 				return &r
 			}(),
 		},
-		Lighting: &x6.LightingSelection{
-			Mode:       x6.LightingBreathing,
-			TemplateID: x6.LightingTemplateBreathingGreen,
+		Lighting: &device.LightingSelection{
+			Mode:       device.LightingBreathing,
+			TemplateID: device.LightingTemplateBreathingGreen,
 		},
 	}
 	raw, err := json.Marshal(gamingConfig)
@@ -181,7 +152,7 @@ func TestProfilesSwitchSuccessAndSnapshotUpdates(t *testing.T) {
 	if dpi := s.GetSnapshot(); dpi.Applied.DPI[0] != 3200 {
 		t.Fatalf("DPI not updated: got %d, want 3200", dpi.Applied.DPI[0])
 	}
-	if pol := s.GetPollingSnapshot(); pol.Applied != x6.PollingRate500 {
+	if pol := s.GetPollingSnapshot(); pol.Applied != device.PollingRate500 {
 		t.Fatalf("Polling not updated: got %d, want 500", pol.Applied)
 	}
 	if sleep := s.GetNormalSleepSnapshot(); sleep.Applied != 10.0 {
@@ -190,10 +161,10 @@ func TestProfilesSwitchSuccessAndSnapshotUpdates(t *testing.T) {
 	if deb := s.GetDebounceSnapshot(); deb.Applied != 16 {
 		t.Fatalf("Debounce not updated: got %d, want 16", deb.Applied)
 	}
-	if light := s.GetLightingSnapshot(); light.Applied == nil || light.Applied.Mode != x6.LightingBreathing {
+	if light := s.GetLightingSnapshot(); light.Applied == nil || light.Applied.Mode != device.LightingBreathing {
 		t.Fatalf("Lighting not updated: got %+v", light.Applied)
 	}
-	if rem := s.GetRemapSnapshot(); len(rem.Applied.Buttons) < 2 || rem.Applied.Buttons[1].Action != protocol.RemapLeft {
+	if rem := s.GetRemapSnapshot(); len(rem.Applied.Buttons) < 2 || rem.Applied.Buttons[1].Action != device.RemapLeft {
 		t.Fatalf("Remap not updated: got %+v", rem.Applied)
 	}
 
@@ -218,13 +189,13 @@ func TestProfilesSwitchPartialFailurePreservesActiveIDAndPayloads(t *testing.T) 
 	targetConfig := profileConfiguration{
 		Version: 1,
 		Source:  "local settings",
-		Device: x6.DeviceConfig{
-			DPIConfig: func() x6.DPIConfig {
-				d := x6.DefaultDPIConfig()
+		Device: device.DeviceConfig{
+			DPIConfig: func() device.DPIConfig {
+				d := device.DefaultDPIConfig()
 				d.DPI[0] = 4800
 				return d
 			}(),
-			PollingRate:        x6.PollingRate250,
+			PollingRate:        device.PollingRate250,
 			NormalSleepMinutes: 15.0,
 			ResponseTimeMs:     20,
 		},
@@ -288,7 +259,7 @@ func TestProfilesSwitchPartialFailurePreservesActiveIDAndPayloads(t *testing.T) 
 		t.Fatalf("DPI should have updated to 4800, got %d", dpi.Applied.DPI[0])
 	}
 	// Lane 2 (Polling) failed, so polling firmware is "failed" and was not applied
-	if pol := s.GetPollingSnapshot(); pol.Firmware != "failed" || pol.Applied == x6.PollingRate250 {
+	if pol := s.GetPollingSnapshot(); pol.Firmware != "failed" || pol.Applied == device.PollingRate250 {
 		t.Fatalf("Polling snapshot should show failure and unapplied, got %+v", pol)
 	}
 	// Lane 3 (Sleep) was not reached, so sleep snapshot remains at previous
@@ -312,9 +283,9 @@ func TestProfilesSwitchInvalidTargetPreflightSendsZeroWrites(t *testing.T) {
 	invalidConfig := profileConfiguration{
 		Version: 1,
 		Source:  "local settings",
-		Device: x6.DeviceConfig{
-			DPIConfig: func() x6.DPIConfig {
-				d := x6.DefaultDPIConfig()
+		Device: device.DeviceConfig{
+			DPIConfig: func() device.DPIConfig {
+				d := device.DefaultDPIConfig()
 				d.DPI[0] = -500 // invalid DPI
 				return d
 			}(),
@@ -365,8 +336,8 @@ func TestProfilesSwitchCancelsPendingAutosavesAndIgnoresLateCallbacks(t *testing
 		t.Fatal(err)
 	}
 
-	pol := s.StagePollingRate(x6.PollingRate250)
-	if err := s.pollingComponent.sync.ScheduleAt(binding, pol.Revision, x6.PollingRate250); err != nil {
+	pol := s.StagePollingRate(device.PollingRate250)
+	if err := s.pollingComponent.sync.ScheduleAt(binding, pol.Revision, device.PollingRate250); err != nil {
 		t.Fatal(err)
 	}
 
@@ -421,15 +392,15 @@ func TestProfilesOrdinaryEditsSaveActiveProfileAndRetry(t *testing.T) {
 	}
 
 	// 2. Polling apply updates active profile JSON
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	appliedPol := s.ApplyPollingRate(context.Background())
-	if appliedPol.Error.Code != "" || appliedPol.Applied != x6.PollingRate500 {
+	if appliedPol.Error.Code != "" || appliedPol.Applied != device.PollingRate500 {
 		t.Fatalf("ApplyPollingRate failed: %+v", appliedPol)
 	}
 
 	saved, _ = store.Read(binding.ID, binding.ProfileID, activeID)
 	json.Unmarshal(saved.Configuration, &p)
-	if p.Device.PollingRate != x6.PollingRate500 {
+	if p.Device.PollingRate != device.PollingRate500 {
 		t.Fatalf("active profile Polling not saved: %d", p.Device.PollingRate)
 	}
 
@@ -453,30 +424,30 @@ func TestProfilesOrdinaryEditsSaveActiveProfileAndRetry(t *testing.T) {
 	}
 
 	// 4. Lighting apply updates active profile JSON
-	lightSel := x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonTwo}
+	lightSel := device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonTwo}
 	s.StageLighting(lightSel)
 	appliedLight := s.ApplyLighting()
-	if appliedLight.Error.Code != "" || appliedLight.Applied == nil || appliedLight.Applied.Mode != x6.LightingNeon {
+	if appliedLight.Error.Code != "" || appliedLight.Applied == nil || appliedLight.Applied.Mode != device.LightingNeon {
 		t.Fatalf("ApplyLighting failed: %+v", appliedLight)
 	}
 
 	saved, _ = store.Read(binding.ID, binding.ProfileID, activeID)
 	json.Unmarshal(saved.Configuration, &p)
-	if p.Lighting == nil || p.Lighting.Mode != x6.LightingNeon {
+	if p.Lighting == nil || p.Lighting.Mode != device.LightingNeon {
 		t.Fatalf("active profile Lighting not saved: %+v", p.Lighting)
 	}
 
 	// 5. Remap apply updates active profile JSON
-	remap := x6.DefaultRemapConfig()
-	remap.Buttons[0].Action = protocol.RemapRight
+	remap := device.DefaultRemapConfig()
+	remap.Buttons[0].Action = device.RemapRight
 	appliedRemap := s.ApplyRemap(remap)
-	if appliedRemap.Error.Code != "" || appliedRemap.Applied.Buttons[0].Action != protocol.RemapRight {
+	if appliedRemap.Error.Code != "" || appliedRemap.Applied.Buttons[0].Action != device.RemapRight {
 		t.Fatalf("ApplyRemap failed: %+v", appliedRemap)
 	}
 
 	saved, _ = store.Read(binding.ID, binding.ProfileID, activeID)
 	json.Unmarshal(saved.Configuration, &p)
-	if p.Device.Remap == nil || p.Device.Remap.Buttons[0].Action != protocol.RemapRight {
+	if p.Device.Remap == nil || p.Device.Remap.Buttons[0].Action != device.RemapRight {
 		t.Fatalf("active profile Remap not saved: %+v", p.Device.Remap)
 	}
 }
@@ -506,7 +477,7 @@ func TestProfilesMacroAssignmentsSaveAndRoundtrip(t *testing.T) {
 	}
 
 	// Apply remap with macro
-	applied := s.ApplyRemap(x6.DefaultRemapConfig())
+	applied := s.ApplyRemap(device.DefaultRemapConfig())
 	if applied.Error.Code != "" || applied.Firmware != "success" {
 		t.Fatalf("ApplyRemap with macro failed: %+v", applied)
 	}

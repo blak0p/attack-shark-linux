@@ -1,13 +1,13 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"testing"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestStagingConfigurationDoesNotWriteAfterSchedulerAdvance(t *testing.T) {
@@ -26,19 +26,19 @@ func TestStagingConfigurationDoesNotWriteAfterSchedulerAdvance(t *testing.T) {
 		{
 			name: "polling",
 			stage: func(service *Service) {
-				service.StagePollingRate(x6.PollingRate500)
+				service.StagePollingRate(device.PollingRate500)
 			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatalf("NewProfileRegistry() error = %v", err)
 			}
 			command := &fakeHidrawCommand{}
 			scheduler := &fakeSyncScheduler{}
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 				AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).
 				attachAutomaticSave(scheduler).
 				attachPollingAutomaticSave(scheduler)
@@ -55,23 +55,23 @@ func TestStagingConfigurationDoesNotWriteAfterSchedulerAdvance(t *testing.T) {
 }
 
 func TestApplyPollingRateWritesOnlyAfterExplicitConfirmation(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &pollingCommandFake{}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command))
 	service.RefreshInventory(context.Background())
 
-	service.StagePollingRate(x6.PollingRate500)
+	service.StagePollingRate(device.PollingRate500)
 	if calls := command.calls; calls != 0 {
 		t.Fatalf("StagePollingRate() made %d device writes, want 0", calls)
 	}
 
 	got := service.ApplyPollingRate(context.Background())
-	if command.calls != 1 || got.Applied != x6.PollingRate500 || got.Desired != x6.PollingRate500 || got.Firmware != "success" {
+	if command.calls != 1 || got.Applied != device.PollingRate500 || got.Desired != device.PollingRate500 || got.Firmware != "success" {
 		t.Fatalf("ApplyPollingRate() = %#v, calls=%d; want one acknowledged selected write", got, command.calls)
 	}
 }
@@ -106,18 +106,18 @@ func TestApplyPollingRateRejectsInvalidSelectionWithoutIO(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatalf("NewProfileRegistry() error = %v", err)
 			}
 			source := &mutableInventorySource{candidates: []transport.Candidate{valid}}
 			command := &pollingCommandFake{}
 			saves := 0
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 				AttachInventory(mouse.NewTargetedService(registry, source, command)).
 				AttachPollingPersistence(
-					func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil },
-					func(Binding, x6.DeviceConfig) error {
+					func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil },
+					func(Binding, device.DeviceConfig) error {
 						saves++
 						return nil
 					},
@@ -142,22 +142,22 @@ func TestApplyPollingRateRejectsInvalidSelectionWithoutIO(t *testing.T) {
 }
 
 func TestApplyRemapReportsRetryablePersistenceFailureWithoutASecondDeviceWrite(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &remapCommandFake{ack: true}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command))
 	persistence := &remapPersistenceFake{failFirst: true}
 	service.remapPersistence = persistence
 	service.RefreshInventory(context.Background())
-	config := x6.DefaultRemapConfig()
-	config.Buttons[0].Action = x6.RemapFire
+	config := device.DefaultRemapConfig()
+	config.Buttons[0].Action = device.RemapFire
 
 	failed := service.ApplyRemap(config)
-	if command.calls != 1 || failed.Applied.Buttons[0].Action != x6.RemapFire || failed.Error.Code != PersistenceFailed || !failed.RetryAvailable {
+	if command.calls != 1 || failed.Applied.Buttons[0].Action != device.RemapFire || failed.Error.Code != PersistenceFailed || !failed.RetryAvailable {
 		t.Fatalf("ApplyRemap() = %#v, writes=%d; want acknowledged state and retryable persistence failure", failed, command.calls)
 	}
 	retried := service.ApplyRemap(config)
@@ -168,22 +168,22 @@ func TestApplyRemapReportsRetryablePersistenceFailureWithoutASecondDeviceWrite(t
 
 func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 	valid := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	config := x6.DefaultRemapConfig()
-	config.Buttons[0].Action = x6.RemapFire
-	browser := x6.DefaultRemapConfig()
-	browser.Buttons[0].Action = x6.RemapBrowserSearch
-	favorites := x6.DefaultRemapConfig()
-	favorites.Buttons[0].Action = x6.RemapAction("browser_favorites")
-	buttonOneMouseControls := []x6.RemapConfig{}
-	for _, action := range []x6.RemapAction{x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus} {
-		blocked := x6.DefaultRemapConfig()
+	config := device.DefaultRemapConfig()
+	config.Buttons[0].Action = device.RemapFire
+	browser := device.DefaultRemapConfig()
+	browser.Buttons[0].Action = device.RemapBrowserSearch
+	favorites := device.DefaultRemapConfig()
+	favorites.Buttons[0].Action = device.RemapAction("browser_favorites")
+	buttonOneMouseControls := []device.RemapConfig{}
+	for _, action := range []device.RemapAction{device.RemapScrollUp, device.RemapScrollDown, device.RemapDPICycle, device.RemapDPIPlus, device.RemapDPIMinus} {
+		blocked := device.DefaultRemapConfig()
 		blocked.Buttons[0].Action = action
 		buttonOneMouseControls = append(buttonOneMouseControls, blocked)
 	}
 
 	for _, tt := range []struct {
 		name      string
-		config    x6.RemapConfig
+		config    device.RemapConfig
 		setup     func(*Service, *mutableInventorySource)
 		ack       bool
 		saveErr   error
@@ -211,7 +211,7 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 		},
 		{
 			name:      "invalid configuration rejects before command",
-			config:    x6.RemapConfig{},
+			config:    device.RemapConfig{},
 			wantCode:  InvalidConfiguration,
 			wantCalls: 0,
 		},
@@ -258,14 +258,14 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatalf("NewProfileRegistry() error = %v", err)
 			}
 			source := &mutableInventorySource{candidates: []transport.Candidate{valid}}
 			command := &remapCommandFake{ack: tt.ack}
 			persistence := &remapPersistenceFake{err: tt.saveErr}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 				AttachInventory(mouse.NewTargetedService(registry, source, command))
 			service.remapPersistence = persistence
 			selected := service.RefreshInventory(context.Background()).Selected
@@ -299,11 +299,11 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 
 	for _, blocked := range buttonOneMouseControls {
 		t.Run("Button 1 Mouse Controls rejects before all side effects/"+string(blocked.Buttons[0].Action), func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil { t.Fatalf("NewProfileRegistry() error = %v", err) }
 			command := &remapCommandFake{ack: true}
 			persistence := &remapPersistenceFake{}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{valid}}, command))
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{valid}}, command))
 			service.remapPersistence = persistence
 			service.RefreshInventory(context.Background())
 			before, got := service.GetRemapSnapshot(), service.ApplyRemap(blocked)
@@ -315,14 +315,14 @@ func TestApplyRemapValidatesBindingACKAndPersistence(t *testing.T) {
 }
 
 func TestRemapSnapshotOrdersFreshBasicMultimediaMouseAndBrowserCatalog(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	first := service.GetRemapSnapshot()
-	want := []x6.RemapAction{
-		x6.RemapOff, x6.RemapLeft, x6.RemapRight, x6.RemapMiddle, x6.RemapForward, x6.RemapBackward, x6.RemapDoubleClick, x6.RemapFire,
-		x6.RemapMediaPlayer, x6.RemapPlayPause, x6.RemapStop, x6.RemapPreviousTrack, x6.RemapNextTrack, x6.RemapVolumeUp, x6.RemapVolumeDown, x6.RemapMute,
-		x6.RemapScrollUp, x6.RemapScrollDown, x6.RemapDPICycle, x6.RemapDPIPlus, x6.RemapDPIMinus,
-		x6.RemapBrowserCalculator, x6.RemapBrowserEmail, x6.RemapBrowserForward, x6.RemapBrowserBackward, x6.RemapBrowserStop,
-		x6.RemapBrowserMyComputer, x6.RemapBrowserRefresh, x6.RemapBrowserHome, x6.RemapBrowserSearch,
+	want := []device.RemapAction{
+		device.RemapOff, device.RemapLeft, device.RemapRight, device.RemapMiddle, device.RemapForward, device.RemapBackward, device.RemapDoubleClick, device.RemapFire,
+		device.RemapMediaPlayer, device.RemapPlayPause, device.RemapStop, device.RemapPreviousTrack, device.RemapNextTrack, device.RemapVolumeUp, device.RemapVolumeDown, device.RemapMute,
+		device.RemapScrollUp, device.RemapScrollDown, device.RemapDPICycle, device.RemapDPIPlus, device.RemapDPIMinus,
+		device.RemapBrowserCalculator, device.RemapBrowserEmail, device.RemapBrowserForward, device.RemapBrowserBackward, device.RemapBrowserStop,
+		device.RemapBrowserMyComputer, device.RemapBrowserRefresh, device.RemapBrowserHome, device.RemapBrowserSearch,
 	}
 	if len(first.Actions) != len(want) {
 		t.Fatalf("catalog length = %d, want %d", len(first.Actions), len(want))
@@ -332,8 +332,8 @@ func TestRemapSnapshotOrdersFreshBasicMultimediaMouseAndBrowserCatalog(t *testin
 			t.Fatalf("catalog[%d] = %q, want %q", index, first.Actions[index], action)
 		}
 	}
-	first.Actions[0] = x6.RemapMute
-	if service.GetRemapSnapshot().Actions[0] != x6.RemapOff {
+	first.Actions[0] = device.RemapMute
+	if service.GetRemapSnapshot().Actions[0] != device.RemapOff {
 		t.Fatal("GetRemapSnapshot() returned aliased action storage")
 	}
 }
@@ -360,11 +360,11 @@ type remapPersistenceFake struct {
 	err       error
 }
 
-func (*remapPersistenceFake) Load(Binding) (x6.DeviceConfig, error) {
-	return x6.DefaultDeviceConfig(), nil
+func (*remapPersistenceFake) Load(Binding) (device.DeviceConfig, error) {
+	return device.DefaultDeviceConfig(), nil
 }
 
-func (f *remapPersistenceFake) Save(Binding, x6.DeviceConfig) error {
+func (f *remapPersistenceFake) Save(Binding, device.DeviceConfig) error {
 	f.saves++
 	if f.err != nil {
 		return f.err

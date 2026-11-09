@@ -54,7 +54,7 @@ func TestProfileAuthorizesSeriallessIdentityExplicitly(t *testing.T) {
 }
 
 func TestProfileRegistryRejectsVIDPIDCollisionsAndFindsProfile(t *testing.T) {
-	profile := profileStub{id: "attack-shark-x6", match: transport.X6Match()}
+	profile := profileStub{id: "attack-shark-x6", match: x6TestMatch()}
 	registry, err := NewProfileRegistry(profile)
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
@@ -63,20 +63,61 @@ func TestProfileRegistryRejectsVIDPIDCollisionsAndFindsProfile(t *testing.T) {
 		t.Fatalf("Lookup() = %#v, %t; want %q profile", got, ok, profile.id)
 	}
 
-	_, err = NewProfileRegistry(profile, profileStub{id: "replacement", match: transport.X6Match()})
+	_, err = NewProfileRegistry(profile, profileStub{id: "replacement", match: x6TestMatch()})
 	if !errors.Is(err, ErrProfileCollision) {
 		t.Fatalf("NewProfileRegistry() collision error = %v, want ErrProfileCollision", err)
 	}
 }
 
+func x6TestMatch() transport.Match { return transport.Match{VendorID: 0x1D57, ProductID: 0xFA60} }
+
 type profileStub struct {
 	id                string
 	match             transport.Match
+	connection        transport.Connection
 	seriallessDurable bool
 }
 
 func (p profileStub) ID() string                     { return p.id }
 func (p profileStub) Match() transport.Match         { return p.match }
-func (p profileStub) HIDFacts() HIDFacts             { return HIDFacts{} }
+func (p profileStub) HIDFacts() HIDFacts             { return HIDFacts{Connection: p.connection} }
 func (p profileStub) Codec() Codec                   { return nil }
 func (p profileStub) AllowsSeriallessIdentity() bool { return p.seriallessDurable }
+
+func TestProfileRegistryExposesMatchesInRegistrationOrder(t *testing.T) {
+	second := profileStub{id: "b", match: transport.Match{VendorID: 9, ProductID: 2}}
+	first := profileStub{id: "a", match: transport.Match{VendorID: 1, ProductID: 7}}
+	third := profileStub{id: "c", match: transport.Match{VendorID: 5, ProductID: 1}}
+	registry, err := NewProfileRegistry(second, first, third)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []transport.Match{second.match, first.match, third.match}
+	got := registry.Matches()
+	if len(got) != len(want) {
+		t.Fatalf("Matches() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Matches() = %v, want %v", got, want)
+		}
+	}
+	if pairs := registry.WiredPairs(); len(pairs) != 0 {
+		t.Fatalf("WiredPairs() = %v, want none", pairs)
+	}
+}
+
+func TestProfileRegistryDerivesWiredPairsFromSharedProfileID(t *testing.T) {
+	dongle := profileStub{id: "x", match: transport.Match{VendorID: 1, ProductID: 1}, connection: transport.Dongle}
+	wired := profileStub{id: "x", match: transport.Match{VendorID: 1, ProductID: 2}, connection: transport.Wired}
+	lone := profileStub{id: "lone", match: transport.Match{VendorID: 2, ProductID: 1}, connection: transport.Wired}
+	otherDongle := profileStub{id: "y", match: transport.Match{VendorID: 3, ProductID: 1}, connection: transport.Dongle}
+	registry, err := NewProfileRegistry(wired, lone, dongle, otherDongle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := registry.WiredPairs()
+	if len(pairs) != 1 || pairs[0].Wired != wired.match || pairs[0].Dongle != dongle.match {
+		t.Fatalf("WiredPairs() = %v, want [{%v %v}]", pairs, wired.match, dongle.match)
+	}
+}

@@ -1,8 +1,8 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 	"testing"
 )
 
@@ -14,7 +14,7 @@ func TestCapturedResetReconcilesSettingsAndLighting(t *testing.T) {
 	st.retryNormal, st.persistedNormal = &normal, &normal
 	st.retryResponse, st.persistedResponse = &response, &response
 	st.normalPersistence, st.responsePersistence = "failed", "failed"
-	s.StageLighting(x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen})
+	s.StageLighting(device.LightingSelection{Mode: device.LightingFixed, TemplateID: device.LightingTemplateFixedGreen})
 	if result := s.ResetToFactory(context.Background()); result.Cleanup.State != "success" {
 		t.Fatal(result)
 	}
@@ -31,7 +31,7 @@ func TestCapturedResetReconcilesSettingsAndLighting(t *testing.T) {
 }
 
 func TestCapturedResetOrdinaryDefaultsUnchanged(t *testing.T) {
-	if x6.DefaultDPIConfig().ActiveStage != 4 || x6.DefaultLightingSettings().ResponseTimeMs != 8 {
+	if device.DefaultDPIConfig().ActiveStage != 4 || device.DefaultLightingSettings().ResponseTimeMs != 8 {
 		t.Fatal("ordinary defaults changed")
 	}
 }

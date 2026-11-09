@@ -54,7 +54,7 @@ func errorCode(err error, status bool) ErrorCode {
 
 ## 3. Domain errors stay typed for `IsErrorKind`
 
-`internal/x6/dpi.go:16` wraps while preserving the cause, and the domain exposes
+`internal/attackshark/x6/dpi.go:16` wraps while preserving the cause, and the domain exposes
 a kind-based classifier instead of exported sentinels:
 
 ```go

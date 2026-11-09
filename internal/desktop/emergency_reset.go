@@ -1,11 +1,11 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"fmt"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 type ResetLaneResult struct {
@@ -35,13 +35,14 @@ type resetTarget interface {
 // EmergencyReset performs the documented reset lanes synchronously. Persistence
 // is deliberately unreachable until every physical ACK has succeeded.
 type EmergencyReset struct {
+	model   device.Model
 	target  resetTarget
 	pending PendingWrites
 	purger  StatePurger
 }
 
-func NewEmergencyReset(target resetTarget, pending PendingWrites, purger StatePurger) *EmergencyReset {
-	return &EmergencyReset{target: target, pending: pending, purger: purger}
+func NewEmergencyReset(model device.Model, target resetTarget, pending PendingWrites, purger StatePurger) *EmergencyReset {
+	return &EmergencyReset{model: model, target: target, pending: pending, purger: purger}
 }
 
 func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
@@ -82,10 +83,10 @@ func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
 		operation mouse.CommandOperation
 		value     any
 	}{
-		{x6.NewDPIOperation(), x6.DocumentedResetDPIConfig()},
-		{x6.NewLightingSettingsOperation(), x6.DocumentedResetLightingSettings()},
-		{x6.NewPollingOperation(), x6.PollingRate1000},
-		{x6.NewRemapOperation(), x6.DefaultRemapConfig()},
+		{r.model.DPIOperation(), device.DocumentedResetDPIConfig()},
+		{r.model.LightingSettingsOperation(), device.DocumentedResetLightingSettings()},
+		{r.model.PollingOperation(), device.PollingRate1000},
+		{r.model.RemapOperation(), device.DefaultRemapConfig()},
 	}
 	for index, lane := range lanes {
 		if err := r.target.ApplyOperationBound(ctx, binding, lane.operation, lane.value); err != nil {

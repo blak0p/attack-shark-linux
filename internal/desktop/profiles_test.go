@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,17 +12,16 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
-func profileService(t *testing.T, root string, load func(Binding) (x6.DeviceConfig, error)) *Service {
+func profileService(t *testing.T, root string, load func(Binding) (device.DeviceConfig, error)) *Service {
 	t.Helper()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	// No command is attached: bootstrap and management must never need hardware.
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "profile-a", Path: "/dev/fake-a"}, {VendorID: 0x1d57, ProductID: 0xfa60, Serial: "profile-b", Path: "/dev/fake-b"}}}, nil))
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa60, Serial: "profile-a", Path: "/dev/fake-a"}, {VendorID: 0x1d57, ProductID: 0xfa60, Serial: "profile-b", Path: "/dev/fake-b"}}}, nil))
 	s.AttachProfiles(configstore.NewProfileStore(root), load)
 	return s
 }
@@ -37,9 +37,9 @@ func selectProfileDevice(t *testing.T, s *Service, index int) Binding {
 func TestProfilesBootstrapManagementAndRestart(t *testing.T) {
 	root := t.TempDir()
 	loads := 0
-	saved := x6.DefaultDeviceConfig()
+	saved := device.DefaultDeviceConfig()
 	saved.DPI[0] = 2400
-	load := func(Binding) (x6.DeviceConfig, error) { loads++; return saved, nil }
+	load := func(Binding) (device.DeviceConfig, error) { loads++; return saved, nil }
 	s := profileService(t, root, load)
 	if got := s.GetProfiles(); got.Error.Code != SelectionRequired || got.Applied {
 		t.Fatalf("before selection: %+v", got)
@@ -94,7 +94,7 @@ func TestProfilesBootstrapManagementAndRestart(t *testing.T) {
 	if got := s.DismissProfileNotice(); got.Error.Code != "" || got.Notice != "" {
 		t.Fatalf("dismiss: %+v", got)
 	}
-	restarted := profileService(t, root, func(Binding) (x6.DeviceConfig, error) {
+	restarted := profileService(t, root, func(Binding) (device.DeviceConfig, error) {
 		t.Fatal("existing profiles must not reload seed")
 		return saved, nil
 	})
@@ -110,7 +110,7 @@ func TestProfilesBootstrapManagementAndRestart(t *testing.T) {
 }
 func TestProfilesAbsentDefaultsAndMalformedSeed(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
-		s := profileService(t, t.TempDir(), func(Binding) (x6.DeviceConfig, error) { return x6.DeviceConfig{}, os.ErrNotExist })
+		s := profileService(t, t.TempDir(), func(Binding) (device.DeviceConfig, error) { return device.DeviceConfig{}, os.ErrNotExist })
 		selectProfileDevice(t, s, 0)
 		got := s.GetProfiles()
 		if got.Error.Code != "" || !strings.Contains(got.Notice, "app defaults") || got.Applied {
@@ -119,7 +119,7 @@ func TestProfilesAbsentDefaultsAndMalformedSeed(t *testing.T) {
 	})
 	t.Run("malformed", func(t *testing.T) {
 		root := t.TempDir()
-		s := profileService(t, root, func(Binding) (x6.DeviceConfig, error) { return x6.DeviceConfig{}, errors.New("damaged source") })
+		s := profileService(t, root, func(Binding) (device.DeviceConfig, error) { return device.DeviceConfig{}, errors.New("damaged source") })
 		selectProfileDevice(t, s, 0)
 		if got := s.GetProfiles(); got.Error.Code != ProfileUnavailable || got.Applied {
 			t.Fatalf("malformed: %+v", got)
@@ -130,7 +130,7 @@ func TestProfilesAbsentDefaultsAndMalformedSeed(t *testing.T) {
 		}
 	})
 	t.Run("invalid config", func(t *testing.T) {
-		s := profileService(t, t.TempDir(), func(Binding) (x6.DeviceConfig, error) { c := x6.DefaultDeviceConfig(); c.DPI[0] = -1; return c, nil })
+		s := profileService(t, t.TempDir(), func(Binding) (device.DeviceConfig, error) { c := device.DefaultDeviceConfig(); c.DPI[0] = -1; return c, nil })
 		selectProfileDevice(t, s, 0)
 		if got := s.GetProfiles(); got.Error.Code != InvalidProfile {
 			t.Fatalf("invalid: %+v", got)

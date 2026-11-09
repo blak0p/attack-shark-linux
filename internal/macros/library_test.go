@@ -129,7 +129,7 @@ func TestKeyboardLocalValidation(t *testing.T) {
 	}
 }
 
-func TestKeyboardLocalLegacyAndAdmission(t *testing.T) {
+func TestKeyboardLocalLegacy(t *testing.T) {
 	_, path := openTest(t)
 	const old = `{"version":1,"macros":[{"id":"old","name":"mouse","events":[{"type":"mouse_left","action":"down","delay_ms":0},{"type":"mouse_left","action":"up","delay_ms":17}]}]}`
 	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
@@ -149,15 +149,6 @@ func TestKeyboardLocalLegacyAndAdmission(t *testing.T) {
 	contents, err := os.ReadFile(path)
 	if err != nil || string(contents) != old {
 		t.Fatalf("mouse JSON changed: %s %v", contents, err)
-	}
-	for _, buttons := range [][]EventType{{"keyboard"}, {MouseLeft, "keyboard"}} {
-		sequence := X6Sequence{Buttons: buttons, Repeat: 1}
-		if block, err := EncodeX6SequenceBlock(sequence); err == nil || block != nil {
-			t.Fatal("keyboard block admitted")
-		}
-		if reports, err := EncodeX6SequenceUpload(X6SequenceUpload{Destination: 1, Sequence: sequence}); err == nil || reports != nil {
-			t.Fatal("keyboard upload admitted")
-		}
 	}
 }
 

@@ -1,29 +1,29 @@
 package configstore
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 const schemaVersion = 1
 
 type appliedState struct {
 	Version int          `json:"version"`
-	DPI     x6.DPIConfig `json:"dpi"`
+	DPI     device.DPIConfig `json:"dpi"`
 }
 type Store struct{ appliedPath, factoryPath string }
 
 func New(appliedPath, factoryPath string) Store {
 	return Store{appliedPath: appliedPath, factoryPath: factoryPath}
 }
-func (s Store) SaveApplied(config x6.DPIConfig) error {
+func (s Store) SaveApplied(config device.DPIConfig) error {
 	return s.saveState(config, s.appliedPath)
 }
-func (s Store) saveState(config x6.DPIConfig, path string) error {
+func (s Store) saveState(config device.DPIConfig, path string) error {
 	contents, err := json.Marshal(appliedState{Version: schemaVersion, DPI: config})
 	if err != nil {
 		return err
@@ -48,19 +48,19 @@ func (s Store) saveState(config x6.DPIConfig, path string) error {
 	}
 	return os.Rename(name, path)
 }
-func (s Store) LoadApplied() (x6.DPIConfig, error) {
+func (s Store) LoadApplied() (device.DPIConfig, error) {
 	state, err := s.loadState(s.appliedPath)
 	if err != nil {
-		return x6.DPIConfig{}, err
+		return device.DPIConfig{}, err
 	}
 	return state.DPI, nil
 }
-func (s Store) LoadFactory() (x6.DPIConfig, error) {
+func (s Store) LoadFactory() (device.DPIConfig, error) {
 	state, err := s.loadState(s.factoryPath)
 	if err == nil && state.DPI.StageMask != 0 {
 		return state.DPI, nil
 	}
-	factory := x6.DefaultDPIConfig()
+	factory := device.DefaultDPIConfig()
 	if seedErr := s.saveState(factory, s.factoryPath); seedErr != nil {
 		return factory, seedErr
 	}

@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"bytes"
 	"context"
 	"log/slog"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/x6"
 )
 
 func TestStartupDiagnostics(t *testing.T) {
@@ -17,11 +17,11 @@ func TestStartupDiagnostics(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	defer slog.SetDefault(previous)
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile(), x6.NewWiredProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile(), newStubWiredProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(statusFake{status: x6.Status{Connection: "wired"}}, &writerFake{}, appliedStoreFake{}).
+	service := New(testModel(), statusFake{status: device.Status{Connection: "wired"}}, &writerFake{}, appliedStoreFake{}).
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{{VendorID: 0x1d57, ProductID: 0xfa61, Path: "/private/device", Serial: "private-serial"}}, valid: true}, nil))
 	before := service.GetSnapshot()
 	status := service.RefreshStatus(context.Background())
@@ -39,7 +39,7 @@ func TestStartupDiagnostics(t *testing.T) {
 		t.Fatal("diagnostics leaked identity/path")
 	}
 	logs.Reset()
-	unavailable := New(statusFake{err: context.DeadlineExceeded}, &writerFake{}, appliedStoreFake{})
+	unavailable := New(testModel(), statusFake{err: context.DeadlineExceeded}, &writerFake{}, appliedStoreFake{})
 	if unavailable.RefreshStatus(context.Background()).Error.Code != DeviceUnavailable || unavailable.RefreshInventory(context.Background()).Error.Code != DeviceUnavailable {
 		t.Fatal("error mapping changed")
 	}

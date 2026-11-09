@@ -13,10 +13,7 @@ import * as macros$0 from "../macros/models.js";
 import * as mouse$0 from "../mouse/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as x6$1 from "../protocol/x6/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as x6$0 from "../x6/models.js";
+import * as device$0 from "../device/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -62,7 +59,7 @@ export function ApplyPollingRate(): $CancellablePromise<$models.PollingSnapshot>
  * ApplyRemap validates and writes one complete draft. Applied state advances
  * only after the targeted command receives its ACK.
  */
-export function ApplyRemap(config: x6$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
+export function ApplyRemap(config: device$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
     return $Call.ByID(4250088139, config).then(($result: any) => {
         return $$createType5($result);
     });
@@ -198,6 +195,15 @@ export function CreateMacro(name: string, events: macros$0.Event[]): $Cancellabl
 
 export function DeleteMacro(id: string): $CancellablePromise<void> {
     return $Call.ByID(3893970143, id);
+}
+
+/**
+ * DeviceInfo returns the injected model's display name and macro key table.
+ */
+export function DeviceInfo(): $CancellablePromise<$models.DeviceInfo> {
+    return $Call.ByID(460049276).then(($result: any) => {
+        return $$createType16($result);
+    });
 }
 
 /**
@@ -382,7 +388,7 @@ export function StageDebounce(ms: number): $CancellablePromise<$models.DebounceS
 /**
  * StageLighting updates only the selected device's pending state.
  */
-export function StageLighting(selection: x6$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
+export function StageLighting(selection: device$0.LightingSelection): $CancellablePromise<$models.LightingSnapshot> {
     return $Call.ByID(1205871004, selection).then(($result: any) => {
         return $$createType2($result);
     });
@@ -413,7 +419,7 @@ export function StageNormalSleep(minutes: number): $CancellablePromise<$models.N
     });
 }
 
-export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
+export function StagePollingRate(rate: device$0.PollingRate): $CancellablePromise<$models.PollingSnapshot> {
     return $Call.ByID(1822189569, rate).then(($result: any) => {
         return $$createType4($result);
     });
@@ -423,7 +429,7 @@ export function StagePollingRate(rate: x6$0.PollingRate): $CancellablePromise<$m
  * StageRemap stages ordinary fields without changing the separate macro overlay.
  * Returning the target button to an ordinary action requires ClearMacroAssignment.
  */
-export function StageRemap(config: x6$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
+export function StageRemap(config: device$0.RemapConfig): $CancellablePromise<$models.RemapSnapshot> {
     return $Call.ByID(3338853773, config).then(($result: any) => {
         return $$createType5($result);
     });
@@ -461,3 +467,4 @@ const $$createType12 = macros$0.Macro.createFrom;
 const $$createType13 = $Create.Array($$createType12);
 const $$createType14 = $models.Inventory.createFrom;
 const $$createType15 = $models.ResetResult.createFrom;
+const $$createType16 = $models.DeviceInfo.createFrom;
