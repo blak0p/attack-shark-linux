@@ -146,7 +146,7 @@ const service = {
   },
   DeleteMacro: async (id: string) => { readMacro(id); macros.delete(id); macroCalls.push("DeleteMacro"); },
   DeviceInfo: async () => ({ Name: "Attack Shark X6", KeyCodes: { ...officialKeyTable } }),
-  GetApplicationVersion: undefined, CheckForUpdate: undefined,
+  GetApplicationVersion: undefined, GetInstallSource: undefined, CheckForUpdate: undefined,
   RefreshStatus: async () => currentDPI, GetSnapshot: async () => currentDPI,
   RefreshInventory: async () => inventory(),
   SelectDevice: async (id: DeviceID) => {
