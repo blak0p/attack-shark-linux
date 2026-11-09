@@ -148,6 +148,10 @@ Switching the active stage in the app re-sends the full `0x04` with only `[24]`
 Each stage increment adds exactly 1 to the checksum, confirming
 `checksum = sum(bytes[3:50])` endian-independent (additive).
 
+The firmware repaints the LED for the new stage only on a physical DPI press or a
+`0x05` write, so in Static DPI / Breathing DPI the app re-sends the lighting
+report after a stage change (hardware-confirmed 2026-11-09).
+
 > Note: at frames 5640-5644 the app sent two identical `0x04` payloads back to
 > back before the single ACK (5648). The device ACKs once. Re-sends appear on
 > UI interactions; a single SET_REPORT is sufficient.
