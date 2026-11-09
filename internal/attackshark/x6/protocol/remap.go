@@ -1,51 +1,50 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
+)
 
 const RemapReportLength = 59
 
-type RemapAction string
+type RemapAction = device.RemapAction
 
 const (
-	RemapOff               RemapAction = "off"
-	RemapLeft              RemapAction = "left"
-	RemapRight             RemapAction = "right"
-	RemapMiddle            RemapAction = "middle"
-	RemapBackward          RemapAction = "backward"
-	RemapForward           RemapAction = "forward"
-	RemapDoubleClick       RemapAction = "double_click"
-	RemapFire              RemapAction = "fire"
-	RemapMediaPlayer       RemapAction = "media_player"
-	RemapPlayPause         RemapAction = "play_pause"
-	RemapStop              RemapAction = "stop"
-	RemapPreviousTrack     RemapAction = "previous_track"
-	RemapNextTrack         RemapAction = "next_track"
-	RemapVolumeUp          RemapAction = "volume_up"
-	RemapVolumeDown        RemapAction = "volume_down"
-	RemapMute              RemapAction = "mute"
-	RemapScrollUp          RemapAction = "scroll_up"
-	RemapScrollDown        RemapAction = "scroll_down"
-	RemapDPICycle          RemapAction = "dpi_cycle"
-	RemapDPIPlus           RemapAction = "dpi_plus"
-	RemapDPIMinus          RemapAction = "dpi_minus"
-	RemapBrowserCalculator RemapAction = "browser_calculator"
-	RemapBrowserEmail      RemapAction = "browser_email"
-	RemapBrowserForward    RemapAction = "browser_forward"
-	RemapBrowserBackward   RemapAction = "browser_backward"
-	RemapBrowserStop       RemapAction = "browser_stop"
-	RemapBrowserMyComputer RemapAction = "browser_my_computer"
-	RemapBrowserRefresh    RemapAction = "browser_refresh"
-	RemapBrowserHome       RemapAction = "browser_home"
-	RemapBrowserSearch     RemapAction = "browser_search"
+	RemapOff               = device.RemapOff
+	RemapLeft              = device.RemapLeft
+	RemapRight             = device.RemapRight
+	RemapMiddle            = device.RemapMiddle
+	RemapBackward          = device.RemapBackward
+	RemapForward           = device.RemapForward
+	RemapDoubleClick       = device.RemapDoubleClick
+	RemapFire              = device.RemapFire
+	RemapMediaPlayer       = device.RemapMediaPlayer
+	RemapPlayPause         = device.RemapPlayPause
+	RemapStop              = device.RemapStop
+	RemapPreviousTrack     = device.RemapPreviousTrack
+	RemapNextTrack         = device.RemapNextTrack
+	RemapVolumeUp          = device.RemapVolumeUp
+	RemapVolumeDown        = device.RemapVolumeDown
+	RemapMute              = device.RemapMute
+	RemapScrollUp          = device.RemapScrollUp
+	RemapScrollDown        = device.RemapScrollDown
+	RemapDPICycle          = device.RemapDPICycle
+	RemapDPIPlus           = device.RemapDPIPlus
+	RemapDPIMinus          = device.RemapDPIMinus
+	RemapBrowserCalculator = device.RemapBrowserCalculator
+	RemapBrowserEmail      = device.RemapBrowserEmail
+	RemapBrowserForward    = device.RemapBrowserForward
+	RemapBrowserBackward   = device.RemapBrowserBackward
+	RemapBrowserStop       = device.RemapBrowserStop
+	RemapBrowserMyComputer = device.RemapBrowserMyComputer
+	RemapBrowserRefresh    = device.RemapBrowserRefresh
+	RemapBrowserHome       = device.RemapBrowserHome
+	RemapBrowserSearch     = device.RemapBrowserSearch
 )
 
-type RemapButton struct {
-	Button           uint8
-	Action           RemapAction
-	PreservedDefault string
-}
-
-type RemapConfig struct{ Buttons []RemapButton }
+type RemapButton = device.RemapButton
+type RemapConfig = device.RemapConfig
 
 var remapBaseline = [RemapReportLength]byte{
 	0x08, 0x3b, 0x01, 0x02, 0x00, 0x00, 0x03, 0x00, 0x00, 0x04, 0x00, 0x00,
@@ -112,13 +111,7 @@ func EncodeMultiMacroAssignmentReport(config RemapConfig, buttons []uint8) ([]by
 	return report, nil
 }
 
-func DefaultRemapConfig() RemapConfig {
-	return RemapConfig{Buttons: []RemapButton{
-		{Button: 1, Action: RemapLeft}, {Button: 2, Action: RemapRight}, {Button: 3, Action: RemapMiddle},
-		{Button: 4, Action: RemapForward}, {Button: 5, Action: RemapBackward},
-		{Button: 6, PreservedDefault: "DPI+"}, {Button: 7, PreservedDefault: "DPI-"},
-	}}
-}
+func DefaultRemapConfig() RemapConfig { return device.DefaultRemapConfig() }
 
 func ValidateRemapConfig(config RemapConfig) error {
 	if len(config.Buttons) != len(remapGroupByButton) {

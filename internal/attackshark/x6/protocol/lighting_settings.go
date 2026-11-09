@@ -1,29 +1,27 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
+)
 
 const (
-	ResponseTimeFactoryMs = 8
-	ResponseTimeMinMs     = 2
-	ResponseTimeMaxMs     = 25
-	ResponseTimeStepMs    = 1
+	ResponseTimeFactoryMs = device.ResponseTimeFactoryMs
+	ResponseTimeMinMs     = device.ResponseTimeMinMs
+	ResponseTimeMaxMs     = device.ResponseTimeMaxMs
+	ResponseTimeStepMs    = device.ResponseTimeStepMs
 )
 
 // LightingSettings is the complete editable subset of report 0x05.
-type LightingSettings struct {
-	LightingSelection
-	NormalSleepMinutes float64
-	ResponseTimeMs     int
-}
+type LightingSettings = device.LightingSettings
 
 // DocumentedResetLightingSettings preserves the exact captured reset vector.
 func DocumentedResetLightingSettings() LightingSettings {
-	return LightingSettings{LightingSelection: LightingSelection{Mode: LightingStaticDPI, TemplateID: LightingTemplateStaticDPIFactoryReset}, NormalSleepMinutes: 0.5, ResponseTimeMs: 4}
+	return device.DocumentedResetLightingSettings()
 }
 
-func DefaultLightingSettings() LightingSettings {
-	return LightingSettings{LightingSelection: LightingSelection{Mode: LightingFixed, TemplateID: LightingTemplateFixedGreen}, NormalSleepMinutes: NormalSleepMinimumMinutes, ResponseTimeMs: ResponseTimeFactoryMs}
-}
+func DefaultLightingSettings() LightingSettings { return device.DefaultLightingSettings() }
 
 func ValidateResponseTime(responseTimeMs int) error {
 	if responseTimeMs < ResponseTimeMinMs || responseTimeMs > ResponseTimeMaxMs || responseTimeMs%ResponseTimeStepMs != 0 {

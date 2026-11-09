@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"os"
@@ -11,12 +12,11 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestServiceResetToFactoryDelegatesTypedResult(t *testing.T) {
 	runner := &resetRunnerFake{result: ResetResult{Cleanup: ResetLaneResult{State: "success"}}}
-	service := New(nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(runner)
+	service := New(testModel(), nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(runner)
 
 	result := service.ResetToFactory(context.Background())
 
@@ -30,7 +30,7 @@ func TestServiceResetToFactoryPreservesRetryableFailure(t *testing.T) {
 		result: ResetResult{Error: Error{Code: ApplyFailed}, RetryAvailable: true},
 		err:    errors.New("ack timeout"),
 	}
-	service := New(nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(runner)
+	service := New(testModel(), nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(runner)
 
 	result := service.ResetToFactory(context.Background())
 
@@ -40,7 +40,7 @@ func TestServiceResetToFactoryPreservesRetryableFailure(t *testing.T) {
 }
 
 func TestServiceResetToFactoryReconcilesOnlySuccessfulRun(t *testing.T) {
-	service := New(nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(
+	service := New(testModel(), nil, nil, configstore.New(t.TempDir()+"/applied.json", t.TempDir()+"/factory.json")).AttachResetRunner(
 		&resetRunnerFake{result: ResetResult{Cleanup: ResetLaneResult{State: "success"}}},
 	)
 	staged := service.GetSnapshot().Pending
@@ -50,7 +50,7 @@ func TestServiceResetToFactoryReconcilesOnlySuccessfulRun(t *testing.T) {
 	service.ResetToFactory(context.Background())
 
 	snapshot := service.GetSnapshot()
-	want := ToDTO(x6.DocumentedResetDPIConfig())
+	want := ToDTO(device.DocumentedResetDPIConfig())
 	if snapshot.Applied != want || snapshot.Pending != want {
 		t.Fatalf("snapshot after successful reset = %#v, want documented defaults", snapshot)
 	}
@@ -74,8 +74,8 @@ func TestResetRuntimeQuiescesLateCallbacksBeforeResetWrites(t *testing.T) {
 	if err := service.sync.ScheduleAt(binding, dpiSnapshot.Revision, fromDTO(dpi)); err != nil {
 		t.Fatalf("ScheduleAt(DPI) error = %v", err)
 	}
-	polling := service.StagePollingRate(x6.PollingRate500)
-	if err := service.pollingSync.ScheduleAt(binding, polling.Revision, x6.PollingRate500); err != nil {
+	polling := service.StagePollingRate(device.PollingRate500)
+	if err := service.pollingSync.ScheduleAt(binding, polling.Revision, device.PollingRate500); err != nil {
 		t.Fatalf("ScheduleAt(polling) error = %v", err)
 	}
 
@@ -129,18 +129,18 @@ func TestResetRuntimeRestartRequiresFreshConfirmedResetAfterFailure(t *testing.T
 
 func newResetRuntime(t *testing.T, stateDir string, command *resetRecordingCommand) (*Service, *lateScheduler) {
 	t.Helper()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "reset", Path: "/dev/hidraw-reset"}
 	inventory := mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)
 	scheduler := &lateScheduler{}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(inventory)
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(inventory)
 	service.sync = NewSyncCoordinator(scheduler, service.bindingCurrent, service.applyBound)
 	service.pollingSync = NewPollingSyncCoordinator(scheduler, service.bindingCurrent, service.applyPollingBound)
 	service.RefreshInventory(context.Background())
-	service.AttachResetRunner(NewEmergencyReset(inventory, service, configstore.NewStatePurger(stateDir)))
+	service.AttachResetRunner(NewEmergencyReset(testModel(), inventory, service, configstore.NewStatePurger(stateDir)))
 	return service, scheduler
 }
 

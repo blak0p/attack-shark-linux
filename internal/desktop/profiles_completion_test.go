@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"reflect"
@@ -10,7 +11,6 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type profileWorkspace struct {
@@ -39,15 +39,15 @@ func TestProfilesCompletionNoStorePollingFailureCompatibility(t *testing.T) {
 	cmd := &recordingSwitchCommand{}
 	s, _, b := switchTestService(t, t.TempDir(), cmd)
 	s.profiles = nil
-	config := x6.DefaultDeviceConfig()
+	config := device.DefaultDeviceConfig()
 	loads, saves := 0, 0
-	s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { loads++; return config, nil }, func(Binding, x6.DeviceConfig) error { saves++; return errors.New("disk") })
+	s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { loads++; return config, nil }, func(Binding, device.DeviceConfig) error { saves++; return errors.New("disk") })
 	s.SelectDevice(b.ID)
-	expected := s.StagePollingRate(x6.PollingRate500)
-	expected.Applied, expected.Firmware, expected.Persistence, expected.RetryAvailable = x6.PollingRate500, "success", "failed", true
+	expected := s.StagePollingRate(device.PollingRate500)
+	expected.Applied, expected.Firmware, expected.Persistence, expected.RetryAvailable = device.PollingRate500, "success", "failed", true
 	calls, readCount := cmd.calls, loads
 	got := s.ApplyPollingRate(context.Background())
-	if !reflect.DeepEqual(got, expected) || cmd.calls-calls != 1 || saves != 1 || loads-readCount != 1 || !reflect.DeepEqual(config, x6.DefaultDeviceConfig()) {
+	if !reflect.DeepEqual(got, expected) || cmd.calls-calls != 1 || saves != 1 || loads-readCount != 1 || !reflect.DeepEqual(config, device.DefaultDeviceConfig()) {
 		t.Fatalf("legacy compatibility: got=%+v want=%+v writes=%d saves=%d reads=%d", got, expected, cmd.calls-calls, saves, loads-readCount)
 	}
 }
@@ -63,7 +63,7 @@ func TestProfilesCompletionPersistenceFailure(t *testing.T) {
 	if r := s.ApplyDPI(context.Background()); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	if r := s.ApplyPollingRate(context.Background()); r.Error.Code != "" {
 		t.Fatal(r)
 	}
@@ -75,12 +75,12 @@ func TestProfilesCompletionPersistenceFailure(t *testing.T) {
 	if r := s.ApplyDebounce(); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	light := x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonTwo}
+	light := device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonTwo}
 	s.StageLighting(light)
 	if r := s.ApplyLighting(); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	rem := x6.DefaultRemapConfig()
+	rem := device.DefaultRemapConfig()
 	if r := s.ApplyRemap(rem); r.Error.Code != "" {
 		t.Fatal(r)
 	}
@@ -110,7 +110,7 @@ func TestProfilesCompletionPersistenceFailure(t *testing.T) {
 	expected.Remap.Applied, expected.Remap.Pending = rem, rem
 	expected.Remap.Firmware, expected.Remap.Persistence, expected.Remap.Error = "success", "failed", Error{Code: PersistenceFailed}
 	saves := 0
-	s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error { saves++; return errors.New("disk full") })
+	s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error { saves++; return errors.New("disk full") })
 	calls := cmd.calls
 	r := s.SwitchProfile(target)
 	if r.Applied || r.Error.Code != PersistenceFailed || r.ActiveID != source || cmd.calls-calls != 4 || saves != 1 {
@@ -159,7 +159,7 @@ func TestProfilesCompletionSelectionDuringSave(t *testing.T) {
 			beforeSource := storedProfile(t, store, b, source)
 			beforeTarget := storedProfile(t, store, b, target)
 			saves := 0
-			s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error {
+			s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error {
 				saves++
 				if r := s.SelectDevice(otherBinding.ID); r.Error.Code != "" {
 					t.Fatal(r)
@@ -204,7 +204,7 @@ func TestProfilesCompletionMacroFinalACK(t *testing.T) {
 	if r := s.StageMacroAssignment(m.ID, 6, 3); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	if r := s.ApplyRemap(x6.DefaultRemapConfig()); r.Error.Code != "" {
+	if r := s.ApplyRemap(device.DefaultRemapConfig()); r.Error.Code != "" {
 		t.Fatal(r)
 	}
 	if r := s.SwitchProfile(source); !r.Applied {
@@ -252,13 +252,13 @@ func TestProfilesCompletionImplicitSelectionRestore(t *testing.T) {
 	d.DPI[0] = 2800
 	s.StageDPI(d)
 	s.ApplyDPI(context.Background())
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	s.ApplyPollingRate(context.Background())
 	s.StageNormalSleep(7)
 	s.ApplyNormalSleep()
 	s.StageDebounce(12)
 	s.ApplyDebounce()
-	light := x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonTwo}
+	light := device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonTwo}
 	s.StageLighting(light)
 	s.ApplyLighting()
 	m, err := s.CreateMacro("macro", []macros.Event{{Type: macros.MouseLeft, Action: macros.Down}, {Type: macros.MouseLeft, Action: macros.Up}})
@@ -268,17 +268,17 @@ func TestProfilesCompletionImplicitSelectionRestore(t *testing.T) {
 	if r := s.StageMacroAssignment(m.ID, 6, 3); r.Error.Code != "" {
 		t.Fatal(r)
 	}
-	if r := s.ApplyRemap(x6.DefaultRemapConfig()); r.Error.Code != "" {
+	if r := s.ApplyRemap(device.DefaultRemapConfig()); r.Error.Code != "" {
 		t.Fatal(r)
 	}
 	before, _ := store.Read(b.ID, b.ProfileID, active)
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	restoredCmd := &recordingSwitchCommand{}
-	restored := Compose(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}, WithMacroLibrary(s.macroLibrary, nil)).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{VendorID: b.ID.VendorID, ProductID: b.ID.ProductID, Serial: b.ID.Serial, Path: b.Path}}}, restoredCmd)).AttachProfiles(configstore.NewProfileStore(root), nil)
+	restored := Compose(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}, WithMacroLibrary(s.macroLibrary, nil)).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{VendorID: b.ID.VendorID, ProductID: b.ID.ProductID, Serial: b.ID.Serial, Path: b.Path}}}, restoredCmd)).AttachProfiles(configstore.NewProfileStore(root), nil)
 	expected := workspace(restored)
 	expected.DPI.Applied, expected.DPI.Pending = d, d
-	expected.Polling.Applied, expected.Polling.Desired = x6.PollingRate500, x6.PollingRate500
-	savedRate := x6.PollingRate500
+	expected.Polling.Applied, expected.Polling.Desired = device.PollingRate500, device.PollingRate500
+	savedRate := device.PollingRate500
 	expected.Polling.Persisted, expected.Polling.Persistence = &savedRate, "success"
 	savedSleep, savedDebounce := float64(7), 12
 	expected.Sleep.Applied, expected.Sleep.Pending, expected.Sleep.Persisted, expected.Sleep.Persistence = 7, 7, &savedSleep, "success"
@@ -292,14 +292,14 @@ func TestProfilesCompletionImplicitSelectionRestore(t *testing.T) {
 	if inv.Error.Code != "" || inv.Selected == nil {
 		t.Fatal(inv)
 	}
-	if restored.GetSnapshot().Applied != d || restored.GetPollingSnapshot().Applied != x6.PollingRate500 || restored.GetNormalSleepSnapshot().Applied != 7 || restored.GetDebounceSnapshot().Applied != 12 || restored.GetLightingSnapshot().Pending != light || !reflect.DeepEqual(restored.GetRemapSnapshot().MacroDrafts, s.GetRemapSnapshot().MacroDrafts) {
+	if restored.GetSnapshot().Applied != d || restored.GetPollingSnapshot().Applied != device.PollingRate500 || restored.GetNormalSleepSnapshot().Applied != 7 || restored.GetDebounceSnapshot().Applied != 12 || restored.GetLightingSnapshot().Pending != light || !reflect.DeepEqual(restored.GetRemapSnapshot().MacroDrafts, s.GetRemapSnapshot().MacroDrafts) {
 		t.Fatalf("implicit selection did not restore all lanes: %+v", workspace(restored))
 	}
 	if got := workspace(restored); !reflect.DeepEqual(got, expected) {
 		t.Errorf("full restored workspace: got=%+v want=%+v", got, expected)
 	}
 	pol := restored.GetPollingSnapshot()
-	if pol.Persisted == nil || *pol.Persisted != x6.PollingRate500 {
+	if pol.Persisted == nil || *pol.Persisted != device.PollingRate500 {
 		t.Errorf("saved polling persistence not restored: %+v", pol)
 	}
 	after, _ := store.Read(b.ID, b.ProfileID, active)
@@ -316,22 +316,22 @@ func TestProfilesCompletionSelectionRestoration(t *testing.T) {
 	d.DPI[0] = 2800
 	s.StageDPI(d)
 	s.ApplyDPI(context.Background())
-	s.StagePollingRate(x6.PollingRate500)
+	s.StagePollingRate(device.PollingRate500)
 	s.ApplyPollingRate(context.Background())
 	s.StageNormalSleep(7)
 	s.ApplyNormalSleep()
 	s.StageDebounce(12)
 	s.ApplyDebounce()
-	light := x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonTwo}
+	light := device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonTwo}
 	s.StageLighting(light)
 	s.ApplyLighting()
-	rem := x6.DefaultRemapConfig()
+	rem := device.DefaultRemapConfig()
 	s.ApplyRemap(rem)
 	before, _ := store.Read(b.ID, b.ProfileID, active)
 	// Legacy records intentionally lag the complete profile payload.
-	s.AttachDevicePersistence(func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil }, func(Binding, x6.DPIConfig) error { return nil })
-	s.AttachPollingPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error { return nil })
-	s.AttachNormalSleepPersistence(func(Binding) (x6.DeviceConfig, error) { return x6.DefaultDeviceConfig(), nil }, func(Binding, x6.DeviceConfig) error { return nil })
+	s.AttachDevicePersistence(func(Binding) (device.DPIConfig, error) { return device.DefaultDPIConfig(), nil }, func(Binding, device.DPIConfig) error { return nil })
+	s.AttachPollingPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error { return nil })
+	s.AttachNormalSleepPersistence(func(Binding) (device.DeviceConfig, error) { return device.DefaultDeviceConfig(), nil }, func(Binding, device.DeviceConfig) error { return nil })
 	inv := s.RefreshInventory(context.Background())
 	s.SelectDevice(inv.Devices[1].ID)
 	other := s.GetSnapshot()
@@ -341,7 +341,7 @@ func TestProfilesCompletionSelectionRestoration(t *testing.T) {
 		t.Fatal(selected)
 	}
 	// Deliberately do not call GetProfiles: selection itself must restore.
-	if s.GetSnapshot().Applied != d || s.GetPollingSnapshot().Applied != x6.PollingRate500 || s.GetNormalSleepSnapshot().Applied != 7 || s.GetDebounceSnapshot().Applied != 12 || s.GetLightingSnapshot().Pending != light || !reflect.DeepEqual(s.GetRemapSnapshot().Applied, rem) {
+	if s.GetSnapshot().Applied != d || s.GetPollingSnapshot().Applied != device.PollingRate500 || s.GetNormalSleepSnapshot().Applied != 7 || s.GetDebounceSnapshot().Applied != 12 || s.GetLightingSnapshot().Pending != light || !reflect.DeepEqual(s.GetRemapSnapshot().Applied, rem) {
 		t.Errorf("selection discarded saved payload: %+v %+v %+v %+v", s.GetSnapshot(), s.GetPollingSnapshot(), s.GetNormalSleepSnapshot(), s.GetDebounceSnapshot())
 	}
 	after, _ := store.Read(b.ID, b.ProfileID, active)

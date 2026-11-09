@@ -1,13 +1,11 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"fmt"
 	"reflect"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
-	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
@@ -30,29 +28,6 @@ func cloneMacroDraft(d *MacroDraft) *MacroDraft {
 	copy.Events = append([]macros.Event(nil), d.Events...)
 	return &copy
 }
-func admittedSequence(events []macros.Event, repeat int) (macrocodec.X6Sequence, bool) {
-	return admittedSequenceWithMode(events, repeat, 0)
-}
-
-func admittedSequenceWithMode(events []macros.Event, repeat int, mode uint8) (macrocodec.X6Sequence, bool) {
-	if repeat < 1 || repeat > 255 || (len(events) != 2 && len(events) != 4) {
-		return macrocodec.X6Sequence{}, false
-	}
-	sequence := macrocodec.X6Sequence{Repeat: repeat, Mode: mode}
-	for i := 0; i < len(events); i += 2 {
-		down, up := events[i], events[i+1]
-		if down.KeyCode != "" || up.KeyCode != "" || down.Type != up.Type || down.Action != macros.Down || up.Action != macros.Up || down.DelayMS != 0 || up.DelayMS != 0 {
-			return macrocodec.X6Sequence{}, false
-		}
-		sequence.Buttons = append(sequence.Buttons, down.Type)
-	}
-	// Keep the captured action/count/repeat boundary owned by the shared codec.
-	if _, err := macrocodec.EncodeX6SequenceBlock(sequence); err != nil {
-		return macrocodec.X6Sequence{}, false
-	}
-	return sequence, true
-}
-
 // StageMacroAssignment replaces the single selected-device assignment without
 // writing hardware or modifying other pending remap fields.
 func (s *Service) StageMacroAssignment(id string, button uint8, repeat int) RemapSnapshot {
@@ -67,9 +42,7 @@ func (s *Service) StageMacroAssignmentWithMode(id string, button uint8, repeat i
 	}
 	state := s.remapComponent.stateForBinding(binding)
 	m, err := s.ReadMacro(id)
-	_, destinationErr := protocol.MacroDestinationForButton(button)
-	_, admissionErr := macrocodec.AdmitX6LocalBlock(m.Events, repeat, mode)
-	if err != nil || destinationErr != nil || admissionErr != nil {
+	if err != nil || s.model.AdmitMacro(button, m.Events, repeat, mode) != nil {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
@@ -115,13 +88,13 @@ func (s *Service) ClearButtonMacroAssignment(button uint8) RemapSnapshot {
 
 // StageRemap stages ordinary fields without changing the separate macro overlay.
 // Returning the target button to an ordinary action requires ClearMacroAssignment.
-func (s *Service) StageRemap(config x6.RemapConfig) RemapSnapshot {
+func (s *Service) StageRemap(config device.RemapConfig) RemapSnapshot {
 	binding, ok := s.selectedBinding()
 	if !ok {
 		return failRemap(s.remapComponent.legacy, SelectionRequired)
 	}
 	state := s.remapComponent.stateForBinding(binding)
-	if err := x6.NewRemapOperation().Validate(config); err != nil {
+	if err := s.model.RemapOperation().Validate(config); err != nil {
 		return failRemap(state, InvalidConfiguration)
 	}
 	state.mu.Lock()
@@ -172,28 +145,24 @@ func (s *Service) macroDraftCurrent(d *MacroDraft) bool {
 // prevalidateMacroBound performs local admission before Apply changes visible
 // draft/revision/retry/progress state. It never invokes a command or device I/O.
 // Apply repeats freshness checks at dispatch and checks completion for races.
-func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.RemapConfig, drafts []*MacroDraft) ErrorCode {
+func (c *remapComponent) prevalidateMacroBound(binding Binding, pending device.RemapConfig, drafts []*MacroDraft) ErrorCode {
 	s := c.service
 	if !s.bindingCurrent(binding) {
 		return StaleBinding
 	}
-	buttons := make([]uint8, len(drafts))
+	specs := make([]device.MacroSpec, len(drafts))
 	seen := make(map[uint8]bool, len(drafts))
 	for i, draft := range drafts {
 		if draft == nil || seen[draft.Button] {
 			return InvalidConfiguration
 		}
 		seen[draft.Button] = true
-		buttons[i] = draft.Button
-		destination, err := protocol.MacroDestinationForButton(draft.Button)
-		if err != nil || !s.macroDraftCurrent(draft) {
-			return InvalidConfiguration
-		}
-		if _, err := macrocodec.EncodeX6LocalUpload(destination, draft.Events, draft.Repeat, draft.Mode); err != nil {
+		specs[i] = macroSpec(draft)
+		if !s.macroDraftCurrent(draft) {
 			return InvalidConfiguration
 		}
 	}
-	if _, err := protocol.EncodeMultiMacroAssignmentReport(pending, buttons); err != nil {
+	if err := s.model.ValidateMacroAssignments(pending, specs); err != nil {
 		return InvalidConfiguration
 	}
 	s.mu.Lock()
@@ -212,7 +181,7 @@ func (c *remapComponent) prevalidateMacroBound(binding Binding, pending x6.Remap
 // The remap apply guards are held. The immutable copy is what reaches transport,
 // even if the library changes while I/O is in flight. Completion checks reject
 // stale drafts and retain the observed progress instead of claiming full apply.
-func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, revision uint64, pending x6.RemapConfig, drafts []*MacroDraft) {
+func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, revision uint64, pending device.RemapConfig, drafts []*MacroDraft) {
 	s := c.service
 	if !s.bindingCurrent(binding) {
 		failRemap(state, StaleBinding)
@@ -223,7 +192,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 			failRemap(state, InvalidConfiguration)
 			return
 		}
-		if _, err := macrocodec.AdmitX6LocalBlock(draft.Events, draft.Repeat, draft.Mode); err != nil {
+		if err := s.model.AdmitMacro(draft.Button, draft.Events, draft.Repeat, draft.Mode); err != nil {
 			failRemap(state, InvalidConfiguration)
 			return
 		}
@@ -235,25 +204,7 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 		failRemap(state, StaleBinding)
 		return
 	}
-	items := make([]x6.MacroSequenceItem, len(drafts))
-	localItems := make([]x6.MacroLocalItem, len(drafts))
-	legacy := true
-	for i, draft := range drafts {
-		sequence, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
-		legacy = legacy && valid
-		localItems[i] = x6.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
-		items[i] = x6.MacroSequenceItem{
-			Button:   draft.Button,
-			Sequence: sequence,
-		}
-	}
-	var progress mouse.MacroProgress
-	var err error
-	if legacy {
-		progress, err = x6.ApplyMultiMacroSequenceAssignmentBound(context.Background(), inventory, binding, pending, items)
-	} else {
-		progress, err = x6.ApplyMultiMacroLocalAssignmentBound(context.Background(), inventory, binding, pending, localItems)
-	}
+	progress, err := s.applyMacroAssignments(context.Background(), inventory, binding, pending, drafts)
 	libraryCurrent := true
 	for _, draft := range drafts {
 		if !s.macroDraftCurrent(draft) {
@@ -308,4 +259,22 @@ func (c *remapComponent) applyMacroBound(binding Binding, state *remapState, rev
 	}
 	state.mu.Unlock()
 	s.emitRemapConfiguration(binding, remapSnapshotOf(state))
+}
+
+func macroSpec(draft *MacroDraft) device.MacroSpec {
+	return device.MacroSpec{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
+}
+
+// applyMacroAssignments encodes the pending remap and its macros with the model
+// and sends them as one batch; nothing reaches transport unless all encode.
+func (s *Service) applyMacroAssignments(ctx context.Context, inventory *mouse.TargetedService, binding Binding, pending device.RemapConfig, drafts []*MacroDraft) (mouse.MacroProgress, error) {
+	specs := make([]device.MacroSpec, len(drafts))
+	for i, draft := range drafts {
+		specs[i] = macroSpec(draft)
+	}
+	batch, err := s.model.MacroAssignmentBatch(pending, specs)
+	if err != nil {
+		return mouse.MacroProgress{}, err
+	}
+	return inventory.ApplyBatchBound(ctx, binding, batch)
 }

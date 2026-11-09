@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
-	"github.com/blak0p/attack-shark-linux/internal/macros"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 const (
@@ -36,22 +35,22 @@ type ProfileSummary struct{ ID, Name, CreatedAt string }
 // profileConfiguration wraps the complete model configuration. Metadata absent
 // from historical device records is optional, not inferred hardware state.
 type profileConfiguration struct {
-	Version  int                   `json:"version"`
-	Source   string                `json:"source"`
-	Device   x6.DeviceConfig       `json:"device"`
-	Lighting *x6.LightingSelection `json:"lighting,omitempty"`
-	Macros   []MacroDraft          `json:"macros,omitempty"`
+	Version  int                       `json:"version"`
+	Source   string                    `json:"source"`
+	Device   device.DeviceConfig       `json:"device"`
+	Lighting *device.LightingSelection `json:"lighting,omitempty"`
+	Macros   []MacroDraft              `json:"macros,omitempty"`
 }
 type profileComponent struct {
 	store     *configstore.ProfileStore
-	load      func(Binding) (x6.DeviceConfig, error)
+	load      func(Binding) (device.DeviceConfig, error)
 	restoreMu sync.Mutex // protects hydration flags, independent of operationMu
 	loaded    map[DeviceID]bool
 }
 
 // AttachProfiles wires one store per application root before publication. The
 // loader must return os.ErrNotExist only for genuinely absent local settings.
-func (s *Service) AttachProfiles(store *configstore.ProfileStore, load func(Binding) (x6.DeviceConfig, error)) *Service {
+func (s *Service) AttachProfiles(store *configstore.ProfileStore, load func(Binding) (device.DeviceConfig, error)) *Service {
 	s.profiles = &profileComponent{store: store, load: load, loaded: make(map[DeviceID]bool)}
 	return s
 }
@@ -82,27 +81,27 @@ func (s *Service) validateProfile(binding Binding, p profileConfiguration) error
 	if p.Version != 1 || (p.Source != "local settings" && p.Source != "app defaults") {
 		return configstore.ErrInvalidProfile
 	}
-	if _, err := x6.EncodeDPIReport(p.Device.DPIConfig); err != nil {
+	if err := s.model.DPIOperation().Validate(p.Device.DPIConfig); err != nil {
 		return err
 	}
-	if err := x6.NewPollingOperation().Validate(p.Device.PollingRate); err != nil {
+	if err := s.model.PollingOperation().Validate(p.Device.PollingRate); err != nil {
 		return err
 	}
-	if err := x6.ValidateNormalSleepMinutes(p.Device.NormalSleepMinutes); err != nil {
+	if err := s.model.ValidateNormalSleepMinutes(p.Device.NormalSleepMinutes); err != nil {
 		return err
 	}
-	if err := x6.ValidateResponseTime(p.Device.ResponseTimeMs); err != nil {
+	if err := s.model.ValidateResponseTime(p.Device.ResponseTimeMs); err != nil {
 		return err
 	}
-	remap := x6.DefaultRemapConfig()
+	remap := device.DefaultRemapConfig()
 	if p.Device.Remap != nil {
 		remap = *p.Device.Remap
 	}
-	if err := x6.NewRemapOperation().Validate(remap); err != nil {
+	if err := s.model.RemapOperation().Validate(remap); err != nil {
 		return err
 	}
 	if p.Lighting != nil {
-		if err := x6.NewLightingOperation().Validate(*p.Lighting); err != nil {
+		if err := s.model.LightingOperation().Validate(*p.Lighting); err != nil {
 			return err
 		}
 	}
@@ -154,7 +153,7 @@ func (s *Service) profileSnapshot(binding Binding, saved configstore.ProfileSnap
 func (s *Service) profilesLocked(binding Binding) ProfileSnapshot {
 	saved, err := s.profiles.store.List(binding.ID, binding.ProfileID)
 	if errors.Is(err, os.ErrNotExist) {
-		config := x6.DefaultDeviceConfig()
+		config := device.DefaultDeviceConfig()
 		source := "app defaults"
 		if s.profiles.load != nil {
 			loaded, loadErr := s.profiles.load(binding)
@@ -265,12 +264,12 @@ func (s *Service) restoreProfile(inventory *mouse.TargetedService, b Binding, p 
 		savedRate := p.Device.PollingRate
 		pol.persisted = &savedRate
 		pol.persistence = "success"
-		settings.replaceLocked(p.Device)
-		light.pending = x6.DefaultLightingSettings().LightingSelection
+		settings.replaceLocked(s.model, p.Device)
+		light.pending = device.DefaultLightingSettings().LightingSelection
 		if p.Lighting != nil {
 			light.pending = *p.Lighting
 		}
-		remap := x6.DefaultRemapConfig()
+		remap := device.DefaultRemapConfig()
 		if p.Device.Remap != nil {
 			remap = *p.Device.Remap
 		}
@@ -426,7 +425,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		before.Error = Error{Code: StaleBinding}
 		return before
 	}
-	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewDPIOperation(), target.Device.DPIConfig); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, s.model.DPIOperation(), target.Device.DPIConfig); err != nil {
 		dpiState.mu.Lock()
 		dpiState.firmware, dpiState.err = "failed", Error{Code: errorCode(err, false)}
 		dpiState.mu.Unlock()
@@ -452,7 +451,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		before.Error = Error{Code: StaleBinding}
 		return before
 	}
-	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewPollingOperation(), target.Device.PollingRate); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, s.model.PollingOperation(), target.Device.PollingRate); err != nil {
 		polState.mu.Lock()
 		polState.firmware, polState.err = "failed", Error{Code: errorCode(err, false)}
 		polState.mu.Unlock()
@@ -478,16 +477,16 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		before.Error = Error{Code: StaleBinding}
 		return before
 	}
-	lightingSelection := x6.DefaultLightingSettings().LightingSelection
+	lightingSelection := device.DefaultLightingSettings().LightingSelection
 	if target.Lighting != nil {
 		lightingSelection = *target.Lighting
 	}
-	lightingSettings := x6.LightingSettings{
+	lightingSettings := device.LightingSettings{
 		LightingSelection:  lightingSelection,
 		NormalSleepMinutes: target.Device.NormalSleepMinutes,
 		ResponseTimeMs:     target.Device.ResponseTimeMs,
 	}
-	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewLightingSettingsOperation(), lightingSettings); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, s.model.LightingSettingsOperation(), lightingSettings); err != nil {
 		stState := s.settingsStateForBinding(binding)
 		stState.mu.Lock()
 		stState.normalFirmware, stState.responseFirmware = "failed", "failed"
@@ -531,7 +530,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		before.Error = Error{Code: StaleBinding}
 		return before
 	}
-	remapConfig := x6.DefaultRemapConfig()
+	remapConfig := device.DefaultRemapConfig()
 	if target.Device.Remap != nil {
 		remapConfig = *target.Device.Remap
 	}
@@ -542,22 +541,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		for i := range target.Macros {
 			drafts[i] = cloneMacroDraft(&target.Macros[i])
 		}
-		items := make([]x6.MacroSequenceItem, len(drafts))
-		localItems := make([]x6.MacroLocalItem, len(drafts))
-		legacy := true
-		for i, draft := range drafts {
-			seq, valid := admittedSequenceWithMode(draft.Events, draft.Repeat, draft.Mode)
-			legacy = legacy && valid
-			localItems[i] = x6.MacroLocalItem{Button: draft.Button, Events: append([]macros.Event(nil), draft.Events...), Repeat: draft.Repeat, Mode: draft.Mode}
-			items[i] = x6.MacroSequenceItem{Button: draft.Button, Sequence: seq}
-		}
-		var progress mouse.MacroProgress
-		var remapErr error
-		if legacy {
-			progress, remapErr = x6.ApplyMultiMacroSequenceAssignmentBound(ctx, inventory, binding, remapConfig, items)
-		} else {
-			progress, remapErr = x6.ApplyMultiMacroLocalAssignmentBound(ctx, inventory, binding, remapConfig, localItems)
-		}
+		progress, remapErr := s.applyMacroAssignments(ctx, inventory, binding, remapConfig, drafts)
 		remState.mu.Lock()
 		remState.macroProgress = progress
 		remState.mu.Unlock()
@@ -596,7 +580,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		}
 		s.emitRemapConfiguration(binding, remapSnapshotOf(remState))
 	} else {
-		if err := inventory.ApplyOperationBound(ctx, binding, x6.NewRemapOperation(), remapConfig); err != nil {
+		if err := inventory.ApplyOperationBound(ctx, binding, s.model.RemapOperation(), remapConfig); err != nil {
 			remState.mu.Lock()
 			remState.firmware, remState.err = "failed", Error{Code: errorCode(err, false)}
 			remState.mu.Unlock()
@@ -626,7 +610,7 @@ func (s *Service) SwitchProfile(id string) ProfileSnapshot {
 		return before
 	}
 	if s.pollingComponent.persistence != nil {
-		err = s.saveDeviceConfig(binding, s.pollingComponent.persistence, func(c *x6.DeviceConfig) { *c = target.Device })
+		err = s.saveDeviceConfig(binding, s.pollingComponent.persistence, func(c *device.DeviceConfig) { *c = target.Device })
 	} else if s.devicePersistence != nil {
 		err = s.devicePersistence.Save(binding, target.Device.DPIConfig)
 	}

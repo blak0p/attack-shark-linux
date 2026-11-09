@@ -3,49 +3,45 @@ package protocol
 import (
 	"encoding/hex"
 	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
 )
 
 const LightingReportLength = 13
 
-type LightingMode byte
+type LightingMode = device.LightingMode
 
 const (
-	LightingOff            LightingMode = 0x00
-	LightingFixed          LightingMode = 0x10
-	LightingBreathing      LightingMode = 0x20
-	LightingNeon           LightingMode = 0x30
-	LightingColorBreathing LightingMode = 0x40
-	LightingStaticDPI      LightingMode = 0x50
-	LightingBreathingDPI   LightingMode = 0x60
+	LightingOff            = device.LightingOff
+	LightingFixed          = device.LightingFixed
+	LightingBreathing      = device.LightingBreathing
+	LightingNeon           = device.LightingNeon
+	LightingColorBreathing = device.LightingColorBreathing
+	LightingStaticDPI      = device.LightingStaticDPI
+	LightingBreathingDPI   = device.LightingBreathingDPI
 )
 
-type LightingTemplateID string
+type LightingTemplateID = device.LightingTemplateID
 
 const (
-	LightingTemplateStaticDPIFactoryReset LightingTemplateID = "static-dpi-factory-reset"
-	LightingTemplateOff                   LightingTemplateID = "off"
-	LightingTemplateFixedGreen            LightingTemplateID = "fixed-green"
-	LightingTemplateBreathingGreen        LightingTemplateID = "breathing-green"
-	LightingTemplateBreathingFE5EF9       LightingTemplateID = "breathing-fe5ef9"
-	LightingTemplateBreathingFF7F00       LightingTemplateID = "breathing-ff7f00"
-	LightingTemplateBreathingFFFF00       LightingTemplateID = "breathing-ffff00"
-	LightingTemplateStaticDPIDefault      LightingTemplateID = "static-dpi-default"
-	LightingTemplateNeonOne               LightingTemplateID = "neon-one"
-	LightingTemplateNeonTwo               LightingTemplateID = "neon-two"
-	LightingTemplateColorBreathingOne     LightingTemplateID = "color-breathing-one"
-	LightingTemplateColorBreathingTwo     LightingTemplateID = "color-breathing-two"
-	LightingTemplateBreathingDPIOne       LightingTemplateID = "breathing-dpi-one"
-	LightingTemplateBreathingDPITwo       LightingTemplateID = "breathing-dpi-two"
-	LightingTemplateBreathingDPIThree     LightingTemplateID = "breathing-dpi-three"
+	LightingTemplateStaticDPIFactoryReset = device.LightingTemplateStaticDPIFactoryReset
+	LightingTemplateOff                   = device.LightingTemplateOff
+	LightingTemplateFixedGreen            = device.LightingTemplateFixedGreen
+	LightingTemplateBreathingGreen        = device.LightingTemplateBreathingGreen
+	LightingTemplateBreathingFE5EF9       = device.LightingTemplateBreathingFE5EF9
+	LightingTemplateBreathingFF7F00       = device.LightingTemplateBreathingFF7F00
+	LightingTemplateBreathingFFFF00       = device.LightingTemplateBreathingFFFF00
+	LightingTemplateStaticDPIDefault      = device.LightingTemplateStaticDPIDefault
+	LightingTemplateNeonOne               = device.LightingTemplateNeonOne
+	LightingTemplateNeonTwo               = device.LightingTemplateNeonTwo
+	LightingTemplateColorBreathingOne     = device.LightingTemplateColorBreathingOne
+	LightingTemplateColorBreathingTwo     = device.LightingTemplateColorBreathingTwo
+	LightingTemplateBreathingDPIOne       = device.LightingTemplateBreathingDPIOne
+	LightingTemplateBreathingDPITwo       = device.LightingTemplateBreathingDPITwo
+	LightingTemplateBreathingDPIThree     = device.LightingTemplateBreathingDPIThree
 )
 
-type LightingSelection struct {
-	Mode       LightingMode
-	TemplateID LightingTemplateID
-	// Color optionally overrides the template color as "#RRGGBB". It is
-	// accepted only for modes in customColorModes; empty keeps the template.
-	Color string `json:",omitempty"`
-}
+type LightingSelection = device.LightingSelection
 
 // customColorModes are the modes whose captured reports carry a single color
 // in bytes 6-8. Hardware shows those bytes as RGB.

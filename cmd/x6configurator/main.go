@@ -117,7 +117,7 @@ func emergencyReset(ctx context.Context) error {
 	backend := hidlinux.NewHidrawBackend(registry)
 	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend, registry: registry}, backend)
 	store := configstore.New(filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"))
-	service := desktop.Compose(nil, nil, store).AttachInventory(inventory)
+	service := desktop.Compose(x6.Model(), nil, nil, store).AttachInventory(inventory)
 	_, err = composeEmergencyReset(dataDir, inventory, service).Run(ctx)
 	return err
 }
@@ -352,7 +352,7 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		err := deviceStore.Load(binding.ID, binding.ProfileID, &config)
 		return config, err
 	}
-	service := desktop.Compose(status, writer, store, macroLibraryOption(dataDir)).
+	service := desktop.Compose(x6.Model(), status, writer, store, macroLibraryOption(dataDir)).
 		AttachInventory(inventory).
 		AttachMigrator(migrate).
 		AttachDevicePersistence(loadDevice, saveDevice).
@@ -363,5 +363,5 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 }
 
 func composeEmergencyReset(dataDir string, inventory *mouse.TargetedService, service *desktop.Service) *desktop.EmergencyReset {
-	return desktop.NewEmergencyReset(inventory, service, configstore.NewStatePurger(dataDir))
+	return desktop.NewEmergencyReset(x6.Model(), inventory, service, configstore.NewStatePurger(dataDir))
 }

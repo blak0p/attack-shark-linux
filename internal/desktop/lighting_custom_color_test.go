@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 )
 
 func TestLightingCustomColorStagesAppliesAndWritesRGB(t *testing.T) {
 	command := &lightingCommandFake{}
 	service := newLightingService(t, command)
-	selection := x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen, Color: "#FF7F00"}
+	selection := device.LightingSelection{Mode: device.LightingFixed, TemplateID: device.LightingTemplateFixedGreen, Color: "#FF7F00"}
 
 	staged := service.StageLighting(selection)
 	if staged.Pending != selection || staged.Error.Code != "" || command.calls != 0 {
@@ -32,19 +32,19 @@ func TestLightingInvalidCustomColorIsRejectedWithoutChangingPending(t *testing.T
 	service := newLightingService(t, command)
 	before := service.GetLightingSnapshot()
 
-	got := service.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne, Color: "#FF0000"})
+	got := service.StageLighting(device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonOne, Color: "#FF0000"})
 	if got.Error.Code != InvalidConfiguration || got.Pending != before.Pending || got.Revision != before.Revision || command.calls != 0 {
 		t.Fatalf("StageLighting(neon+color) = %#v; want InvalidConfiguration and unchanged pending %#v", got, before.Pending)
 	}
 }
 
 func TestLightingSelectionJSONOmitsEmptyColorForStoredProfiles(t *testing.T) {
-	plain, _ := json.Marshal(x6.LightingSelection{Mode: x6.LightingFixed, TemplateID: x6.LightingTemplateFixedGreen})
+	plain, _ := json.Marshal(device.LightingSelection{Mode: device.LightingFixed, TemplateID: device.LightingTemplateFixedGreen})
 	if strings.Contains(string(plain), "Color") {
 		t.Fatalf("plain selection JSON = %s; want no Color key", plain)
 	}
-	var decoded x6.LightingSelection
-	custom := x6.LightingSelection{Mode: x6.LightingBreathing, TemplateID: x6.LightingTemplateBreathingGreen, Color: "#123456"}
+	var decoded device.LightingSelection
+	custom := device.LightingSelection{Mode: device.LightingBreathing, TemplateID: device.LightingTemplateBreathingGreen, Color: "#123456"}
 	encoded, _ := json.Marshal(custom)
 	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != custom {
 		t.Fatalf("custom selection round trip = %#v, %v; want %#v", decoded, err, custom)

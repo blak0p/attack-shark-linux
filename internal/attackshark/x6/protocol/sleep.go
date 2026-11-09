@@ -1,10 +1,14 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blak0p/attack-shark-linux/internal/device"
+)
 
 const (
-	NormalSleepMinimumMinutes = 0.5
-	NormalSleepMaximumMinutes = 60.0
+	NormalSleepMinimumMinutes = device.NormalSleepMinimumMinutes
+	NormalSleepMaximumMinutes = device.NormalSleepMaximumMinutes
 )
 
 func ValidateNormalSleepMinutes(minutes float64) error {
@@ -17,12 +21,18 @@ func ValidateNormalSleepMinutes(minutes float64) error {
 
 // EncodeNormalSleepReport remains available for callers that only update byte 9.
 func EncodeNormalSleepReport(base []byte, minutes float64) ([]byte, error) {
-	if err := ValidateNormalSleepMinutes(minutes); err != nil { return nil, err }
-	if len(base) != LightingReportLength || base[0] != 0x05 { return nil, fmt.Errorf("normal sleep requires a %d-byte lighting report", LightingReportLength) }
+	if err := ValidateNormalSleepMinutes(minutes); err != nil {
+		return nil, err
+	}
+	if len(base) != LightingReportLength || base[0] != 0x05 {
+		return nil, fmt.Errorf("normal sleep requires a %d-byte lighting report", LightingReportLength)
+	}
 	report := append([]byte(nil), base...)
 	report[9] = byte(minutes * 2)
 	var checksum byte
-	for _, value := range report[3:11] { checksum += value }
+	for _, value := range report[3:11] {
+		checksum += value
+	}
 	report[12] = checksum
 	return report, nil
 }

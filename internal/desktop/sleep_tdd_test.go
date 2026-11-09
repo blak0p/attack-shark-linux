@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type gatedSettingsCommand struct {
@@ -30,7 +30,7 @@ func (c *gatedSettingsCommand) SendAndAwaitBound(_ context.Context, _ mouse.Bind
 }
 
 func TestSleepApplyUsesLightingForCapturedBinding(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidates := []transport.Candidate{
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"},
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "beta", Path: "/dev/hidraw1"},
@@ -38,13 +38,13 @@ func TestSleepApplyUsesLightingForCapturedBinding(t *testing.T) {
 	command := &gatedSettingsCommand{entered: make(chan struct{}), release: make(chan struct{}), reports: make(chan []byte, 2)}
 	close(command.release)
 	target := mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command)
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(target)
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(target)
 	devices := s.RefreshInventory(context.Background()).Devices
 	a, b := devices[0].ID, devices[1].ID
 	s.SelectDevice(a)
-	s.StageLighting(x6.LightingSelection{Mode: x6.LightingNeon, TemplateID: x6.LightingTemplateNeonOne})
+	s.StageLighting(device.LightingSelection{Mode: device.LightingNeon, TemplateID: device.LightingTemplateNeonOne})
 	s.SelectDevice(b)
-	s.StageLighting(x6.LightingSelection{Mode: x6.LightingColorBreathing, TemplateID: x6.LightingTemplateColorBreathingOne})
+	s.StageLighting(device.LightingSelection{Mode: device.LightingColorBreathing, TemplateID: device.LightingTemplateColorBreathingOne})
 	s.SelectDevice(a)
 	// The first write establishes A's expected wire vector without relying on packet layout.
 	readReport := func() []byte {
@@ -78,17 +78,17 @@ func TestSleepApplyUsesLightingForCapturedBinding(t *testing.T) {
 }
 
 func TestSettingsApplyKeepsOriginalBindingAcrossSelection(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidates := []transport.Candidate{
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"},
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "beta", Path: "/dev/hidraw1"},
 	}
 	command := &gatedSettingsCommand{entered: make(chan struct{}), release: make(chan struct{})}
-	records := map[DeviceID]x6.DeviceConfig{}
+	records := map[DeviceID]device.DeviceConfig{}
 	target := mouse.NewTargetedService(registry, inventorySourceFake{candidates: candidates}, command)
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(target).AttachNormalSleepPersistence(
-		func(b Binding) (x6.DeviceConfig, error) { return records[b.ID], nil },
-		func(b Binding, c x6.DeviceConfig) error { records[b.ID] = c; return nil },
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(target).AttachNormalSleepPersistence(
+		func(b Binding) (device.DeviceConfig, error) { return records[b.ID], nil },
+		func(b Binding, c device.DeviceConfig) error { records[b.ID] = c; return nil },
 	)
 	inventory := s.RefreshInventory(context.Background())
 	first := inventory.Devices[0].ID
@@ -123,7 +123,7 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 			name = "normal sleep"
 		}
 		t.Run(name, func(t *testing.T) {
-			registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, _ := mouse.NewProfileRegistry(newStubProfile())
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 			command := &gatedSettingsCommand{entered: make(chan struct{}), release: make(chan struct{}), reports: make(chan []byte, 1)}
 			defer func() {
@@ -141,10 +141,10 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 					t.Fatalf("timed out waiting for %s", label)
 				}
 			}
-			record := x6.DefaultDeviceConfig()
-			s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).AttachNormalSleepPersistence(
-				func(Binding) (x6.DeviceConfig, error) { return record, nil },
-				func(_ Binding, c x6.DeviceConfig) error { record = c; return nil },
+			record := device.DefaultDeviceConfig()
+			s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).AttachNormalSleepPersistence(
+				func(Binding) (device.DeviceConfig, error) { return record, nil },
+				func(_ Binding, c device.DeviceConfig) error { record = c; return nil },
 			)
 			s.RefreshInventory(context.Background())
 			done := make(chan struct{})
@@ -202,12 +202,12 @@ func TestSettingsApplyPersistsCapturedValueDuringConcurrentStage(t *testing.T) {
 }
 
 func TestDebouncePersistsAndReloadsOddMilliseconds(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	record := x6.DefaultDeviceConfig()
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(
-		func(Binding) (x6.DeviceConfig, error) { return record, nil },
-		func(_ Binding, c x6.DeviceConfig) error { record = c; return nil },
+	record := device.DefaultDeviceConfig()
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(
+		func(Binding) (device.DeviceConfig, error) { return record, nil },
+		func(_ Binding, c device.DeviceConfig) error { record = c; return nil },
 	)
 	inventory := s.RefreshInventory(context.Background())
 	for _, ms := range []int{3, 25} {
@@ -224,18 +224,18 @@ func TestDebouncePersistsAndReloadsOddMilliseconds(t *testing.T) {
 }
 
 func TestSettingsPersistencePreservesOtherFieldsAndReloadsSelection(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	record := x6.DefaultDeviceConfig()
-	record.PollingRate = x6.PollingRate500
-	record.Remap = &x6.RemapConfig{}
-	load := func(Binding) (x6.DeviceConfig, error) { return record, nil }
-	save := func(_ Binding, c x6.DeviceConfig) error { record = c; return nil }
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(load, save)
+	record := device.DefaultDeviceConfig()
+	record.PollingRate = device.PollingRate500
+	record.Remap = &device.RemapConfig{}
+	load := func(Binding) (device.DeviceConfig, error) { return record, nil }
+	save := func(_ Binding, c device.DeviceConfig) error { record = c; return nil }
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(load, save)
 	inventory := s.RefreshInventory(context.Background())
 	s.StageNormalSleep(12)
 	s.ApplyNormalSleep()
-	if record.PollingRate != x6.PollingRate500 || record.Remap == nil {
+	if record.PollingRate != device.PollingRate500 || record.Remap == nil {
 		t.Fatalf("settings save discarded unrelated fields: %#v", record)
 	}
 	record.NormalSleepMinutes = 18
@@ -246,14 +246,14 @@ func TestSettingsPersistencePreservesOtherFieldsAndReloadsSelection(t *testing.T
 }
 
 func TestSettingsRetryPreservesOriginalValueAndOtherDomains(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	record := x6.DefaultDeviceConfig()
-	record.PollingRate = x6.PollingRate500
+	record := device.DefaultDeviceConfig()
+	record.PollingRate = device.PollingRate500
 	saves := 0
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(
-		func(Binding) (x6.DeviceConfig, error) { return record, nil },
-		func(_ Binding, config x6.DeviceConfig) error {
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(
+		func(Binding) (device.DeviceConfig, error) { return record, nil },
+		func(_ Binding, config device.DeviceConfig) error {
 			saves++
 			if saves == 1 {
 				return errors.New("disk full")
@@ -269,23 +269,23 @@ func TestSettingsRetryPreservesOriginalValueAndOtherDomains(t *testing.T) {
 		t.Fatalf("apply = %#v, want retryable persistence failure", failed)
 	}
 	retried := s.RetryNormalSleepPersistence()
-	if record.NormalSleepMinutes != 12 || record.PollingRate != x6.PollingRate500 || retried.RetryAvailable || retried.Error.Code != "" || retried.Persisted == nil || *retried.Persisted != 12 {
+	if record.NormalSleepMinutes != 12 || record.PollingRate != device.PollingRate500 || retried.RetryAvailable || retried.Error.Code != "" || retried.Persisted == nil || *retried.Persisted != 12 {
 		t.Fatalf("retry = %#v, record = %#v; want original sleep and preserved polling", retried, record)
 	}
 }
 
 func TestSelectingMissingSettingsRecordClearsStaleState(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-	record := x6.DefaultDeviceConfig()
+	record := device.DefaultDeviceConfig()
 	record.NormalSleepMinutes = 18
 	missing := false
-	s := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(func(Binding) (x6.DeviceConfig, error) {
+	s := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{})).AttachNormalSleepPersistence(func(Binding) (device.DeviceConfig, error) {
 		if missing {
-			return x6.DeviceConfig{}, os.ErrNotExist
+			return device.DeviceConfig{}, os.ErrNotExist
 		}
 		return record, nil
-	}, func(Binding, x6.DeviceConfig) error { return nil })
+	}, func(Binding, device.DeviceConfig) error { return nil })
 	inventory := s.RefreshInventory(context.Background())
 	if got := s.GetNormalSleepSnapshot().Pending; got != 18 {
 		t.Fatalf("initial sleep = %v", got)
@@ -293,7 +293,7 @@ func TestSelectingMissingSettingsRecordClearsStaleState(t *testing.T) {
 	missing = true
 	s.SelectDevice(inventory.Devices[0].ID)
 	snapshot := s.GetNormalSleepSnapshot()
-	if snapshot.Pending != x6.NormalSleepMinimumMinutes || snapshot.Persisted != nil {
+	if snapshot.Pending != device.NormalSleepMinimumMinutes || snapshot.Persisted != nil {
 		t.Fatalf("missing record retained stale settings: %#v", snapshot)
 	}
 }
@@ -311,12 +311,12 @@ func TestNormalSleepAndDebounceClassifyDeviceAccessFailures(t *testing.T) {
 		{name: "debounce wrapped disconnected", err: fmt.Errorf("write: %w", os.ErrNotExist), apply: func(s *Service) ErrorCode { return s.ApplyDebounce().Error.Code }, want: DeviceDisconnected},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatal(err)
 			}
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
 			service.RefreshInventory(context.Background())
 
 			if got := tt.apply(service); got != tt.want {

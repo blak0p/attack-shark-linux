@@ -3,11 +3,11 @@ package desktop
 import (
 	"context"
 	"errors"
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"log/slog"
 	"os"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 // inventoryComponent owns discovered bindings and the per-device state created
@@ -43,8 +43,8 @@ func (c *inventoryComponent) refresh(ctx context.Context, s *Service) (outcome I
 	slog.Info("x6_desktop", "operation", "RefreshInventory", "phase", "entry")
 	defer func() {
 		eligible := 0
-		for _, device := range outcome.Devices {
-			if device.Eligible {
+		for _, dev := range outcome.Devices {
+			if dev.Eligible {
 				eligible++
 			}
 		}
@@ -68,8 +68,8 @@ func (c *inventoryComponent) refresh(ctx context.Context, s *Service) (outcome I
 		return Inventory{Error: Error{Code: DeviceUnavailable}}
 	}
 	result := Inventory{Devices: devices}
-	for _, device := range devices {
-		if device.Warning == "ambiguous identity" {
+	for _, dev := range devices {
+		if dev.Warning == "ambiguous identity" {
 			result.Error = Error{Code: AmbiguousIdentity}
 			break
 		}
@@ -85,26 +85,26 @@ func (c *inventoryComponent) refresh(ctx context.Context, s *Service) (outcome I
 	}
 	s.mu.Lock()
 	s.inventoryDevices = devices
-	for _, device := range devices {
-		if _, ok := s.states[device.ID]; !ok {
+	for _, dev := range devices {
+		if _, ok := s.states[dev.ID]; !ok {
 			state := s.newStateFromLegacy()
-			if result.Selected != nil && result.Selected.SessionOnly && result.Selected.ID == device.ID {
-				state = newDeviceState(x6.DefaultDPIConfig(), x6.DefaultDPIConfig())
+			if result.Selected != nil && result.Selected.SessionOnly && result.Selected.ID == dev.ID {
+				state = newDeviceState(device.DefaultDPIConfig(), device.DefaultDPIConfig())
 			}
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.devicePersistence != nil {
+			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == dev.ID && s.devicePersistence != nil {
 				if applied, err := s.devicePersistence.Load(*result.Selected); err == nil {
 					state = newDeviceState(applied, state.factory)
 				}
 			}
-			s.pollingComponent.initDevice(device.ID, result.Selected)
+			s.pollingComponent.initDevice(dev.ID, result.Selected)
 			settings := newSettingsState()
-			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == device.ID && s.settingsPersistence != nil {
+			if result.Selected != nil && !result.Selected.SessionOnly && result.Selected.ID == dev.ID && s.settingsPersistence != nil {
 				if config, err := s.settingsPersistence.Load(*result.Selected); err == nil {
-					settings = newSettingsStateFromConfig(config)
+					settings = newSettingsStateFromConfig(s.model, config)
 				}
 			}
-			s.settingsStates[device.ID] = settings
-			s.states[device.ID] = state
+			s.settingsStates[dev.ID] = settings
+			s.states[dev.ID] = state
 		}
 	}
 	if result.Selected != nil {
@@ -162,9 +162,9 @@ func (c *inventoryComponent) selectDevice(id DeviceID, s *Service) Inventory {
 		if settingsPersistence != nil && settings != nil {
 			settings.applyMu.Lock()
 			if config, err := settingsPersistence.Load(selected); err == nil {
-				settings.replace(config)
+				settings.replace(s.model, config)
 			} else if errors.Is(err, os.ErrNotExist) {
-				settings.reset()
+				settings.reset(s.model)
 			}
 			settings.applyMu.Unlock()
 		}

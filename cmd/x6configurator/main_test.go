@@ -216,7 +216,7 @@ func TestComposeEmergencyResetBuildsOneRunnerForTheService(t *testing.T) {
 	inventory := mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{{
 		VendorID: 0x1D57, ProductID: 0xFA60, Serial: "reset-device", Path: "/dev/hidraw0",
 	}}}, command)
-	service := desktop.Compose(nil, nil, configstore.New(
+	service := desktop.Compose(x6.Model(), nil, nil, configstore.New(
 		filepath.Join(dataDir, "applied-dpi.json"),
 		filepath.Join(dataDir, "factory-defaults.json"),
 	)).AttachInventory(inventory)
@@ -739,7 +739,7 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		}
 	}
 
-	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol/models.ts")
+	lightingModels, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/device/models.ts")
 	if err != nil {
 		t.Fatalf("read generated lighting selection model binding: %v", err)
 	}
@@ -747,7 +747,7 @@ func TestGeneratedWailsBindingsExposePollingAndLightingOperations(t *testing.T) 
 		t.Error("generated Wails model binding must expose LightingSelection")
 	}
 
-	effects, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/attackshark/x6/models.ts")
+	effects, err := os.ReadFile("../../frontend/bindings/github.com/blak0p/attack-shark-linux/internal/device/models.ts")
 	if err != nil {
 		t.Fatalf("read generated lighting effect model binding: %v", err)
 	}

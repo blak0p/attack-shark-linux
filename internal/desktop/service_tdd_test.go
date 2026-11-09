@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,11 +14,10 @@ import (
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 func TestDPIComponentOwnsStateAndCoordinator(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if service.dpiComponent.legacy == nil || service.dpiComponent.states == nil {
 		t.Fatal("DPI component must own legacy and device states")
 	}
@@ -32,7 +32,7 @@ func TestDPIComponentOwnsStateAndCoordinator(t *testing.T) {
 
 func TestDPIComponentOwnsLegacyStageAndApply(t *testing.T) {
 	writer := &writerFake{}
-	service := New(statusFake{}, writer, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, writer, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if service.dpiComponent == nil {
 		t.Fatal("DPI collaborator not initialized")
 	}
@@ -49,17 +49,17 @@ func TestDPIComponentOwnsLegacyStageAndApply(t *testing.T) {
 func TestDPIComponentRefreshStatus(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		status x6.Status
+		status device.Status
 		err    error
 		want   ErrorCode
 	}{
-		{name: "success", status: x6.Status{Connection: "wireless", BatteryAvailable: true, BatteryPercent: 73}},
-		{name: "unavailable battery", status: x6.Status{Connection: "wired"}},
+		{name: "success", status: device.Status{Connection: "wireless", BatteryAvailable: true, BatteryPercent: 73}},
+		{name: "unavailable battery", status: device.Status{Connection: "wired"}},
 		{name: "permission denied", err: fmt.Errorf("status: %w", syscall.EACCES), want: PermissionDenied},
 		{name: "disconnected", err: os.ErrNotExist, want: DeviceDisconnected},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			service := New(statusFake{status: tt.status, err: tt.err}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+			service := New(testModel(), statusFake{status: tt.status, err: tt.err}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 			state := service.dpiComponent.currentState()
 			battery := 42
 			state.battery, state.connection, state.err = &battery, "previous", Error{Code: PersistenceFailed}
@@ -86,7 +86,7 @@ func TestDPIComponentRefreshStatus(t *testing.T) {
 }
 
 func TestDPIComponentReconcileFactoryReset(t *testing.T) {
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	state := service.dpiComponent.currentState()
 	pending := state.pending
 	pending.DPI[0] = 1600
@@ -95,7 +95,7 @@ func TestDPIComponentReconcileFactoryReset(t *testing.T) {
 	before := service.GetSnapshot()
 	service.dpiComponent.reconcileFactoryReset()
 	got := service.GetSnapshot()
-	defaults := ToDTO(x6.DocumentedResetDPIConfig())
+	defaults := ToDTO(device.DocumentedResetDPIConfig())
 	if got.Applied != defaults || got.Pending != defaults || got.Revision != 10 {
 		t.Fatalf("reset configuration = %+v", got)
 	}
@@ -108,36 +108,36 @@ func TestDPIComponentReconcileFactoryReset(t *testing.T) {
 }
 
 type statusFake struct {
-	status x6.Status
+	status device.Status
 	err    error
 }
 
-func (f statusFake) Status(context.Context) (x6.Status, error) { return f.status, f.err }
+func (f statusFake) Status(context.Context) (device.Status, error) { return f.status, f.err }
 
 type writerFake struct {
 	calls int
 	err   error
 }
 
-func (f *writerFake) ApplyAndPersist(context.Context, x6.DPIConfig, x6.AppliedDPIStore) error {
+func (f *writerFake) ApplyAndPersist(context.Context, device.DPIConfig, device.AppliedDPIStore) error {
 	f.calls++
 	return f.err
 }
 
 type appliedStoreFake struct {
-	applied x6.DPIConfig
-	factory x6.DPIConfig
+	applied device.DPIConfig
+	factory device.DPIConfig
 	err     error
 }
 
-func (f appliedStoreFake) LoadApplied() (x6.DPIConfig, error) { return f.applied, f.err }
-func (f appliedStoreFake) LoadFactory() (x6.DPIConfig, error) {
-	if f.factory == (x6.DPIConfig{}) {
-		return x6.DefaultDPIConfig(), f.err
+func (f appliedStoreFake) LoadApplied() (device.DPIConfig, error) { return f.applied, f.err }
+func (f appliedStoreFake) LoadFactory() (device.DPIConfig, error) {
+	if f.factory == (device.DPIConfig{}) {
+		return device.DefaultDPIConfig(), f.err
 	}
 	return f.factory, nil
 }
-func (appliedStoreFake) SaveApplied(x6.DPIConfig) error { return nil }
+func (appliedStoreFake) SaveApplied(device.DPIConfig) error { return nil }
 
 type inventorySourceFake struct{ candidates []transport.Candidate }
 
@@ -177,15 +177,15 @@ func (f *fakeHidrawCommand) lastBinding() mouse.Binding {
 }
 
 func TestExplicitApplyAcknowledgesBeforePersistingAndRetriesWithoutAWrite(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &fakeHidrawCommand{}
 	scheduler := &fakeSyncScheduler{}
 	var persistenceMu sync.Mutex
 	persistCalls := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).AttachDevicePersistence(
-		func(Binding) (x6.DPIConfig, error) { return x6.DPIConfig{}, os.ErrNotExist },
-		func(Binding, x6.DPIConfig) error {
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).AttachDevicePersistence(
+		func(Binding) (device.DPIConfig, error) { return device.DPIConfig{}, os.ErrNotExist },
+		func(Binding, device.DPIConfig) error {
 			persistenceMu.Lock()
 			defer persistenceMu.Unlock()
 			persistCalls++
@@ -223,9 +223,9 @@ func TestErrorCodePreservesPersistenceAndNoUsableDeviceBeforeDisconnection(t *te
 		status bool
 		want   ErrorCode
 	}{
-		{name: "persistence wrapped missing device", err: &x6.ServiceError{Kind: x6.PersistFailure, Err: fmt.Errorf("save: %w", os.ErrNotExist)}, want: PersistenceFailed},
-		{name: "no usable device wrapped missing device during apply", err: &x6.ServiceError{Kind: x6.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, want: DeviceUnavailable},
-		{name: "no usable device wrapped missing device during status", err: &x6.ServiceError{Kind: x6.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, status: true, want: DeviceUnavailable},
+		{name: "persistence wrapped missing device", err: &device.ServiceError{Kind: device.PersistFailure, Err: fmt.Errorf("save: %w", os.ErrNotExist)}, want: PersistenceFailed},
+		{name: "no usable device wrapped missing device during apply", err: &device.ServiceError{Kind: device.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, want: DeviceUnavailable},
+		{name: "no usable device wrapped missing device during status", err: &device.ServiceError{Kind: device.NoUsableDevice, Err: fmt.Errorf("open: %w", os.ErrNotExist)}, status: true, want: DeviceUnavailable},
 		{name: "typed HID disconnect", err: &hidlinux.Error{Kind: hidlinux.Disconnected, Err: errors.New("device gone")}, want: DeviceDisconnected},
 	}
 	for _, tt := range tests {
@@ -247,21 +247,21 @@ func TestApplyLightingAndPollingRateClassifyDeviceAccessFailures(t *testing.T) {
 		{name: "lighting permission denied", err: os.ErrPermission, apply: func(s *Service) ErrorCode { return s.ApplyLighting().Error.Code }, want: PermissionDenied},
 		{name: "lighting device disconnected", err: os.ErrNotExist, apply: func(s *Service) ErrorCode { return s.ApplyLighting().Error.Code }, want: DeviceDisconnected},
 		{name: "polling permission denied", err: os.ErrPermission, apply: func(s *Service) ErrorCode {
-			s.StagePollingRate(x6.PollingRate500)
+			s.StagePollingRate(device.PollingRate500)
 			return s.ApplyPollingRate(context.Background()).Error.Code
 		}, want: PermissionDenied},
 		{name: "polling device disconnected", err: os.ErrNotExist, apply: func(s *Service) ErrorCode {
-			s.StagePollingRate(x6.PollingRate500)
+			s.StagePollingRate(device.PollingRate500)
 			return s.ApplyPollingRate(context.Background()).Error.Code
 		}, want: DeviceDisconnected},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatalf("NewProfileRegistry() error = %v", err)
 			}
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 				AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
 			service.RefreshInventory(context.Background())
 
@@ -274,17 +274,17 @@ func TestApplyLightingAndPollingRateClassifyDeviceAccessFailures(t *testing.T) {
 }
 
 func TestExplicitApplyCancelsPendingAutomaticSave(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	command := &fakeHidrawCommand{}
 	scheduler := &fakeSyncScheduler{}
 	var persistenceMu sync.Mutex
 	persistCalls := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, command)).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { return x6.DPIConfig{}, os.ErrNotExist },
-			func(Binding, x6.DPIConfig) error {
+			func(Binding) (device.DPIConfig, error) { return device.DPIConfig{}, os.ErrNotExist },
+			func(Binding, device.DPIConfig) error {
 				persistenceMu.Lock()
 				defer persistenceMu.Unlock()
 				persistCalls++
@@ -313,27 +313,27 @@ func TestExplicitApplyCancelsPendingAutomaticSave(t *testing.T) {
 }
 
 func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
-	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, _ := mouse.NewProfileRegistry(newStubProfile())
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
 	source := &mutableInventorySource{candidates: []transport.Candidate{candidate}}
 	command := &fakeHidrawCommand{}
 	scheduler := &fakeSyncScheduler{}
 	var persistenceMu sync.Mutex
-	persisted := map[DeviceID]x6.DPIConfig{}
+	persisted := map[DeviceID]device.DPIConfig{}
 	saveCalls := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, source, command)).
 		AttachDevicePersistence(
-			func(binding Binding) (x6.DPIConfig, error) {
+			func(binding Binding) (device.DPIConfig, error) {
 				persistenceMu.Lock()
 				defer persistenceMu.Unlock()
 				config, ok := persisted[binding.ID]
 				if !ok {
-					return x6.DPIConfig{}, os.ErrNotExist
+					return device.DPIConfig{}, os.ErrNotExist
 				}
 				return config, nil
 			},
-			func(binding Binding, config x6.DPIConfig) error {
+			func(binding Binding, config device.DPIConfig) error {
 				persistenceMu.Lock()
 				defer persistenceMu.Unlock()
 				saveCalls++
@@ -382,8 +382,8 @@ func TestReconnectRebasesAutomaticSaveRevisionAndMapsNewStage(t *testing.T) {
 }
 
 func TestSnapshotExposesFactoryDefaultsForReset(t *testing.T) {
-	factory := x6.DefaultDPIConfig()
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{})
+	factory := device.DefaultDPIConfig()
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{})
 	got := service.GetSnapshot()
 	if got.Factory != ToDTO(factory) {
 		t.Fatalf("GetSnapshot().Factory = %#v; want %#v", got.Factory, ToDTO(factory))
@@ -391,7 +391,7 @@ func TestSnapshotExposesFactoryDefaultsForReset(t *testing.T) {
 }
 
 func TestServiceStagesWithoutWritingAndAppliesOnlyOnAcknowledgedSuccess(t *testing.T) {
-	applied := x6.DefaultDPIConfig()
+	applied := device.DefaultDPIConfig()
 	pending := applied
 	pending.DPI[0] = 1600
 	for _, tt := range []struct {
@@ -400,11 +400,11 @@ func TestServiceStagesWithoutWritingAndAppliesOnlyOnAcknowledgedSuccess(t *testi
 		wantApplied bool
 	}{
 		{name: "acknowledged success", wantApplied: true},
-		{name: "ack failure keeps pending", applyErr: &x6.ServiceError{Kind: x6.AckFailure, Err: errors.New("timeout")}},
+		{name: "ack failure keeps pending", applyErr: &device.ServiceError{Kind: device.AckFailure, Err: errors.New("timeout")}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &writerFake{err: tt.applyErr}
-			service := New(statusFake{}, writer, appliedStoreFake{applied: applied})
+			service := New(testModel(), statusFake{}, writer, appliedStoreFake{applied: applied})
 			staged := service.StageDPI(ToDTO(pending))
 			if writer.calls != 0 || staged.Pending.DPI[0] != 1600 {
 				t.Fatalf("StageDPI() = %#v, calls = %d; want local pending state and no write", staged, writer.calls)
@@ -427,7 +427,7 @@ func TestServiceClassifiesPermissionAndDisconnectedDeviceFailures(t *testing.T) 
 		{name: "device disconnected", err: os.ErrNotExist, want: DeviceDisconnected},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			service := New(statusFake{}, &writerFake{err: tt.err}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+			service := New(testModel(), statusFake{}, &writerFake{err: tt.err}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 
 			if got := service.ApplyDPI(context.Background()).Error.Code; got != tt.want {
 				t.Fatalf("ApplyDPI().Error.Code = %q, want %q", got, tt.want)
@@ -435,14 +435,14 @@ func TestServiceClassifiesPermissionAndDisconnectedDeviceFailures(t *testing.T) 
 		})
 	}
 
-	service := New(statusFake{err: os.ErrNotExist}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{err: os.ErrNotExist}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 	if got := service.RefreshStatus(context.Background()).Error.Code; got != DeviceDisconnected {
 		t.Fatalf("RefreshStatus().Error.Code = %q, want %q", got, DeviceDisconnected)
 	}
 }
 
 func TestRefreshStatusClassifiesEACCESAsPermissionDenied(t *testing.T) {
-	service := New(statusFake{err: &os.PathError{Op: "read", Path: "/dev/hidraw0", Err: syscall.EACCES}}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()})
+	service := New(testModel(), statusFake{err: &os.PathError{Op: "read", Path: "/dev/hidraw0", Err: syscall.EACCES}}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()})
 
 	if got := service.RefreshStatus(context.Background()).Error.Code; got != PermissionDenied {
 		t.Fatalf("RefreshStatus().Error.Code = %q, want %q", got, PermissionDenied)
@@ -459,14 +459,14 @@ func TestApplyRemapClassifiesDeviceAccessFailures(t *testing.T) {
 		{name: "wrapped device disconnected", err: fmt.Errorf("write: %w", os.ErrNotExist), want: DeviceDisconnected},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+			registry, err := mouse.NewProfileRegistry(newStubProfile())
 			if err != nil {
 				t.Fatal(err)
 			}
 			candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"}
-			service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
+			service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &fakeHidrawCommand{err: tt.err}))
 			service.RefreshInventory(context.Background())
-			if got := service.ApplyRemap(x6.DefaultRemapConfig()).Error.Code; got != tt.want {
+			if got := service.ApplyRemap(device.DefaultRemapConfig()).Error.Code; got != tt.want {
 				t.Fatalf("ApplyRemap().Error.Code = %q, want %q", got, tt.want)
 			}
 		})
@@ -474,21 +474,21 @@ func TestApplyRemapClassifiesDeviceAccessFailures(t *testing.T) {
 }
 
 func TestServiceShowsBatteryOnlyWhenStatusSuppliesIt(t *testing.T) {
-	available := New(statusFake{status: x6.Status{Connection: x6.Dongle, BatteryAvailable: true, BatteryPercent: 84}}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).RefreshStatus(context.Background())
+	available := New(testModel(), statusFake{status: device.Status{Connection: transport.Dongle, BatteryAvailable: true, BatteryPercent: 84}}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).RefreshStatus(context.Background())
 	if available.Connection != "dongle" || available.Battery == nil || *available.Battery != 84 {
 		t.Fatalf("available status = %#v", available)
 	}
-	unavailable := New(statusFake{err: &x6.ServiceError{Kind: x6.NoUsableDevice, Err: errors.New("absent")}}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).RefreshStatus(context.Background())
+	unavailable := New(testModel(), statusFake{err: &device.ServiceError{Kind: device.NoUsableDevice, Err: errors.New("absent")}}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).RefreshStatus(context.Background())
 	if unavailable.Battery != nil || unavailable.Error.Code != DeviceUnavailable {
 		t.Fatalf("unavailable status = %#v; want unavailable battery and error", unavailable)
 	}
 }
 
 func TestServiceTracksStagedRevisionAndRetainsFailedPendingConfiguration(t *testing.T) {
-	applied := x6.DefaultDPIConfig()
+	applied := device.DefaultDPIConfig()
 	pending := applied
 	pending.DPI[0] = 1600
-	service := New(statusFake{}, &writerFake{err: &x6.ServiceError{Kind: x6.AckFailure, Err: errors.New("timeout")}}, appliedStoreFake{applied: applied})
+	service := New(testModel(), statusFake{}, &writerFake{err: &device.ServiceError{Kind: device.AckFailure, Err: errors.New("timeout")}}, appliedStoreFake{applied: applied})
 
 	staged := service.StageDPI(ToDTO(pending))
 	if staged.Revision != 1 || staged.Applied.DPI[0] != 800 || staged.Pending.DPI[0] != 1600 {
@@ -501,7 +501,7 @@ func TestServiceTracksStagedRevisionAndRetainsFailedPendingConfiguration(t *test
 }
 
 func TestServiceExposesInventoryAndRequiresExplicitDesktopSelection(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
@@ -509,7 +509,7 @@ func TestServiceExposesInventoryAndRequiresExplicitDesktopSelection(t *testing.T
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0"},
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo", Path: "/dev/hidraw1"},
 	}}, nil)
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(targeted)
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(targeted)
 
 	inventory := service.RefreshInventory(context.Background())
 	if len(inventory.Devices) != 2 || inventory.Selected != nil {
@@ -526,7 +526,7 @@ func TestServiceExposesInventoryAndRequiresExplicitDesktopSelection(t *testing.T
 }
 
 func TestApplyDPIRequiresSelectedBindingAndRejectsStaleSelectionBeforeDeviceIO(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
@@ -547,7 +547,7 @@ func TestApplyDPIRequiresSelectedBindingAndRejectsStaleSelectionBeforeDeviceIO(t
 			command := &fakeHidrawCommand{}
 			legacyWriter := &writerFake{}
 			targeted := mouse.NewTargetedService(registry, source, command)
-			service := New(statusFake{}, legacyWriter, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(targeted)
+			service := New(testModel(), statusFake{}, legacyWriter, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(targeted)
 			if inventory := service.RefreshInventory(context.Background()); len(inventory.Devices) != 2 {
 				t.Fatalf("RefreshInventory() = %#v; want two eligible devices", inventory)
 			}
@@ -570,7 +570,7 @@ func TestApplyDPIRequiresSelectedBindingAndRejectsStaleSelectionBeforeDeviceIO(t
 }
 
 func TestApplyDPITargetsTheSelectedBindingWithoutUsingLegacyWriter(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
@@ -580,14 +580,14 @@ func TestApplyDPITargetsTheSelectedBindingWithoutUsingLegacyWriter(t *testing.T)
 	command := &fakeHidrawCommand{}
 	legacyWriter := &writerFake{}
 	targeted := mouse.NewTargetedService(registry, source, command)
-	service := New(statusFake{}, legacyWriter, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(targeted).attachAutomaticSave(&fakeSyncScheduler{})
+	service := New(testModel(), statusFake{}, legacyWriter, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(targeted).attachAutomaticSave(&fakeSyncScheduler{})
 	if inventory := service.RefreshInventory(context.Background()); len(inventory.Devices) != 2 {
 		t.Fatalf("RefreshInventory() = %#v; want two eligible devices", inventory)
 	}
 	if selected := service.SelectDevice(DeviceID{VendorID: bravo.VendorID, ProductID: bravo.ProductID, Serial: bravo.Serial}); selected.Error.Code != "" {
 		t.Fatalf("SelectDevice() = %#v", selected)
 	}
-	pending := x6.DefaultDPIConfig()
+	pending := device.DefaultDPIConfig()
 	pending.DPI[0] = 1600
 	service.StageDPI(ToDTO(pending))
 
@@ -604,7 +604,7 @@ func TestApplyDPITargetsTheSelectedBindingWithoutUsingLegacyWriter(t *testing.T)
 }
 
 func TestSelectedApplyPersistsAndRestoresPerDeviceState(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,17 +612,17 @@ func TestSelectedApplyPersistsAndRestoresPerDeviceState(t *testing.T) {
 	bravo := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo", Path: "/dev/hidraw1"}
 	command := &fakeHidrawCommand{}
 	inventory := mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, command)
-	persisted := map[mouse.DeviceID]x6.DPIConfig{}
-	defaults := x6.DefaultDPIConfig()
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: defaults, factory: defaults}).AttachInventory(inventory).attachAutomaticSave(&fakeSyncScheduler{}).AttachDevicePersistence(
-		func(binding Binding) (x6.DPIConfig, error) {
+	persisted := map[mouse.DeviceID]device.DPIConfig{}
+	defaults := device.DefaultDPIConfig()
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: defaults, factory: defaults}).AttachInventory(inventory).attachAutomaticSave(&fakeSyncScheduler{}).AttachDevicePersistence(
+		func(binding Binding) (device.DPIConfig, error) {
 			value, ok := persisted[binding.ID]
 			if !ok {
-				return x6.DPIConfig{}, os.ErrNotExist
+				return device.DPIConfig{}, os.ErrNotExist
 			}
 			return value, nil
 		},
-		func(binding Binding, value x6.DPIConfig) error { persisted[binding.ID] = value; return nil },
+		func(binding Binding, value device.DPIConfig) error { persisted[binding.ID] = value; return nil },
 	)
 	service.RefreshInventory(context.Background())
 	for _, tc := range []struct {
@@ -648,11 +648,11 @@ func TestSelectedApplyPersistsAndRestoresPerDeviceState(t *testing.T) {
 	if persisted[mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha"}].DPI[0] != 1600 || persisted[mouse.DeviceID{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "bravo"}].DPI[0] != 2400 {
 		t.Fatalf("persisted = %#v; want distinct device values", persisted)
 	}
-	reloaded := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: defaults, factory: defaults}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, command)).AttachDevicePersistence(
-		func(binding Binding) (x6.DPIConfig, error) {
+	reloaded := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: defaults, factory: defaults}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{alpha, bravo}}, command)).AttachDevicePersistence(
+		func(binding Binding) (device.DPIConfig, error) {
 			value, ok := persisted[binding.ID]
 			if !ok {
-				return x6.DPIConfig{}, os.ErrNotExist
+				return device.DPIConfig{}, os.ErrNotExist
 			}
 			return value, nil
 		},
@@ -668,23 +668,23 @@ func TestSelectedApplyPersistsAndRestoresPerDeviceState(t *testing.T) {
 }
 
 func TestSeriallessBindingMigratesLoadsAndPersistsAfterConfirmedApply(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}
 	command := &fakeHidrawCommand{}
 	loadCalls, saveCalls, migrationCalls := 0, 0, 0
-	legacyApplied := x6.DefaultDPIConfig()
+	legacyApplied := device.DefaultDPIConfig()
 	legacyApplied.DPI[0] = 2400
-	legacyFactory := x6.DefaultDPIConfig()
+	legacyFactory := device.DefaultDPIConfig()
 	legacyFactory.DPI[0] = 3200
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: legacyApplied, factory: legacyFactory}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: legacyApplied, factory: legacyFactory}).
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{candidate}, valid: true}, command)).
 		AttachMigrator(func(Binding) error { migrationCalls++; return nil }).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { loadCalls++; return legacyApplied, nil },
-			func(Binding, x6.DPIConfig) error { saveCalls++; return nil },
+			func(Binding) (device.DPIConfig, error) { loadCalls++; return legacyApplied, nil },
+			func(Binding, device.DPIConfig) error { saveCalls++; return nil },
 		)
 
 	inventory := service.RefreshInventory(context.Background())
@@ -706,7 +706,7 @@ func TestSeriallessBindingMigratesLoadsAndPersistsAfterConfirmedApply(t *testing
 }
 
 func TestSeriallessDuplicateSkipsMigrationAndPersistence(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -715,12 +715,12 @@ func TestSeriallessDuplicateSkipsMigrationAndPersistence(t *testing.T) {
 		{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw1"},
 	}
 	migrations, loads, saves := 0, 0, 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{}).
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: candidates, valid: true}, &fakeHidrawCommand{})).
 		AttachMigrator(func(Binding) error { migrations++; return nil }).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { loads++; return x6.DPIConfig{}, nil },
-			func(Binding, x6.DPIConfig) error { saves++; return nil },
+			func(Binding) (device.DPIConfig, error) { loads++; return device.DPIConfig{}, nil },
+			func(Binding, device.DPIConfig) error { saves++; return nil },
 		)
 
 	inventory := service.RefreshInventory(context.Background())
@@ -733,29 +733,29 @@ func TestSeriallessDuplicateSkipsMigrationAndPersistence(t *testing.T) {
 }
 
 func TestSeriallessExplicitAppliesSaveOnlyAfterACK(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	events := []string{}
 	command := &orderedHidrawCommand{events: &events}
 	scheduler := &fakeSyncScheduler{}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{}).
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}}, valid: true}, command)).
 		attachAutomaticSave(scheduler).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil },
-			func(Binding, x6.DPIConfig) error { events = append(events, "save"); return nil },
+			func(Binding) (device.DPIConfig, error) { return device.DefaultDPIConfig(), nil },
+			func(Binding, device.DPIConfig) error { events = append(events, "save"); return nil },
 		)
 	service.RefreshInventory(context.Background())
 
-	explicit := x6.DefaultDPIConfig()
+	explicit := device.DefaultDPIConfig()
 	explicit.DPI[0] = 1600
 	service.StageDPI(ToDTO(explicit))
 	if result := service.ApplyDPI(context.Background()); result.Error.Code != "" {
 		t.Fatalf("ApplyDPI() = %#v", result)
 	}
-	debounced := x6.DefaultDPIConfig()
+	debounced := device.DefaultDPIConfig()
 	debounced.DPI[0] = 2400
 	service.StageDPI(ToDTO(debounced))
 	scheduler.Advance(syncDebounceDelay)
@@ -767,16 +767,16 @@ func TestSeriallessExplicitAppliesSaveOnlyAfterACK(t *testing.T) {
 }
 
 func TestSeriallessFailedApplyDoesNotSave(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	saves := 0
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{}).
 		AttachInventory(mouse.NewTargetedService(registry, validatedInventorySource{candidates: []transport.Candidate{{VendorID: 0x1D57, ProductID: 0xFA60, Path: "/dev/hidraw0"}}, valid: true}, failingHidrawCommand{})).
 		AttachDevicePersistence(
-			func(Binding) (x6.DPIConfig, error) { return x6.DefaultDPIConfig(), nil },
-			func(Binding, x6.DPIConfig) error { saves++; return nil },
+			func(Binding) (device.DPIConfig, error) { return device.DefaultDPIConfig(), nil },
+			func(Binding, device.DPIConfig) error { saves++; return nil },
 		)
 	service.RefreshInventory(context.Background())
 
@@ -823,11 +823,11 @@ func (f validatedInventorySource) ProfileValid(context.Context, transport.Candid
 }
 
 func TestRefreshInventoryExposesAmbiguousIdentityAsErrorDTO(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "shared", Path: "/dev/hidraw0"},
 		{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "shared", Path: "/dev/hidraw1"},
 	}}, nil))
@@ -842,7 +842,7 @@ func TestRefreshInventoryExposesAmbiguousIdentityAsErrorDTO(t *testing.T) {
 }
 
 func TestStatusEventsCarryTheSelectedBindingContract(t *testing.T) {
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatalf("NewProfileRegistry() error = %v", err)
 	}
@@ -850,12 +850,12 @@ func TestStatusEventsCarryTheSelectedBindingContract(t *testing.T) {
 		VendorID: 0x1D57, ProductID: 0xFA60, Serial: "alpha", Path: "/dev/hidraw0",
 	}}}, nil)
 	sink := &contractEventSink{}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).AttachInventory(targeted).AttachListener(nil, sink)
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).AttachInventory(targeted).AttachListener(nil, sink)
 	if inventory := service.RefreshInventory(context.Background()); inventory.Selected == nil {
 		t.Fatalf("RefreshInventory() = %#v; want the sole selected binding", inventory)
 	}
 
-	service.handleStatusEvent(x6.StatusEvent{Connection: x6.Dongle, BatteryPercent: 77, BatteryAvailable: true})
+	service.handleStatusEvent(device.StatusEvent{Connection: transport.Dongle, BatteryPercent: 77, BatteryAvailable: true})
 	if sink.name != "mouse:status" {
 		t.Fatalf("event name = %q; want mouse:status", sink.name)
 	}

@@ -2,8 +2,8 @@ package desktop
 
 import (
 	"context"
-
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
+	"github.com/blak0p/attack-shark-linux/internal/device"
+	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
 // listenerComponent owns listener attachment and frontend event emission.
@@ -33,7 +33,7 @@ func (c *listenerComponent) start(ctx context.Context, s *Service) {
 
 // The listener callback is serialized by Listen; only the state lock is needed
 // while folding each report.
-func (c *listenerComponent) handleStatusEvent(s *Service, event x6.StatusEvent) {
+func (c *listenerComponent) handleStatusEvent(s *Service, event device.StatusEvent) {
 	battery, stage := statusDelta(event)
 	s.mu.Lock()
 	inventory := s.inventory
@@ -78,7 +78,7 @@ func (c *listenerComponent) handleAttributedStatusEvent(s *Service, event Status
 
 func (c *listenerComponent) foldStatusEvent(s *Service, state *deviceState, event StatusEvent, eventName string) {
 	state.mu.Lock()
-	state.connection = x6.Connection(event.Connection)
+	state.connection = transport.Connection(event.Connection)
 	if event.Battery != nil {
 		value := *event.Battery
 		state.battery = &value

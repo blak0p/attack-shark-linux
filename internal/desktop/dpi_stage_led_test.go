@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/blak0p/attack-shark-linux/internal/device"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
-	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 )
 
 type stageLEDFake struct {
@@ -27,12 +27,12 @@ func (f *stageLEDFake) SendAndAwaitBound(_ context.Context, _ mouse.Binding, rep
 
 func newStageLEDService(t *testing.T, fake *stageLEDFake) *Service {
 	t.Helper()
-	registry, err := mouse.NewProfileRegistry(x6.NewProfile())
+	registry, err := mouse.NewProfileRegistry(newStubProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "stage-led", Path: "/dev/hidraw-stage-led"}
-	service := New(statusFake{}, &writerFake{}, appliedStoreFake{applied: x6.DefaultDPIConfig()}).
+	service := New(testModel(), statusFake{}, &writerFake{}, appliedStoreFake{applied: device.DefaultDPIConfig()}).
 		AttachInventory(mouse.NewTargetedService(registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, fake))
 	service.RefreshInventory(context.Background())
 	return service
@@ -47,10 +47,10 @@ func stageChange(service *Service, stage byte) {
 func TestStageChangeResendsLightingOnlyForDPIFollowingModes(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
-		selection x6.LightingSelection
+		selection device.LightingSelection
 	}{
-		{"static dpi", x6.LightingSelection{Mode: x6.LightingStaticDPI, TemplateID: x6.LightingTemplateStaticDPIDefault}},
-		{"breathing dpi", x6.LightingSelection{Mode: x6.LightingBreathingDPI, TemplateID: x6.LightingTemplateBreathingDPIOne}},
+		{"static dpi", device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault}},
+		{"breathing dpi", device.LightingSelection{Mode: device.LightingBreathingDPI, TemplateID: device.LightingTemplateBreathingDPIOne}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &stageLEDFake{}
@@ -96,7 +96,7 @@ func TestStageChangeWithDefaultPendingLightingWritesOnlyDPI(t *testing.T) {
 func TestDPIValueChangeWithoutStageChangeDoesNotResendLighting(t *testing.T) {
 	fake := &stageLEDFake{}
 	service := newStageLEDService(t, fake)
-	service.StageLighting(x6.LightingSelection{Mode: x6.LightingStaticDPI, TemplateID: x6.LightingTemplateStaticDPIDefault})
+	service.StageLighting(device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault})
 	service.ApplyLighting()
 	fake.reports = nil
 	pending := service.GetSnapshot().Pending
@@ -111,7 +111,7 @@ func TestDPIValueChangeWithoutStageChangeDoesNotResendLighting(t *testing.T) {
 func TestFailedLightingResendKeepsDPIApplySuccessful(t *testing.T) {
 	fake := &stageLEDFake{}
 	service := newStageLEDService(t, fake)
-	service.StageLighting(x6.LightingSelection{Mode: x6.LightingStaticDPI, TemplateID: x6.LightingTemplateStaticDPIDefault})
+	service.StageLighting(device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault})
 	service.ApplyLighting()
 	before := service.GetLightingSnapshot()
 	fake.reports, fake.failLighting = nil, true
