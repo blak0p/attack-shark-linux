@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6/macrocodec"
+	x6 "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 	"github.com/blak0p/attack-shark-linux/internal/macros"
-	"github.com/blak0p/attack-shark-linux/internal/protocol/x6"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
 )
 
@@ -70,11 +71,11 @@ type compositeCommandFake struct {
 	calls int
 }
 
-func (c *compositeCommandFake) SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macros.X6Click) (MacroProgress, error) {
+func (c *compositeCommandFake) SendX6MacroAssignmentBound(context.Context, Binding, x6.MacroAssignment, macrocodec.X6Click) (MacroProgress, error) {
 	c.calls++
 	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
 }
-func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.MacroAssignment, _ macros.X6Sequence) (MacroProgress, error) {
+func (c *compositeCommandFake) SendX6MacroSequenceAssignmentBound(_ context.Context, _ Binding, _ x6.MacroAssignment, _ macrocodec.X6Sequence) (MacroProgress, error) {
 	c.calls++
 	return MacroProgress{Assignment: MacroAssignmentACKConfirmed, Upload: MacroUploadConfirmed}, nil
 }
@@ -127,7 +128,7 @@ func (c *officialLocalPacketCommand) SendX6MultiMacroLocalAssignmentBound(ctx co
 		if err != nil {
 			return MacroProgress{}, err
 		}
-		reports, err := macros.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
+		reports, err := macrocodec.EncodeX6LocalUpload(destination, item.Events, item.Repeat, item.Mode)
 		if err != nil {
 			return MacroProgress{}, err
 		}
@@ -340,8 +341,8 @@ func TestTargetedMultiMacroSequenceSeam(t *testing.T) {
 	_, _ = svc.Refresh(context.Background())
 	binding, _ := svc.Selection()
 	cfg := x6.DefaultRemapConfig()
-	s1 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
-	s2 := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
+	s1 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	s2 := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseMiddle, macros.MouseBack}, Repeat: 2}
 	items := []MacroSequenceItem{
 		{Button: 6, Sequence: s1},
 		{Button: 7, Sequence: s2},
@@ -360,7 +361,7 @@ func TestTargetedMultiMacroSequenceSeam(t *testing.T) {
 	}
 	// Invalid sequence rejected
 	bad := []MacroSequenceItem{
-		{Button: 6, Sequence: macros.X6Sequence{}},
+		{Button: 6, Sequence: macrocodec.X6Sequence{}},
 		{Button: 7, Sequence: s2},
 	}
 	if _, err := svc.ApplyMultiMacroSequenceAssignmentBound(context.Background(), binding, cfg, bad); err == nil || command.calls != 0 {
@@ -392,8 +393,8 @@ func TestTargetedSequenceMacroSeam(t *testing.T) {
 	_, _ = svc.Refresh(context.Background())
 	binding, _ := svc.Selection()
 	a := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
-	s := macros.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
-	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, macros.X6Sequence{}); err == nil || command.calls != 0 {
+	s := macrocodec.X6Sequence{Buttons: []macros.EventType{macros.MouseLeft, macros.MouseRight}, Repeat: 1}
+	if _, err := svc.ApplyMacroSequenceAssignmentBound(context.Background(), binding, a, macrocodec.X6Sequence{}); err == nil || command.calls != 0 {
 		t.Fatal("invalid sequence reached transport")
 	}
 	stale := binding
@@ -421,8 +422,8 @@ func TestTargetedCompositeMacroSeam(t *testing.T) {
 	}
 	binding, _ := svc.Selection()
 	assignment := x6.MacroAssignment{Config: x6.DefaultRemapConfig(), Button: 7}
-	click := macros.X6Click{Button: macros.MouseLeft, Repeat: 1}
-	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, macros.X6Click{}); err == nil || command.calls != 0 {
+	click := macrocodec.X6Click{Button: macros.MouseLeft, Repeat: 1}
+	if _, err := svc.ApplyMacroAssignmentBound(context.Background(), binding, assignment, macrocodec.X6Click{}); err == nil || command.calls != 0 {
 		t.Fatal("invalid click reached transport")
 	}
 	stale := binding

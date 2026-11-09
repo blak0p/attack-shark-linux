@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import canonical from "../../../internal/macros/x6keys.json";
+import canonical from "../../../internal/attackshark/x6/macrocodec/x6keys.json";
 import { x6KeyCode } from "./x6keys";
 import { deviceAdmission } from "./device-admission";
 import type { MacroEvent } from "../desktop-contract";

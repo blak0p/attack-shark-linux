@@ -2,7 +2,7 @@
 
 ## 1. Pure, hardware-free package
 
-`internal/protocol/x6/dpi.go:1` — no hidraw, no transport, no syscalls:
+`internal/attackshark/x6/protocol/dpi.go:1` — no hidraw, no transport, no syscalls:
 
 ```go
 // Package x6 contains pure, hardware-free facts about the X6 protocol.
@@ -11,7 +11,7 @@ package x6
 
 ## 2. Encoder returns `([]byte, error)` with a length constant
 
-`internal/protocol/x6/dpi.go:6` declares the constant; `:24` builds the report
+`internal/attackshark/x6/protocol/dpi.go:6` declares the constant; `:24` builds the report
 and computes the checksum over a fixed range:
 
 ```go
@@ -35,7 +35,7 @@ func EncodeDPIReport(config DPIConfig) ([]byte, error) {
 
 ## 3. Decoder returns `(T, bool)` and rejects mismatches
 
-`internal/protocol/x6/dpi.go:76` — strict shape check, `false` on anything else:
+`internal/attackshark/x6/protocol/dpi.go:76` — strict shape check, `false` on anything else:
 
 ```go
 func DecodeStatusReport(report []byte) (StatusReport, bool) {
@@ -55,7 +55,7 @@ func DecodeStatusReport(report []byte) (StatusReport, bool) {
 
 ## 4. Operation adapter in `x6` wraps the pure functions
 
-`internal/x6/polling.go:41` adapts the protocol to `mouse.CommandOperation`:
+`internal/attackshark/x6/polling.go:41` adapts the protocol to `mouse.CommandOperation`:
 
 ```go
 func NewPollingOperation() mouse.CommandOperation { return pollingOperation{} }
@@ -81,13 +81,13 @@ func (pollingOperation) Encode(value any) ([]byte, error) {
 func (pollingOperation) MatchesACK(report []byte) bool { return protocol.MatchesPollingACK(report) }
 ```
 
-Lighting follows the same shape (`internal/x6/lighting.go:83`):
+Lighting follows the same shape (`internal/attackshark/x6/lighting.go:83`):
 `NewLightingOperation() mouse.CommandOperation` with `Validate`/`Encode`/
 `MatchesACK`.
 
 ## 5. Type aliases keep the domain thin
 
-`internal/x6/dpi.go:10` re-exports the protocol type so callers use `x6.DPIConfig`
+`internal/attackshark/x6/dpi.go:10` re-exports the protocol type so callers use `x6.DPIConfig`
 without importing `protocol` directly:
 
 ```go
@@ -96,7 +96,7 @@ type DPIConfig = protocol.DPIConfig
 
 ## 6. Hardware-free, byte-exact tests
 
-`internal/x6/dpi_tdd_test.go:5` asserts exact length and header bytes and a
+`internal/attackshark/x6/dpi_tdd_test.go:5` asserts exact length and header bytes and a
 rejection case — no device required:
 
 ```go

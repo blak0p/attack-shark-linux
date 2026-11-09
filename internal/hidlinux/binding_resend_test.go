@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
-	protocol "github.com/blak0p/attack-shark-linux/internal/protocol/x6"
+	protocol "github.com/blak0p/attack-shark-linux/internal/attackshark/x6/protocol"
 )
 
 // scriptedNode releases scripted reports: initial ones after the first write,

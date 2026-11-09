@@ -1,4 +1,4 @@
-import officialKeys from "../../../internal/macros/x6keys.json";
+import officialKeys from "../../../internal/attackshark/x6/macrocodec/x6keys.json";
 
 // Same audited data as Go. Exact browser physical identity, never typed text.
 // NumpadEnter aliases VK_RETURN inferentially; separator/OEM8 are not guessed.

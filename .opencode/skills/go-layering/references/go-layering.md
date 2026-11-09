@@ -53,18 +53,18 @@ type TargetedCommand interface {
 }
 ```
 
-## 4. `protocol/x6` is pure and hardware-free
+## 4. `attackshark/x6/protocol` is pure and hardware-free
 
-`internal/protocol/x6/dpi.go:1` declares a hardware-free package; no `hidlinux`,
+`internal/attackshark/x6/protocol/dpi.go:1` declares a hardware-free package; no `hidlinux`,
 no `transport`, no syscalls:
 
 ```go
-// internal/protocol/x6/dpi.go:1
+// internal/attackshark/x6/protocol/dpi.go:1
 // Package x6 contains pure, hardware-free facts about the X6 protocol.
 package x6
 ```
 
-`internal/x6/dpi.go:16` re-exports and adapts without touching hidraw:
+`internal/attackshark/x6/dpi.go:16` re-exports and adapts without touching hidraw:
 
 ```go
 func EncodeDPIReport(config DPIConfig) ([]byte, error) {
