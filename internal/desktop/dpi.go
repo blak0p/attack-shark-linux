@@ -279,14 +279,14 @@ func (c *dpiComponent) refreshStageLighting(ctx context.Context, inventory *mous
 		selection = *lighting.applied
 	}
 	lighting.mu.Unlock()
-	if selection.Mode != x6.LightingStaticDPI && selection.Mode != x6.LightingBreathingDPI {
+	if selection.Mode != device.LightingStaticDPI && selection.Mode != device.LightingBreathingDPI {
 		return
 	}
 	settingsState := s.settingsStateForBinding(binding)
 	settingsState.mu.Lock()
-	settings := x6.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
+	settings := device.LightingSettings{LightingSelection: selection, NormalSleepMinutes: settingsState.normalSleep, ResponseTimeMs: settingsState.responseTimeMs}
 	settingsState.mu.Unlock()
-	if err := inventory.ApplyOperationBound(ctx, binding, x6.NewLightingSettingsOperation(), settings); err != nil {
+	if err := inventory.ApplyOperationBound(ctx, binding, s.model.LightingSettingsOperation(), settings); err != nil {
 		slog.Warn("dpi stage LED refresh failed", "mode", selection.Mode, "error", err)
 	}
 }
