@@ -714,6 +714,20 @@ it("requires confirmation before factory reset and reports a reset failure", asy
     expect((document.querySelector(".color-swatch") as HTMLElement).style.background).toBe("rgb(12, 34, 56)");
   });
 
+  it("stages and applies a custom color for the active DPI stage only", async () => {
+    const service = serviceFor(snapshot());
+    render(<App service={service} />);
+
+    const picker = (await screen.findByLabelText("Stage 4 color")) as HTMLInputElement;
+    expect(picker.value).toBe("#00ffff");
+    expect(screen.getByText("Stage colors show on the mouse LED only with Static DPI lighting.")).toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: "#123456" } });
+
+    await waitFor(() => expect(service.ApplyDPI).toHaveBeenCalledOnce());
+    const colors = configuration().Colors!.map((color, index) => (index === 3 ? [0x12, 0x34, 0x56] : color));
+    expect(service.StageDPI).toHaveBeenCalledExactlyOnceWith({ ...configuration(), Colors: colors });
+  });
+
   it("ignores acknowledged color events from a mismatched binding", async () => {
     const listeners: Array<(event: ConfigurationEvent) => void> = [];
     const service = serviceFor(snapshot({ Applied: { ...configuration(), ActiveStage: 1 }, Pending: { ...configuration(), ActiveStage: 1 } }), {

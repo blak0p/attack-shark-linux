@@ -64,6 +64,7 @@ The **Performance** view manages sensor resolution, USB reporting frequency, and
 
 - **Active DPI Stage Selector**: Displays the active DPI stage (Stages 1 through 6) with individual DPI values and color indicators. Clicking any stage immediately activates it on the mouse. Pressing the physical DPI buttons on the mouse also updates the active stage in real time.
 - **Granular DPI Slider**: Adjusts the resolution of the currently selected stage from **50 DPI** to **26,000 DPI** in precise **50-DPI increments**.
+- **Stage Color**: Picks a custom RGB color for the currently selected stage and applies it immediately. Stage colors show on the mouse LED only with **Static DPI** lighting; other lighting modes use their own colors.
 - **Factory DPI Stages**:
   - Stage 1: 800 DPI
   - Stage 2: 1,200 DPI

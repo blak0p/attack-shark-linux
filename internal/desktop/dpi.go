@@ -147,7 +147,11 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 	state.applyMu.Lock()
 	defer state.applyMu.Unlock()
 	state.mu.Lock()
-	pending, previousStage := state.pending, state.applied.ActiveStage
+	pending, previous := state.pending, state.applied
+	// A physical DPI press is newer than the applied config, so it is the stage the mouse shows.
+	if state.observedStage != nil {
+		previous.ActiveStage = byte(*state.observedStage)
+	}
 	state.mu.Unlock()
 	s.mu.Lock()
 	inventory := s.inventory
@@ -184,7 +188,8 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 				return snapshot
 			}
 			s.cancelSync(binding)
-			if pending.ActiveStage != previousStage {
+			// The firmware repaints the LED only on a 0x05 write, so a new stage or stage color needs one.
+			if pending.ActiveStage != previous.ActiveStage || pending.Colors != previous.Colors {
 				c.refreshStageLighting(ctx, inventory, binding)
 			}
 		}
@@ -194,6 +199,10 @@ func (c *dpiComponent) apply(ctx context.Context) Snapshot {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.applied = pending
+	if state.observedStage != nil {
+		stage := int(pending.ActiveStage)
+		state.observedStage, state.observedDPI = &stage, mappedDPI(pending, stage)
+	}
 	state.firmware, state.persistence, state.err = "success", "success", Error{}
 	return snapshotLocked(state)
 }

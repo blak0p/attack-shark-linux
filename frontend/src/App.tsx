@@ -140,6 +140,8 @@ export function App({ service }: { service: DesktopService }) {
       : pending.DPI[activeIndex] ?? null;
   const activeColor =
     activeIndex >= 0 && snapshot.Applied.Colors ? snapshot.Applied.Colors[activeIndex] : null;
+  const pendingColor = activeIndex >= 0 ? (pending.Colors ?? snapshot.Applied.Colors)?.[activeIndex] : undefined;
+  const stageColor = pendingColor ? `#${pendingColor.map((byte) => byte.toString(16).padStart(2, "0")).join("")}` : null;
   const colorFor = (index: number) =>
     snapshot.Applied.Colors && snapshot.Applied.Colors[index]
       ? `rgb(${snapshot.Applied.Colors[index].join(", ")})`
@@ -239,6 +241,8 @@ export function App({ service }: { service: DesktopService }) {
             ready={ready}
             onSelectStage={actions.selectStage}
             onStageDPI={actions.stageDPI}
+            stageColor={stageColor}
+            onStageColor={actions.stageColor}
           />
 
           {polling && (
