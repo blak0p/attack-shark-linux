@@ -117,7 +117,16 @@ func emergencyReset(ctx context.Context) error {
 	// The same composition as the desktop app, so the reset keeps the same
 	// local records and rewrites the active profile the same way.
 	service, _ := composeDesktopService(dataDir, registry, hidlinux.NewHidrawBackend(registry))
-	_, err = desktop.RunReset(ctx, service)
+	return runHeadlessReset(ctx, service)
+}
+
+// runHeadlessReset selects the mouse first, like the GUI does, so legacy v1
+// state is migrated before the reset saves the baseline record; otherwise the
+// next GUI start would refuse the migration. Selection sends no commands, and a
+// selection error does not stop the reset, which revalidates its own target.
+func runHeadlessReset(ctx context.Context, service *desktop.Service) error {
+	service.RefreshInventory(ctx)
+	_, err := desktop.RunReset(ctx, service)
 	return err
 }
 

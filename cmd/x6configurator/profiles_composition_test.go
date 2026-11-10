@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/blak0p/attack-shark-linux/internal/attackshark/x6"
 	"github.com/blak0p/attack-shark-linux/internal/configstore"
+	"github.com/blak0p/attack-shark-linux/internal/desktop"
 	"github.com/blak0p/attack-shark-linux/internal/device"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 	"github.com/blak0p/attack-shark-linux/internal/transport"
@@ -190,5 +192,36 @@ func TestEmergencyResetKeepsDamagedProfileStoreAndReportsPersistenceFailure(t *t
 	}
 	if contents, err := os.ReadFile(activePath); err != nil || string(contents) != "damaged" {
 		t.Fatalf("damaged profile after reset = %q, %v; want it left for the user", contents, err)
+	}
+}
+
+// A headless reset run before the GUI ever migrated the legacy v1 files must
+// leave a data dir the next GUI start can select without migration_failed.
+func TestHeadlessResetMigratesLegacyStateBeforeSavingTheBaseline(t *testing.T) {
+	dataDir := t.TempDir()
+	legacy := configstore.New(filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"))
+	applied := device.DefaultDPIConfig()
+	applied.DPI[0] = 3200
+	if err := legacy.SaveApplied(applied); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.LoadFactory(); err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := mouse.NewProfileRegistry(x6.NewProfile())
+	candidate := transport.Candidate{VendorID: 0x1D57, ProductID: 0xFA60, Serial: "legacy-device", Path: "/dev/hidraw-test", Connection: transport.Dongle}
+	compose := func() *desktop.Service {
+		return composeDesktopServiceWithTargeted(dataDir, nil, nil, registry, inventorySourceFake{candidates: []transport.Candidate{candidate}}, &targetedCommandFake{})
+	}
+
+	if err := runHeadlessReset(context.Background(), compose()); err != nil {
+		t.Fatalf("runHeadlessReset() error = %v", err)
+	}
+	restarted := compose()
+	if inventory := restarted.RefreshInventory(context.Background()); inventory.Error.Code != "" || inventory.Selected == nil {
+		t.Fatalf("start after headless reset = %+v; want the device selected without error", inventory)
+	}
+	if applied, want := restarted.GetSnapshot().Applied, device.DocumentedResetDPIConfig(); fmt.Sprint(applied.DPI) != fmt.Sprint(want.DPI) {
+		t.Fatalf("applied DPI after restart = %v; want the reset baseline %v", applied.DPI, want.DPI)
 	}
 }
