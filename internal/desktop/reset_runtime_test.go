@@ -122,8 +122,8 @@ func TestResetRuntimeRestartRequiresFreshConfirmedResetAfterFailure(t *testing.T
 	if result.Cleanup.State != "success" || restartedCommand.calls != 4 {
 		t.Fatalf("fresh ResetToFactory() = %#v, writes=%d", result, restartedCommand.calls)
 	}
-	if entries, err := os.ReadDir(stateDir); err != nil || len(entries) != 0 {
-		t.Fatalf("state after fresh confirmation = %#v, %v; want purged state", entries, err)
+	if contents, err := os.ReadFile(statePath); err != nil || string(contents) != "recovery" {
+		t.Fatalf("unrelated state after fresh confirmation = %q, %v; want it kept", contents, err)
 	}
 }
 
@@ -140,7 +140,7 @@ func newResetRuntime(t *testing.T, stateDir string, command *resetRecordingComma
 	service.sync = NewSyncCoordinator(scheduler, service.bindingCurrent, service.applyBound)
 	service.pollingSync = NewPollingSyncCoordinator(scheduler, service.bindingCurrent, service.applyPollingBound)
 	service.RefreshInventory(context.Background())
-	service.AttachResetRunner(NewEmergencyReset(testModel(), inventory, service, configstore.NewStatePurger(stateDir)))
+	service.AttachResetRunner(NewEmergencyReset(testModel(), inventory, service, service))
 	return service, scheduler
 }
 

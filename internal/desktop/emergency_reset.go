@@ -3,6 +3,7 @@ package desktop
 import (
 	"github.com/blak0p/attack-shark-linux/internal/device"
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
@@ -24,7 +25,10 @@ type ResetResult struct {
 type PendingWrites interface {
 	Quiesce(context.Context, Binding) error
 }
-type StatePurger interface{ PurgeAll() error }
+
+// ResetPersister records the reset baseline for the mouse the reset wrote. It
+// must leave every other local record (profiles, macros, app settings) intact.
+type ResetPersister interface{ PersistReset(Binding) error }
 
 type resetTarget interface {
 	Refresh(context.Context) ([]mouse.Device, error)
@@ -35,14 +39,14 @@ type resetTarget interface {
 // EmergencyReset performs the documented reset lanes synchronously. Persistence
 // is deliberately unreachable until every physical ACK has succeeded.
 type EmergencyReset struct {
-	model   device.Model
-	target  resetTarget
-	pending PendingWrites
-	purger  StatePurger
+	model     device.Model
+	target    resetTarget
+	pending   PendingWrites
+	persister ResetPersister
 }
 
-func NewEmergencyReset(model device.Model, target resetTarget, pending PendingWrites, purger StatePurger) *EmergencyReset {
-	return &EmergencyReset{model: model, target: target, pending: pending, purger: purger}
+func NewEmergencyReset(model device.Model, target resetTarget, pending PendingWrites, persister ResetPersister) *EmergencyReset {
+	return &EmergencyReset{model: model, target: target, pending: pending, persister: persister}
 }
 
 func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
@@ -96,19 +100,71 @@ func (r *EmergencyReset) Run(ctx context.Context) (ResetResult, error) {
 		}
 		result.Lanes[index] = ResetLaneResult{Lane: result.Lanes[index].Lane, State: "success"}
 	}
-	if r.purger == nil {
-		wrapped := fmt.Errorf("purge reset state: no purger")
+	if r.persister == nil {
+		wrapped := fmt.Errorf("persist reset state: no persister")
 		return resetFailure(result, wrapped), wrapped
 	}
-	if err := r.purger.PurgeAll(); err != nil {
+	if err := r.persister.PersistReset(binding); err != nil {
 		result.Cleanup = ResetLaneResult{Lane: "cleanup", State: "failed", Code: PersistenceFailed}
-		wrapped := fmt.Errorf("purge reset state: %w", err)
+		wrapped := fmt.Errorf("persist reset state: %w", err)
 		result.Error = Error{Code: PersistenceFailed}
 		result.RetryAvailable = true
 		return result, wrapped
 	}
 	result.Cleanup = ResetLaneResult{Lane: "cleanup", State: "success"}
 	return result, nil
+}
+
+// resetBaseline is the configuration the four reset lanes write.
+func resetBaseline() (device.DeviceConfig, device.LightingSelection) {
+	settings := device.DocumentedResetLightingSettings()
+	remap := device.DefaultRemapConfig()
+	return device.DeviceConfig{
+		DPIConfig:          device.DocumentedResetDPIConfig(),
+		PollingRate:        device.PollingRate1000,
+		NormalSleepMinutes: settings.NormalSleepMinutes,
+		ResponseTimeMs:     settings.ResponseTimeMs,
+		Remap:              &remap,
+	}, settings.LightingSelection
+}
+
+// PersistReset saves the reset baseline as the mouse's device record and as the
+// whole payload of its active local profile. Other profiles, the macro library
+// and app settings stay untouched. A profile store the storage layer refuses as
+// damaged is never overwritten: the reset then reports a persistence failure.
+// Caller holds operationMu.
+func (s *Service) PersistReset(binding Binding) error {
+	if binding.SessionOnly {
+		return nil
+	}
+	config, lighting := resetBaseline()
+	s.mu.Lock()
+	persistence := s.pollingComponent.persistence
+	s.mu.Unlock()
+	if persistence != nil {
+		if err := s.saveDeviceConfig(binding, persistence, func(c *device.DeviceConfig) { *c = config }); err != nil {
+			return fmt.Errorf("save device record: %w", err)
+		}
+	}
+	if s.profiles == nil || s.profiles.store == nil {
+		return nil
+	}
+	snap := s.profilesLocked(binding)
+	if snap.ActiveID == "" {
+		return fmt.Errorf("active profile: %s", snap.Error.Code)
+	}
+	profile := profileConfiguration{Version: 1, Source: "local settings", Device: config, Lighting: &lighting}
+	if previous, err := s.readProfile(binding, snap.ActiveID); err == nil {
+		profile.Source = previous.Source
+	}
+	if err := s.validateProfile(binding, profile); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		return err
+	}
+	return s.profiles.store.SaveActive(binding.ID, binding.ProfileID, raw)
 }
 
 func resetFailure(result ResetResult, err error) ResetResult {

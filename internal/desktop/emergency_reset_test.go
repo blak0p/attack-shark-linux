@@ -5,21 +5,21 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/blak0p/attack-shark-linux/internal/configstore"
 	"github.com/blak0p/attack-shark-linux/internal/hidlinux"
 	"github.com/blak0p/attack-shark-linux/internal/mouse"
 )
 
-func TestEmergencyResetPurgesOnlyAfterAllLanesSucceed(t *testing.T) {
+func TestEmergencyResetPersistsOnlyAfterAllLanesSucceed(t *testing.T) {
 	target := &resetTargetFake{binding: testBinding("reset"), devices: []mouse.Device{{Eligible: true}}}
-	purger := &purgerFake{}
-	result, err := NewEmergencyReset(testModel(), target, nil, purger).Run(context.Background())
-	if err != nil || !purger.called || result.Cleanup.State != "success" || len(target.operations) != 4 {
-		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
+	persister := &persisterFake{}
+	result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
+	if err != nil || !persister.called || result.Cleanup.State != "success" || len(target.operations) != 4 {
+		t.Fatalf("Run() = %#v, %v; writes=%d persist=%t", result, err, len(target.operations), persister.called)
+	}
+	if persister.binding != target.binding {
+		t.Fatalf("persisted binding = %#v, want the reset target %#v", persister.binding, target.binding)
 	}
 	// The model encodes each documented reset value; the real X6 captured bytes
 	// for these values are pinned in the X6 model tests.
@@ -36,42 +36,42 @@ func TestEmergencyResetPurgesOnlyAfterAllLanesSucceed(t *testing.T) {
 	}
 }
 
-func TestEmergencyResetStopsOnPhysicalFailureWithoutPurge(t *testing.T) {
+func TestEmergencyResetStopsOnPhysicalFailureWithoutPersisting(t *testing.T) {
 	target := &resetTargetFake{binding: testBinding("reset"), devices: []mouse.Device{{Eligible: true}}, failAt: 2}
-	purger := &purgerFake{}
-	result, err := NewEmergencyReset(testModel(), target, nil, purger).Run(context.Background())
-	if err == nil || purger.called || result.Lanes[0].State != "success" || result.Lanes[1].State != "failed" || result.Lanes[2].State != "not_attempted" {
-		t.Fatalf("Run() = %#v, %v; purge=%t", result, err, purger.called)
+	persister := &persisterFake{}
+	result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
+	if err == nil || persister.called || result.Lanes[0].State != "success" || result.Lanes[1].State != "failed" || result.Lanes[2].State != "not_attempted" {
+		t.Fatalf("Run() = %#v, %v; persist=%t", result, err, persister.called)
 	}
 }
 
 func TestEmergencyResetRequiresSingleSelectedTarget(t *testing.T) {
-	result, err := NewEmergencyReset(testModel(), &resetTargetFake{}, nil, &purgerFake{}).Run(context.Background())
+	result, err := NewEmergencyReset(testModel(), &resetTargetFake{}, nil, &persisterFake{}).Run(context.Background())
 	if err == nil || result.Cleanup.State != "not_attempted" {
 		t.Fatalf("Run() = %#v, %v", result, err)
 	}
 }
 
-func TestEmergencyResetRejectsAmbiguousDiscoveryWithoutWritesOrPurge(t *testing.T) {
+func TestEmergencyResetRejectsAmbiguousDiscoveryWithoutWritesOrPersisting(t *testing.T) {
 	target := &resetTargetFake{
 		binding: testBinding("reset"),
 		devices: []mouse.Device{{Eligible: true}, {Eligible: true}},
 	}
-	purger := &purgerFake{}
+	persister := &persisterFake{}
 
-	result, err := NewEmergencyReset(testModel(), target, nil, purger).Run(context.Background())
-	if err == nil || len(target.operations) != 0 || purger.called || result.Lanes[0].State != "not_attempted" || result.Cleanup.State != "not_attempted" {
-		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
+	result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
+	if err == nil || len(target.operations) != 0 || persister.called || result.Lanes[0].State != "not_attempted" || result.Cleanup.State != "not_attempted" {
+		t.Fatalf("Run() = %#v, %v; writes=%d persist=%t", result, err, len(target.operations), persister.called)
 	}
 }
 
 func TestEmergencyResetFailsWhenCleanupFailsAfterEveryLane(t *testing.T) {
 	target := &resetTargetFake{binding: testBinding("reset"), devices: []mouse.Device{{Eligible: true}}}
-	purger := &purgerFake{err: errors.New("disk full")}
+	persister := &persisterFake{err: errors.New("disk full")}
 
-	result, err := NewEmergencyReset(testModel(), target, nil, purger).Run(context.Background())
-	if err == nil || !purger.called || len(target.operations) != 4 || result.Cleanup.State != "failed" || result.Cleanup.Code != PersistenceFailed {
-		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
+	result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
+	if err == nil || !persister.called || len(target.operations) != 4 || result.Cleanup.State != "failed" || result.Cleanup.Code != PersistenceFailed {
+		t.Fatalf("Run() = %#v, %v; writes=%d persist=%t", result, err, len(target.operations), persister.called)
 	}
 }
 
@@ -79,7 +79,7 @@ func TestEmergencyResetReportsRetryableCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	result, err := NewEmergencyReset(testModel(), &resetTargetFake{}, nil, &purgerFake{}).Run(ctx)
+	result, err := NewEmergencyReset(testModel(), &resetTargetFake{}, nil, &persisterFake{}).Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -91,18 +91,10 @@ func TestEmergencyResetReportsRetryableCancellation(t *testing.T) {
 func TestEmergencyResetReportsRetryableLaneFailures(t *testing.T) {
 	for _, failAt := range []int{1, 2, 3, 4} {
 		t.Run("lane failure", func(t *testing.T) {
-			stateDir := filepath.Join(t.TempDir(), "state")
-			if err := os.Mkdir(stateDir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			seedPath := filepath.Join(stateDir, "recovery.json")
-			seed := []byte("recovery state")
-			if err := os.WriteFile(seedPath, seed, 0o600); err != nil {
-				t.Fatal(err)
-			}
+			persister := &persisterFake{}
 			target := &resetTargetFake{binding: testBinding("reset"), devices: []mouse.Device{{Eligible: true}}, failAt: failAt}
 
-			result, err := NewEmergencyReset(testModel(), target, nil, configstore.NewStatePurger(stateDir)).Run(context.Background())
+			result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
 			if err == nil {
 				t.Fatal("Run() error = nil, want failure")
 			}
@@ -123,9 +115,8 @@ func TestEmergencyResetReportsRetryableLaneFailures(t *testing.T) {
 					t.Fatalf("lane %d state=%s want=%s", index, lane.State, want)
 				}
 			}
-			got, readErr := os.ReadFile(seedPath)
-			if readErr != nil || !bytes.Equal(got, seed) {
-				t.Fatalf("recovery state = %q, %v; want byte-identical seeded state", got, readErr)
+			if persister.called {
+				t.Fatalf("failure lane %d persisted reset state", failAt)
 			}
 		})
 	}
@@ -137,26 +128,26 @@ func TestEmergencyResetDisconnectPreservesRecoveryState(t *testing.T) {
 		devices:    []mouse.Device{{Eligible: true}},
 		refreshErr: hidlinux.ErrDeviceDisconnected,
 	}
-	purger := &purgerFake{}
+	persister := &persisterFake{}
 
-	result, err := NewEmergencyReset(testModel(), target, nil, purger).Run(context.Background())
-	if !errors.Is(err, hidlinux.ErrDeviceDisconnected) || len(target.operations) != 0 || purger.called || !result.RetryAvailable {
-		t.Fatalf("Run() = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
+	result, err := NewEmergencyReset(testModel(), target, nil, persister).Run(context.Background())
+	if !errors.Is(err, hidlinux.ErrDeviceDisconnected) || len(target.operations) != 0 || persister.called || !result.RetryAvailable {
+		t.Fatalf("Run() = %#v, %v; writes=%d persist=%t", result, err, len(target.operations), persister.called)
 	}
 }
 
 func TestEmergencyResetCanRetryAfterReselection(t *testing.T) {
 	target := &resetTargetFake{devices: []mouse.Device{{Eligible: true}}}
-	purger := &purgerFake{}
-	reset := NewEmergencyReset(testModel(), target, nil, purger)
+	persister := &persisterFake{}
+	reset := NewEmergencyReset(testModel(), target, nil, persister)
 
 	if _, err := reset.Run(context.Background()); err == nil {
 		t.Fatal("Run() error = nil without a selected binding")
 	}
 	target.binding = testBinding("reselected")
 	result, err := reset.Run(context.Background())
-	if err != nil || !purger.called || len(target.operations) != 4 || result.Cleanup.State != "success" {
-		t.Fatalf("Run() after reselection = %#v, %v; writes=%d purge=%t", result, err, len(target.operations), purger.called)
+	if err != nil || !persister.called || len(target.operations) != 4 || result.Cleanup.State != "success" {
+		t.Fatalf("Run() after reselection = %#v, %v; writes=%d persist=%t", result, err, len(target.operations), persister.called)
 	}
 }
 
@@ -186,12 +177,16 @@ func (f *resetTargetFake) ApplyOperationBound(_ context.Context, _ mouse.Binding
 	return nil
 }
 
-type purgerFake struct {
-	called bool
-	err    error
+type persisterFake struct {
+	called  bool
+	binding Binding
+	err     error
 }
 
-func (f *purgerFake) PurgeAll() error { f.called = true; return f.err }
+func (f *persisterFake) PersistReset(binding Binding) error {
+	f.called, f.binding = true, binding
+	return f.err
+}
 
 func mustEncodeDPI(t *testing.T, config device.DPIConfig) []byte {
 	t.Helper()

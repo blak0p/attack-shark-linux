@@ -515,19 +515,28 @@ func (s *Service) ApplyPollingRate(ctx context.Context) PollingSnapshot {
 
 // ResetToFactory delegates one explicitly confirmed reset to the shared runner.
 func (s *Service) ResetToFactory(ctx context.Context) ResetResult {
+	result, _ := s.runReset(ctx)
+	return result
+}
+
+// RunReset is ResetToFactory with the runner's error, for the headless reset.
+// It is a function, not a method, so it stays out of the frontend bindings.
+func RunReset(ctx context.Context, s *Service) (ResetResult, error) { return s.runReset(ctx) }
+
+func (s *Service) runReset(ctx context.Context) (ResetResult, error) {
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
 	s.mu.Lock()
 	runner := s.reset
 	s.mu.Unlock()
 	if runner == nil {
-		return ResetResult{Error: Error{Code: SelectionRequired}, RetryAvailable: true}
+		return ResetResult{Error: Error{Code: SelectionRequired}, RetryAvailable: true}, fmt.Errorf("reset runner: %w", mouse.ErrSelectionRequired)
 	}
 	result, err := runner.Run(ctx)
 	if err == nil && result.Cleanup.State == "success" {
 		s.reconcileFactoryReset()
 	}
-	return result
+	return result, err
 }
 
 func (s *Service) reconcileFactoryReset() {
