@@ -227,7 +227,7 @@ If custom settings cause unintended behavior, you can restore factory defaults d
 
 Reset selects **DPI stage 2**, **Static DPI lighting**, **0.5-minute normal sleep**, **4-ms key response time**, **1000-Hz polling**, and the default button layout. DPI values and stage colors retain the documented six-stage baseline. Ordinary application defaults remain stage 4 and 8 ms; reset uses a separate capture-backed baseline.
 
-Only after all four lanes acknowledge are stale local profiles cleared and the displayed DPI, polling, lighting, sleep, debounce, and remapping snapshots refreshed. A failure does not report success or replace the displayed settings with defaults; hardware may be partially changed. This is not a verified complete device-memory/EEPROM erase or onboard macro deletion.
+Only after all four lanes acknowledge does the active profile take the reset values (its whole configuration, including lighting, remapping, and macro assignments) and are the displayed DPI, polling, lighting, sleep, debounce, and remapping snapshots refreshed. Your other profiles, the macro library, game rules, tray, and autostart settings are kept. A failure does not report success or replace the displayed settings with defaults; hardware may be partially changed. This is not a verified complete device-memory/EEPROM erase or onboard macro deletion.
 
 ---
 
@@ -301,5 +301,5 @@ cd ~/.local/share/attack-shark-x6
    - Key response time: 4 ms
    - Button mapping: Default 7-button layout (Button 1: Left, Button 2: Right, etc.)
    The lane order is DPI (`0x04`), lighting/sleep/debounce (`0x05`), polling (`0x06`), then remapping (`0x08`); each requires an ACK and a failure stops later lanes. Complete memory erasure and onboard macro deletion are unverified.
-4. **Atomic Profile Cleanup**: Only after all four ACKs, cleans and replaces the application state directory (`~/.config/attack-shark-linux/`) with clean defaults so corrupt state is not re-applied upon launching the GUI again.
+4. **Active Profile Update**: Only after all four ACKs, saves the reset values as the mouse's stored configuration and as its active profile, so the old settings are not re-applied when the GUI starts again. Other profiles, the macro library, game rules, tray, and autostart settings in `~/.config/attack-shark-linux/` are kept. If saving fails, the reset reports a persistence failure and can be retried.
 5. **Unprivileged Operation**: Uses your existing local-seat udev permissions (`TAG+="uaccess"`); **do not run as root**.

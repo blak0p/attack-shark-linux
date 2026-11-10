@@ -176,9 +176,9 @@
     "title": "Reset to factory",
     "hint": "Restore mouse defaults.",
     "confirmLabel": "Confirm factory reset",
-    "warning": "Restore mouse defaults and clear local profiles after acknowledgement. Onboard macros may remain.",
+    "warning": "Restore mouse defaults. Only the active profile returns to defaults; your other profiles, macros and app settings are kept. Onboard macros may remain.",
     "details": "Reset details",
-    "detailsBody": "This resets DPI (active stage 2), lighting (Static DPI), sleep (0.5 minutes), key response time (4 ms), polling (1000 Hz), and default button remapping. Local profiles are cleared only after all four supported lanes acknowledge; onboard macro deletion and complete device memory erasure are unverified.",
+    "detailsBody": "This resets DPI (active stage 2), lighting (Static DPI), sleep (0.5 minutes), key response time (4 ms), polling (1000 Hz), and default button remapping. Only after all four supported lanes acknowledge does the active profile take these values; other profiles, the macro library and app settings are not changed; onboard macro deletion and complete device memory erasure are unverified.",
     "cancel": "Cancel factory reset",
     "confirm": "Confirm factory reset"
   },
