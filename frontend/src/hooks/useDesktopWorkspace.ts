@@ -276,6 +276,7 @@ export function useDesktopWorkspace(service: DesktopService): { model: Workspace
     },
     stageDPI: (index, value) => snapshot && stageConfig({ ...snapshot.Pending, DPI: snapshot.Pending.DPI.map((dpi, current) => current === index ? value : dpi) }),
     selectStage: (index) => snapshot && stageConfig({ ...snapshot.Pending, ActiveStage: index + 1 }),
+    stageColor: (index, color) => snapshot && stageConfig({ ...snapshot.Pending, Colors: (snapshot.Pending.Colors ?? snapshot.Applied.Colors ?? []).map((current, stage) => stage === index ? color : current) }),
     stageFeature: (patch) => snapshot && stageConfig({ ...snapshot.Pending, ...patch }),
     stagePollingRate: (rate) => runLatestAutomaticApply("polling", (superseded) => service.StagePollingRate(rate).then((staged) => {
       if (!superseded()) setPolling(staged);

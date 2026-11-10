@@ -139,7 +139,9 @@
     "activeStage": "Active stage",
     "stage": "Stage {{n}}",
     "stageActive": "Stage {{n}}, active",
-    "stageDpi": "Stage {{n}} DPI"
+    "stageDpi": "Stage {{n}} DPI",
+    "stageColor": "Stage {{n}} color",
+    "stageColorHint": "Stage colors show on the mouse LED only with Static DPI lighting."
   },
   "polling": {
     "title": "Polling rate",

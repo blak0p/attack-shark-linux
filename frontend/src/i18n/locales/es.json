@@ -139,7 +139,9 @@
     "activeStage": "Etapa activa",
     "stage": "Etapa {{n}}",
     "stageActive": "Etapa {{n}}, activa",
-    "stageDpi": "DPI de la etapa {{n}}"
+    "stageDpi": "DPI de la etapa {{n}}",
+    "stageColor": "Color de la etapa {{n}}",
+    "stageColorHint": "Los colores de etapa solo se ven en el LED del ratón con la iluminación Static DPI."
   },
   "polling": {
     "title": "Frecuencia de sondeo",

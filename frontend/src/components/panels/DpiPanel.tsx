@@ -15,12 +15,16 @@ export type DpiPanelProps = {
   ready?: boolean;
   onSelectStage?: (index: number) => void;
   onStageDPI?: (index: number, dpi: number) => void;
+  stageColor?: string | null;
+  onStageColor?: (index: number, color: number[]) => void;
   children?: ReactNode;
 };
 
 const DPI_MIN = 50;
 const DPI_MAX = 26000;
 const DPI_STEP = 50;
+
+const hexToRGB = (hex: string) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
 
 const position = (value: number) =>
   Math.round(Math.max(0, Math.min(1, (value - DPI_MIN) / (DPI_MAX - DPI_MIN))) * 1000) / 10;
@@ -34,6 +38,8 @@ export function DpiPanel({
   ready = true,
   onSelectStage,
   onStageDPI,
+  stageColor,
+  onStageColor,
   children,
 }: DpiPanelProps) {
   const { t } = useTranslation();
@@ -123,6 +129,24 @@ export function DpiPanel({
           <span>26,000</span>
         </div>
       )}
+
+      {activeStage && stageColor && onStageColor && (
+        <label className="lighting-custom-color">
+          <span>{t("dpi.stageColor", { n: activeStage.index + 1 })}</span>
+          <span className="lighting-custom-picker">
+            {/* WebKitGTK does not paint the native color input, so a swatch shows it. */}
+            <span className="lighting-custom-swatch" aria-hidden="true" style={{ backgroundColor: stageColor }} />
+            <input
+              type="color"
+              aria-label={t("dpi.stageColor", { n: activeStage.index + 1 })}
+              value={stageColor}
+              disabled={!ready}
+              onChange={(event) => onStageColor(activeStage.index, hexToRGB(event.target.value))}
+            />
+          </span>
+        </label>
+      )}
+      {activeStage && stageColor && onStageColor && <p className="hint">{t("dpi.stageColorHint")}</p>}
     </article>
   );
 }
