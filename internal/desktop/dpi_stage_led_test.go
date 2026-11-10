@@ -129,3 +129,70 @@ func TestFailedLightingResendKeepsDPIApplySuccessful(t *testing.T) {
 		t.Fatalf("lighting snapshot changed: before %#v after %#v", before, after)
 	}
 }
+
+func TestActiveStageColorChangeRepaintsTheLED(t *testing.T) {
+	fake := &stageLEDFake{}
+	service := newStageLEDService(t, fake)
+	service.StageLighting(device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault})
+	service.ApplyLighting()
+	lightingReport := fake.reports[0]
+	fake.reports = nil
+
+	pending := service.GetSnapshot().Pending
+	pending.Colors[pending.ActiveStage-1] = [3]byte{0x12, 0x34, 0x56}
+	service.StageDPI(pending)
+	if got := service.ApplyDPI(context.Background()); got.Firmware != "success" {
+		t.Fatalf("ApplyDPI() = %#v", got)
+	}
+	if len(fake.reports) != 2 || fake.reports[0][0] != 0x04 || !bytes.Equal(fake.reports[1], lightingReport) {
+		t.Fatalf("reports = %x; want 0x04 then the lighting report %x", fake.reports, lightingReport)
+	}
+}
+
+func TestAppStageChangeAfterPhysicalPressMovesTheSelectedStage(t *testing.T) {
+	fake := &stageLEDFake{}
+	service := newStageLEDService(t, fake)
+	service.StageLighting(device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault})
+	service.ApplyLighting()
+	lightingReport := fake.reports[0]
+	selected := service.RefreshInventory(context.Background()).Selected
+	service.handleAttributedStatusEvent(StatusEvent{ID: selected.ID, Path: selected.Path, InventoryRevision: selected.InventoryRevision, ActiveStage: intPtr(3)})
+	fake.reports = nil
+
+	stageChange(service, 4)
+	got := service.ApplyDPI(context.Background())
+	if got.ObservedStage == nil || *got.ObservedStage != 4 || got.ObservedDPI == nil || *got.ObservedDPI != got.Applied.DPI[3] {
+		t.Fatalf("observed stage = %v, DPI = %v; want 4 and %d", deref(got.ObservedStage), deref(got.ObservedDPI), got.Applied.DPI[3])
+	}
+	if len(fake.reports) != 2 || fake.reports[0][0] != 0x04 || !bytes.Equal(fake.reports[1], lightingReport) {
+		t.Fatalf("reports = %x; want 0x04 then the lighting report %x", fake.reports, lightingReport)
+	}
+}
+
+func TestAppStageChangeBackToStaleAppliedStageRepaintsTheLED(t *testing.T) {
+	fake := &stageLEDFake{}
+	service := newStageLEDService(t, fake)
+	service.StageLighting(device.LightingSelection{Mode: device.LightingStaticDPI, TemplateID: device.LightingTemplateStaticDPIDefault})
+	service.ApplyLighting()
+	applied := service.GetSnapshot().Applied.ActiveStage
+	selected := service.RefreshInventory(context.Background()).Selected
+	other := 1
+	if applied == 1 {
+		other = 2
+	}
+	service.handleAttributedStatusEvent(StatusEvent{ID: selected.ID, Path: selected.Path, InventoryRevision: selected.InventoryRevision, ActiveStage: intPtr(other)})
+	fake.reports = nil
+
+	stageChange(service, applied)
+	service.ApplyDPI(context.Background())
+	if len(fake.reports) != 2 || fake.reports[1][0] != 0x05 {
+		t.Fatalf("reports = %x; want 0x04 then a lighting repaint", fake.reports)
+	}
+}
+
+func deref(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
