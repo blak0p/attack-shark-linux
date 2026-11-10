@@ -177,9 +177,9 @@
     "title": "Restablecer de fábrica",
     "hint": "Restaura los valores predeterminados del mouse.",
     "confirmLabel": "Confirmar restablecimiento de fábrica",
-    "warning": "Restaura los valores predeterminados del mouse y borra los perfiles locales tras la confirmación del dispositivo. Pueden quedar macros en el mouse.",
+    "warning": "Restaura los valores predeterminados del mouse. Solo el perfil activo vuelve a los valores predeterminados; se conservan tus otros perfiles, las macros y los ajustes de la app. Pueden quedar macros en el mouse.",
     "details": "Detalles del restablecimiento",
-    "detailsBody": "Esto restablece el DPI (etapa activa 2), la iluminación (DPI estático), la suspensión (0,5 minutos), el tiempo de respuesta de teclas (4 ms), el sondeo (1000 Hz) y la reasignación de botones predeterminada. Los perfiles locales se borran solo cuando los cuatro canales compatibles confirman; el borrado de las macros del mouse y el borrado completo de su memoria no están verificados.",
+    "detailsBody": "Esto restablece el DPI (etapa activa 2), la iluminación (DPI estático), la suspensión (0,5 minutos), el tiempo de respuesta de teclas (4 ms), el sondeo (1000 Hz) y la reasignación de botones predeterminada. Solo cuando los cuatro canales compatibles confirman, el perfil activo toma estos valores; los demás perfiles, la biblioteca de macros y los ajustes de la app no cambian; el borrado de las macros del mouse y el borrado completo de su memoria no están verificados.",
     "cancel": "Cancelar restablecimiento de fábrica",
     "confirm": "Confirmar restablecimiento de fábrica"
   },

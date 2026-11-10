@@ -222,7 +222,7 @@ func TestComposeEmergencyResetBuildsOneRunnerForTheService(t *testing.T) {
 	)).AttachInventory(inventory)
 	service.RefreshInventory(context.Background())
 
-	result, err := composeEmergencyReset(dataDir, inventory, service).Run(context.Background())
+	result, err := composeEmergencyReset(inventory, service).Run(context.Background())
 	if err != nil || result.Cleanup.State != "success" {
 		t.Fatalf("reset result = %#v, %v; want successful cleanup", result, err)
 	}

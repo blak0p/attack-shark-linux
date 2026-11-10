@@ -114,11 +114,19 @@ func emergencyReset(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	backend := hidlinux.NewHidrawBackend(registry)
-	inventory := mouse.NewTargetedService(registry, x6InventorySource{backend: backend, registry: registry}, backend)
-	store := configstore.New(filepath.Join(dataDir, "applied-dpi.json"), filepath.Join(dataDir, "factory-defaults.json"))
-	service := desktop.Compose(x6.Model(), nil, nil, store).AttachInventory(inventory)
-	_, err = composeEmergencyReset(dataDir, inventory, service).Run(ctx)
+	// The same composition as the desktop app, so the reset keeps the same
+	// local records and rewrites the active profile the same way.
+	service, _ := composeDesktopService(dataDir, registry, hidlinux.NewHidrawBackend(registry))
+	return runHeadlessReset(ctx, service)
+}
+
+// runHeadlessReset selects the mouse first, like the GUI does, so legacy v1
+// state is migrated before the reset saves the baseline record; otherwise the
+// next GUI start would refuse the migration. Selection sends no commands, and a
+// selection error does not stop the reset, which revalidates its own target.
+func runHeadlessReset(ctx context.Context, service *desktop.Service) error {
+	service.RefreshInventory(ctx)
+	_, err := desktop.RunReset(ctx, service)
 	return err
 }
 
@@ -360,9 +368,9 @@ func composeDesktopServiceWithTargeted(dataDir string, status desktop.StatusRead
 		AttachPollingPersistence(loadPolling, savePolling).
 		AttachNormalSleepPersistence(loadPolling, savePolling).
 		AttachProfiles(configstore.NewProfileStore(filepath.Join(dataDir, "profiles")), loadProfileSeed)
-	return service.AttachResetRunner(composeEmergencyReset(dataDir, inventory, service))
+	return service.AttachResetRunner(composeEmergencyReset(inventory, service))
 }
 
-func composeEmergencyReset(dataDir string, inventory *mouse.TargetedService, service *desktop.Service) *desktop.EmergencyReset {
-	return desktop.NewEmergencyReset(x6.Model(), inventory, service, configstore.NewStatePurger(dataDir))
+func composeEmergencyReset(inventory *mouse.TargetedService, service *desktop.Service) *desktop.EmergencyReset {
+	return desktop.NewEmergencyReset(x6.Model(), inventory, service, service)
 }
