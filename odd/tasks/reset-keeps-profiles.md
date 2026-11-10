@@ -15,7 +15,7 @@ Delivery: local work-unit commits only; push, PR and merge are the user's decisi
 
 - T1 [S1-S5] route: inline; status: done (RED observed: watcher-v1.json deleted by reset; GREEN: go test ./..., -race on desktop and cmd, go vet); commit: `ede73f5`. Backend: replace the whole-directory purge with a reset persister that rewrites the active profile and the device record to the baseline; headless reset uses the same composition; update tests (`profiles_composition_test.go` pinned the old purge). Risk: item 1 (stops deleting and rewrites stored data), item 3 (changes the reset contract).
 - T2 [S6] route: inline; status: done (frontend npm test 682 passed); commit: `b2b56fe`. UI copy (en/es), docs, and frontend tests for the new reset wording.
-- T3 [S1-S6] route: inline + independent verify (high risk); status: in progress (verifier running). Full checks and close.
+- T3 [S1-S6] route: inline + independent verify (high risk); status: done (independent verify: S1-S6 met, S5 in simulation only; hardware headless run not done). Full checks and close.
 
 ## Log
 
@@ -26,3 +26,4 @@ L4 — User: "pero porque se tendiran que borrar los perfiles al hacer un reset?
 L5 — Implementation: `StatePurger`/`PurgeAll` removed; `EmergencyReset` takes a `ResetPersister`, implemented by `Service.PersistReset` (device record + whole active profile payload). A damaged profile store is never overwritten; the reset then reports a retryable `persistence_failed`, pinned by a test. Legacy `applied-dpi.json`/`factory-defaults.json` are left untouched. The headless reset now uses `composeDesktopService` and `desktop.RunReset` (a package function, kept out of the Wails bindings). `openspec/changes/*` keeps the historical purge wording on purpose; `openspec/specs` never mentioned it. S5 is unproven on hardware.
 L6 — Independent verify: S1-S4 and S6 met; S5 blocker: a headless reset on un-migrated v1 data saved the device record without running the migration, so every later GUI start reported `migration_failed` (the old purge deleted the legacy files). Fix: `runHeadlessReset` selects the mouse first (runs the migration, sends no commands). RED then GREEN with `TestHeadlessResetMigratesLegacyStateBeforeSavingTheBaseline`.
 L7 — User: "si da pass pr y realese" and "y hay variso bugs arreglados e" (the release notes must include the fixes since v1.8.0).
+L8 — Recheck after `1f9fa1c`: S5 met in simulation (exactly 4 commands, migration runs, selection errors do not stop the reset). Advisory: an incompatible legacy file still reports `migration_failed` on start, as it already does without a reset. Delivery: issue #277 (approved), PR and release v1.9.0 per L7.
