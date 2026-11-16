@@ -581,7 +581,7 @@ func TestBuildVersionAlignment(t *testing.T) {
 		path string
 		pins []string
 	}{
-		{"../../go.mod", []string{"go 1.27.1", "github.com/wailsapp/wails/v3 v3.1.0", "golang.org/x/sys v0.49.0"}},
+		{"../../go.mod", []string{"go 1.27.1", "github.com/wailsapp/wails/v3 v3.1.0", "golang.org/x/sys v0.50.0"}},
 		{"../../frontend/package.json", []string{`"@wailsio/runtime":"3.1.0"`}},
 		{"../../frontend/package-lock.json", []string{`"@wailsio/runtime": "3.1.0"`, `"version": "3.1.0"`}},
 		{"../../.github/workflows/test.yml", []string{"go-version: '1.27.1'"}},
